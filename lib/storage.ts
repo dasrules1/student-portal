@@ -1,5 +1,4 @@
 // Storage service for client-side data management
-import { supabase } from "./supabase/client"
 import { persistentStorage } from "./persistentStorage"
 import { 
   ref, 
@@ -7,9 +6,12 @@ import {
   getDownloadURL, 
   deleteObject,
   listAll,
-  StorageReference
+  StorageReference,
+  FirebaseStorage
 } from 'firebase/storage';
-import { storage } from './firebase';
+import { storage as firebaseStorage } from './firebase';
+import { db } from './firebase';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 
 // Types
 export interface User {
@@ -75,49 +77,39 @@ export interface FileMetadata {
   lastModified: number;
 }
 
-// Storage class
-class Storage {
-  // Users
+class StorageService {
+  private users: User[] = []
+  private classes: Class[] = []
+  private activityLogs: ActivityLog[] = []
+
   async getUsers(): Promise<User[]> {
     try {
-      // Try to get users from Supabase first
-      const { data: users, error } = await supabase.from("users").select("*")
-
-      if (!error && users && users.length > 0) {
-        console.log(`Retrieved ${users.length} users from Supabase`)
-
-        // Convert to our User format
-        const formattedUsers = users.map((user) => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          password: "********", // We don't store actual passwords
-          role: user.role,
-          status: user.status || "active",
-          avatar: user.avatar || user.name.charAt(0).toUpperCase(),
-          classes: user.classes || [],
-        }))
-
-        return formattedUsers
-      }
-    } catch (err) {
-      console.error("Error fetching users from Supabase:", err)
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+    } catch (error) {
+      console.error('Error getting users:', error);
+      return [];
     }
-
-    // Fall back to local storage
-    return persistentStorage.getAllUsers()
   }
 
   getUserById(id: string): User | undefined {
-    return persistentStorage.getUserById(id)
+    return this.users.find(user => user.id === id);
   }
 
   getUserByEmail(email: string): User | undefined {
-    return persistentStorage.getUserByEmail(email)
+    return this.users.find(user => user.email === email);
   }
 
-  addUser(userData: Omit<User, "id">): User {
-    return persistentStorage.addUser(userData)
+  async addUser(userData: Omit<User, "id">): Promise<User> {
+    try {
+      const usersRef = collection(db, 'users');
+      const docRef = await addDoc(usersRef, userData);
+      return { id: docRef.id, ...userData };
+    } catch (error) {
+      console.error('Error adding user:', error);
+      throw error;
+    }
   }
 
   updateUser(id: string, userData: Partial<User>): User | undefined {
@@ -237,7 +229,7 @@ class Storage {
   }
 }
 
-export const storage = new Storage()
+export const storageService = new StorageService()
 
 /**
  * Upload a file to Firebase Storage
@@ -250,19 +242,10 @@ export const uploadFile = async (
   path: string
 ): Promise<UploadResult> => {
   try {
-    // Create a storage reference
-    const storageRef = ref(storage, `${path}${file.name}`);
-    
-    // Upload the file
+    const storageRef = ref(firebaseStorage, `${path}${file.name}`);
     const snapshot = await uploadBytes(storageRef, file);
-    
-    // Get the download URL
     const url = await getDownloadURL(snapshot.ref);
-    
-    return {
-      url,
-      path: snapshot.ref.fullPath
-    };
+    return { url, path: snapshot.ref.fullPath };
   } catch (error) {
     console.error('Error uploading file:', error);
     throw error;
@@ -276,7 +259,7 @@ export const uploadFile = async (
  */
 export const getFileUrl = async (path: string): Promise<string> => {
   try {
-    const storageRef = ref(storage, path);
+    const storageRef = ref(firebaseStorage, path);
     return await getDownloadURL(storageRef);
   } catch (error) {
     console.error('Error getting file URL:', error);
@@ -291,7 +274,7 @@ export const getFileUrl = async (path: string): Promise<string> => {
  */
 export const deleteFile = async (path: string): Promise<void> => {
   try {
-    const storageRef = ref(storage, path);
+    const storageRef = ref(firebaseStorage, path);
     await deleteObject(storageRef);
   } catch (error) {
     console.error('Error deleting file:', error);
@@ -306,7 +289,7 @@ export const deleteFile = async (path: string): Promise<void> => {
  */
 export const listFiles = async (path: string): Promise<StorageReference[]> => {
   try {
-    const storageRef = ref(storage, path);
+    const storageRef = ref(firebaseStorage, path);
     const result = await listAll(storageRef);
     return result.items;
   } catch (error) {
