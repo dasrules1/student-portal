@@ -3,7 +3,8 @@
 
 // Import existing types
 import type { User, Class, ActivityLog } from "./storage"
-import { getCurriculum, updateCurriculum as updateSupabaseCurriculum } from "./supabase/curriculum"
+import { db } from "./firebase"
+import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc } from "firebase/firestore"
 
 // Constants
 const STORAGE_VERSION = "1.0.0"
@@ -601,16 +602,29 @@ export class PersistentStorage {
   }
 
   // Save curriculum
-  public saveCurriculum(classId: string, curriculum: any): boolean {
-    if (typeof window === "undefined") return false
-
+  public async saveCurriculum(classId: string, curriculum: any): Promise<boolean> {
     try {
-      // Save to localStorage
-      localStorage.setItem(`${STORAGE_PREFIX}curriculum-${classId}`, JSON.stringify(curriculum))
+      // Update in Firebase
+      const curriculumRef = collection(db, "curriculum")
+      const q = query(curriculumRef, where("classId", "==", classId))
+      const querySnapshot = await getDocs(q)
 
-      // Try to save to Supabase as well
-      this.trySaveToSupabase(classId, curriculum)
+      if (!querySnapshot.empty) {
+        const docRef = doc(db, "curriculum", querySnapshot.docs[0].id)
+        await updateDoc(docRef, {
+          content: curriculum,
+          lastUpdated: new Date().toISOString()
+        })
+      } else {
+        await addDoc(curriculumRef, {
+          classId,
+          content: curriculum,
+          lastUpdated: new Date().toISOString()
+        })
+      }
 
+      // Also update in local storage
+      localStorage.setItem(`${STORAGE_PREFIX}curriculum_${classId}`, JSON.stringify(curriculum))
       return true
     } catch (error) {
       console.error("Error saving curriculum:", error)
@@ -618,37 +632,27 @@ export class PersistentStorage {
     }
   }
 
-  // Try to save curriculum to Supabase
-  private async trySaveToSupabase(classId: string, curriculum: any): Promise<void> {
-    try {
-      await updateSupabaseCurriculum(classId, curriculum)
-    } catch (error) {
-      console.warn("Failed to save curriculum to Supabase, using local storage only:", error)
-    }
-  }
-
   // Get curriculum
   public async getCurriculum(classId: string): Promise<any> {
-    if (typeof window === "undefined") return null
-
     try {
-      // Try to get from Supabase first
-      try {
-        const { data, error } = await getCurriculum(classId)
-        if (!error && data) {
-          // Also update local storage
-          localStorage.setItem(`${STORAGE_PREFIX}curriculum-${classId}`, JSON.stringify(data))
-          return data
-        }
-      } catch (supabaseError) {
-        console.warn("Failed to get curriculum from Supabase, using local storage:", supabaseError)
+      // First try to get from Firebase
+      const curriculumRef = collection(db, "curriculum")
+      const q = query(curriculumRef, where("classId", "==", classId))
+      const querySnapshot = await getDocs(q)
+
+      if (!querySnapshot.empty) {
+        return querySnapshot.docs[0].data().content
       }
 
-      // Fall back to local storage
-      const curriculum = localStorage.getItem(`${STORAGE_PREFIX}curriculum-${classId}`)
-      return curriculum ? JSON.parse(curriculum) : null
+      // If not in Firebase, try local storage
+      const curriculumJson = localStorage.getItem(`${STORAGE_PREFIX}curriculum_${classId}`)
+      if (curriculumJson) {
+        return JSON.parse(curriculumJson)
+      }
+
+      return null
     } catch (error) {
-      console.error("Error loading curriculum:", error)
+      console.error("Error getting curriculum:", error)
       return null
     }
   }
@@ -659,8 +663,34 @@ export class PersistentStorage {
   }
 
   // Update curriculum
-  public updateCurriculum(classId: string, curriculum: any): boolean {
-    return this.saveCurriculum(classId, curriculum)
+  public async updateCurriculum(classId: string, curriculum: any): Promise<boolean> {
+    try {
+      // Update in Firebase
+      const curriculumRef = collection(db, "curriculum")
+      const q = query(curriculumRef, where("classId", "==", classId))
+      const querySnapshot = await getDocs(q)
+
+      if (!querySnapshot.empty) {
+        const docRef = doc(db, "curriculum", querySnapshot.docs[0].id)
+        await updateDoc(docRef, {
+          content: curriculum,
+          lastUpdated: new Date().toISOString()
+        })
+      } else {
+        await addDoc(curriculumRef, {
+          classId,
+          content: curriculum,
+          lastUpdated: new Date().toISOString()
+        })
+      }
+
+      // Also update in local storage
+      localStorage.setItem(`${STORAGE_PREFIX}curriculum_${classId}`, JSON.stringify(curriculum))
+      return true
+    } catch (error) {
+      console.error("Error updating curriculum:", error)
+      return false
+    }
   }
 
   // Get current user from session
