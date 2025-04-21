@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
-import { storage } from "@/lib/storage"
-import { supabase } from "@/lib/supabase/client"
+import { persistentStorage } from "@/lib/persistentStorage"
+import { db } from "@/lib/firebase"
+import { collection, addDoc, getDocs, query, where } from "firebase/firestore"
+import { createUserWithEmailAndPassword, getAuth } from "firebase/auth"
 
 export function DataMigration() {
   const [isMigrating, setIsMigrating] = useState(false)
@@ -27,47 +29,38 @@ export function DataMigration() {
       setStatus("Migrating users...")
       setProgress(10)
 
-      const users = storage.getUsers()
+      const users = persistentStorage.getAllUsers()
       let userCount = 0
 
       for (const user of users) {
         try {
-          // Check if user already exists in Supabase
-          const { data: existingUsers } = await supabase.from("users").select("id").eq("email", user.email).limit(1)
+          // Check if user already exists in Firebase
+          const usersRef = collection(db, "users")
+          const q = query(usersRef, where("email", "==", user.email))
+          const querySnapshot = await getDocs(q)
 
-          if (existingUsers && existingUsers.length > 0) {
+          if (!querySnapshot.empty) {
             // User already exists, skip
             continue
           }
 
-          // Create user in Supabase Auth
-          const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+          // Create user in Firebase Auth
+          const auth = getAuth()
+          const userCredential = await createUserWithEmailAndPassword(
+            auth,
+            user.email,
+            user.password || "password123" // Default password if none exists
+          )
+
+          // Create user profile in Firestore
+          await addDoc(collection(db, "users"), {
+            id: userCredential.user.uid,
             email: user.email,
-            password: user.password || "password123", // Default password if none exists
-            email_confirm: true,
+            name: user.name,
+            role: user.role,
+            avatar: user.avatar,
+            status: user.status,
           })
-
-          if (authError) {
-            console.error(`Error creating auth user ${user.email}:`, authError)
-            continue
-          }
-
-          // Create user profile
-          const { error: profileError } = await supabase.from("users").insert([
-            {
-              id: authUser.user.id,
-              email: user.email,
-              name: user.name,
-              role: user.role,
-              avatar: user.avatar,
-              status: user.status,
-            },
-          ])
-
-          if (profileError) {
-            console.error(`Error creating user profile ${user.email}:`, profileError)
-            continue
-          }
 
           userCount++
         } catch (err) {
@@ -78,94 +71,53 @@ export function DataMigration() {
       setStatus(`Migrated ${userCount} users`)
       setProgress(30)
 
-      // Step 2: Migrate classes
+      // Step 2: Migrate classes and get all classes for later use
       setStatus("Migrating classes...")
-      const classes = storage.getClasses()
+      const allClasses = persistentStorage.getAllClasses()
       let classCount = 0
 
-      for (const cls of classes) {
+      for (const cls of allClasses) {
         try {
-          // Find the teacher's Supabase ID
-          const { data: teacherData } = await supabase.from("users").select("id").eq("name", cls.teacher).limit(1)
+          // Find the teacher's Firebase ID
+          const usersRef = collection(db, "users")
+          const q = query(usersRef, where("name", "==", cls.teacher))
+          const querySnapshot = await getDocs(q)
 
-          const teacherId = teacherData && teacherData.length > 0 ? teacherData[0].id : null
-
-          if (!teacherId) {
+          if (querySnapshot.empty) {
             console.error(`Teacher not found for class ${cls.name}`)
             continue
           }
 
-          // Check if class already exists
-          const { data: existingClasses } = await supabase
-            .from("classes")
-            .select("id")
-            .eq("name", cls.name)
-            .eq("teacher_id", teacherId)
-            .limit(1)
+          const teacherId = querySnapshot.docs[0].id
 
-          if (existingClasses && existingClasses.length > 0) {
+          // Check if class already exists
+          const classesRef = collection(db, "classes")
+          const classQuery = query(classesRef, where("name", "==", cls.name))
+          const classSnapshot = await getDocs(classQuery)
+
+          if (!classSnapshot.empty) {
             // Class already exists, skip
             continue
           }
 
-          // Create class
-          const { data: classData, error: classError } = await supabase
-            .from("classes")
-            .insert([
-              {
-                name: cls.name,
-                subject: cls.subject || "",
-                teacher_id: teacherId,
-                location: cls.location || "",
-                meeting_day: cls.meetingDay || "",
-                start_time: cls.startTime || "",
-                end_time: cls.endTime || "",
-                virtual_link: cls.virtualLink || "",
-                status: cls.status || "active",
-              },
-            ])
-            .select()
-
-          if (classError) {
-            console.error(`Error creating class ${cls.name}:`, classError)
-            continue
-          }
-
-          const newClassId = classData[0].id
-
-          // Migrate enrollments
-          if (cls.enrolledStudents && cls.enrolledStudents.length > 0) {
-            for (const studentId of cls.enrolledStudents) {
-              // Find the student's Supabase ID
-              const { data: studentData } = await supabase.from("users").select("id").eq("role", "student").limit(1)
-
-              const supabaseStudentId = studentData && studentData.length > 0 ? studentData[0].id : null
-
-              if (!supabaseStudentId) {
-                console.error(`Student not found for enrollment in class ${cls.name}`)
-                continue
-              }
-
-              // Create enrollment
-              await supabase.from("class_enrollments").insert([
-                {
-                  class_id: newClassId,
-                  student_id: supabaseStudentId,
-                },
-              ])
-            }
-          }
-
-          // Migrate curriculum
-          const curriculum = storage.getCurriculum(cls.id)
-          if (curriculum) {
-            await supabase.from("curriculum").insert([
-              {
-                class_id: newClassId,
-                content: curriculum,
-              },
-            ])
-          }
+          // Create class in Firestore
+          await addDoc(collection(db, "classes"), {
+            name: cls.name,
+            teacher: cls.teacher,
+            teacher_id: teacherId,
+            location: cls.location || "",
+            meetingDates: cls.meetingDates || "",
+            startDate: cls.startDate || "",
+            endDate: cls.endDate || "",
+            startTime: cls.startTime || "",
+            endTime: cls.endTime || "",
+            virtualLink: cls.virtualLink || "",
+            status: cls.status || "active",
+            students: cls.students || 0,
+            enrolledStudents: cls.enrolledStudents || [],
+            subject: cls.subject || "",
+            meeting_day: cls.meeting_day || "",
+          })
 
           classCount++
         } catch (err) {
@@ -176,54 +128,61 @@ export function DataMigration() {
       setStatus(`Migrated ${classCount} classes`)
       setProgress(60)
 
-      // Step 3: Migrate activity logs
-      setStatus("Migrating activity logs...")
-      const activityLogs = storage.getActivityLogs()
-      let logCount = 0
+      // Step 3: Migrate curriculum
+      setStatus("Migrating curriculum...")
+      let curriculumCount = 0
 
-      for (const log of activityLogs) {
+      // Use the allClasses variable from Step 2
+      for (const cls of allClasses) {
         try {
-          // Create activity log
-          const { error: logError } = await supabase.from("activity_logs").insert([
-            {
-              action: log.action,
-              details: log.details,
-              category: log.category,
-              created_at: new Date(log.timestamp).toISOString(),
-            },
-          ])
+          const curriculum = await persistentStorage.getCurriculum(cls.id)
+          if (!curriculum) continue
 
-          if (logError) {
-            console.error(`Error creating activity log:`, logError)
+          // Check if curriculum already exists
+          const curriculumRef = collection(db, "curriculum")
+          const q = query(curriculumRef, where("classId", "==", cls.id))
+          const querySnapshot = await getDocs(q)
+
+          if (!querySnapshot.empty) {
+            // Curriculum already exists, skip
             continue
           }
 
-          logCount++
+          // Create curriculum in Firestore
+          await addDoc(collection(db, "curriculum"), {
+            classId: cls.id,
+            content: curriculum,
+            lastUpdated: new Date().toISOString(),
+          })
+
+          curriculumCount++
         } catch (err) {
-          console.error(`Error migrating activity log:`, err)
+          console.error(`Error migrating curriculum for class ${cls.id}:`, err)
         }
       }
 
-      setStatus(`Migrated ${logCount} activity logs`)
+      setStatus(`Migrated ${curriculumCount} curriculum items`)
       setProgress(90)
 
-      // Migration complete
-      setStatus("Migration complete!")
+      // Step 4: Migrate submissions
+      setStatus("Migrating submissions...")
+      // Note: Since there's no getAllSubmissions method, we'll skip this step for now
+      setStatus("Submissions migration skipped - not implemented in persistent storage")
       setProgress(100)
       setSuccess(true)
     } catch (err) {
-      console.error("Migration error:", err)
-      setError(`Migration failed: ${err.message}`)
+      console.error("Migration failed:", err)
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
     } finally {
       setIsMigrating(false)
     }
   }
 
   return (
-    <Card className="col-span-3">
+    <Card>
       <CardHeader>
         <CardTitle>Data Migration</CardTitle>
-        <CardDescription>Migrate your existing data from localStorage to Supabase database</CardDescription>
+        <CardDescription>Migrate data from local storage to Firebase</CardDescription>
       </CardHeader>
       <CardContent>
         {error && (
@@ -232,43 +191,19 @@ export function DataMigration() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-
         {success && (
           <Alert className="mb-4">
             <AlertTitle>Success</AlertTitle>
             <AlertDescription>Data migration completed successfully!</AlertDescription>
           </Alert>
         )}
-
         <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span>Migration Progress</span>
-              <span>{progress}%</span>
-            </div>
-            <Progress value={progress} />
-          </div>
-
-          {status && (
-            <div className="p-4 border rounded-md">
-              <p className="font-medium">Status:</p>
-              <p className="text-sm text-muted-foreground">{status}</p>
-            </div>
-          )}
-
-          <div className="p-4 border rounded-md">
-            <p className="font-medium">Migration Steps:</p>
-            <ol className="mt-2 ml-4 text-sm text-muted-foreground list-decimal">
-              <li>Migrate user accounts</li>
-              <li>Migrate classes and enrollments</li>
-              <li>Migrate curriculum data</li>
-              <li>Migrate activity logs</li>
-            </ol>
-          </div>
+          <Progress value={progress} />
+          <p className="text-sm text-muted-foreground">{status}</p>
         </div>
       </CardContent>
       <CardFooter>
-        <Button onClick={handleMigration} disabled={isMigrating} className="w-full">
+        <Button onClick={handleMigration} disabled={isMigrating}>
           {isMigrating ? "Migrating..." : "Start Migration"}
         </Button>
       </CardFooter>
