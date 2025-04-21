@@ -1,13 +1,10 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { persistentStorage } from "./persistentStorage"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
-
-// Re-export the Storage class and instance
-export { Storage } from "./storage"
-export { storage } from "./storage"
 
 // Utility function to format date
 export function formatDate(date: Date): string {
@@ -38,14 +35,12 @@ export function truncateText(text: string, maxLength: number): string {
 
 // Utility function to get class name from ID
 export function getClassNameById(classId: string): string {
-  const { storage } = require("./storage")
-  const classData = storage.getClassById(classId)
+  const classData = persistentStorage.getClassById(classId)
   return classData ? classData.name : "Unknown Class"
 }
 
 // Utility function to count enrolled students in a class
 export function countEnrolledStudents(classId: string): number {
-  const { storage } = require("./storage")
-  const classData = storage.getClassById(classId)
+  const classData = persistentStorage.getClassById(classId)
   return classData && classData.enrolledStudents ? classData.enrolledStudents.length : 0
 }
