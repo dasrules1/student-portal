@@ -1,0 +1,330 @@
+// Storage service for client-side data management
+import { supabase } from "./supabase/client"
+import { persistentStorage } from "./persistentStorage"
+import { 
+  ref, 
+  uploadBytes, 
+  getDownloadURL, 
+  deleteObject,
+  listAll,
+  StorageReference
+} from 'firebase/storage';
+import { storage } from './firebase';
+
+// Types
+export interface User {
+  id: string
+  name: string
+  email: string
+  password: string
+  role: "student" | "teacher" | "admin"
+  status?: "active" | "inactive"
+  avatar?: string
+  classes: string[]
+}
+
+export interface Class {
+  id: string
+  name: string
+  teacher: string
+  teacher_id?: string
+  location?: string
+  meetingDates?: string
+  startDate?: string
+  endDate?: string
+  startTime?: string
+  endTime?: string
+  virtualLink?: string
+  status?: string
+  students: number
+  enrolledStudents?: string[]
+  subject?: string
+  meeting_day?: string
+}
+
+export interface ActivityLog {
+  id: string
+  action: string
+  details: string
+  timestamp: string
+  category: string
+}
+
+export interface Submission {
+  id: string
+  studentId: string
+  classId: string
+  assignmentId: string
+  content: string
+  status: "submitted" | "graded" | "returned"
+  grade?: number
+  feedback?: string
+  submittedAt: string
+  gradedAt?: string
+}
+
+export interface UploadResult {
+  url: string;
+  path: string;
+}
+
+export interface FileMetadata {
+  name: string;
+  type: string;
+  size: number;
+  lastModified: number;
+}
+
+// Storage class
+class Storage {
+  // Users
+  async getUsers(): Promise<User[]> {
+    try {
+      // Try to get users from Supabase first
+      const { data: users, error } = await supabase.from("users").select("*")
+
+      if (!error && users && users.length > 0) {
+        console.log(`Retrieved ${users.length} users from Supabase`)
+
+        // Convert to our User format
+        const formattedUsers = users.map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          password: "********", // We don't store actual passwords
+          role: user.role,
+          status: user.status || "active",
+          avatar: user.avatar || user.name.charAt(0).toUpperCase(),
+          classes: user.classes || [],
+        }))
+
+        return formattedUsers
+      }
+    } catch (err) {
+      console.error("Error fetching users from Supabase:", err)
+    }
+
+    // Fall back to local storage
+    return persistentStorage.getAllUsers()
+  }
+
+  getUserById(id: string): User | undefined {
+    return persistentStorage.getUserById(id)
+  }
+
+  getUserByEmail(email: string): User | undefined {
+    return persistentStorage.getUserByEmail(email)
+  }
+
+  addUser(userData: Omit<User, "id">): User {
+    return persistentStorage.addUser(userData)
+  }
+
+  updateUser(id: string, userData: Partial<User>): User | undefined {
+    return persistentStorage.updateUser(id, userData)
+  }
+
+  deleteUser(id: string): boolean {
+    return persistentStorage.deleteUser(id)
+  }
+
+  // Classes
+  async getClasses(): Promise<Class[]> {
+    try {
+      // Try to get classes from Supabase first
+      const { data: classes, error } = await supabase.from("classes").select("*")
+
+      if (!error && classes && classes.length > 0) {
+        console.log(`Retrieved ${classes.length} classes from Supabase`)
+
+        // Get teacher names for each class
+        const classesWithTeachers = await Promise.all(
+          classes.map(async (cls) => {
+            let teacherName = "Unknown Teacher"
+
+            if (cls.teacher_id) {
+              const { data: teacher } = await supabase.from("users").select("name").eq("id", cls.teacher_id).single()
+
+              if (teacher) {
+                teacherName = teacher.name
+              }
+            }
+
+            // Get enrollments for this class
+            const { data: enrollments } = await supabase
+              .from("class_enrollments")
+              .select("student_id")
+              .eq("class_id", cls.id)
+
+            const enrolledStudents = enrollments?.map((e) => e.student_id) || []
+
+            return {
+              id: cls.id,
+              name: cls.name,
+              teacher: teacherName,
+              teacher_id: cls.teacher_id,
+              location: cls.location || "",
+              meetingDates: cls.meeting_day || "",
+              startDate: cls.start_date || "",
+              endDate: cls.end_date || "",
+              startTime: cls.start_time || "",
+              endTime: cls.end_time || "",
+              virtualLink: cls.virtual_link || "",
+              status: cls.status || "active",
+              students: enrolledStudents.length,
+              enrolledStudents: enrolledStudents,
+              subject: cls.subject || "",
+              meeting_day: cls.meeting_day || "",
+            }
+          }),
+        )
+
+        return classesWithTeachers
+      }
+    } catch (err) {
+      console.error("Error fetching classes from Supabase:", err)
+    }
+
+    // Fall back to local storage
+    return persistentStorage.getAllClasses()
+  }
+
+  getClassById(id: string): Class | undefined {
+    return persistentStorage.getClassById(id)
+  }
+
+  addClass(classData: Omit<Class, "id">): Class {
+    return persistentStorage.addClass(classData)
+  }
+
+  updateClass(id: string, classData: Partial<Class>): Class | undefined {
+    return persistentStorage.updateClass(id, classData)
+  }
+
+  deleteClass(id: string): boolean {
+    return persistentStorage.deleteClass(id)
+  }
+
+  // Enrollment
+  enrollStudent(classId: string, studentId: string): boolean {
+    return persistentStorage.enrollStudent(classId, studentId)
+  }
+
+  unenrollStudent(classId: string, studentId: string): boolean {
+    return persistentStorage.unenrollStudent(classId, studentId)
+  }
+
+  // Activity Logs
+  getActivityLogs(): ActivityLog[] {
+    return persistentStorage.getActivityLogs()
+  }
+
+  addActivityLog(log: Omit<ActivityLog, "id">): ActivityLog {
+    return persistentStorage.addActivityLog(log)
+  }
+
+  // Curriculum
+  async getCurriculum(classId: string): Promise<any> {
+    return persistentStorage.getCurriculum(classId)
+  }
+
+  saveCurriculum(classId: string, curriculum: any): boolean {
+    return persistentStorage.saveCurriculum(classId, curriculum)
+  }
+
+  updateCurriculum(classId: string, curriculum: any): boolean {
+    return persistentStorage.updateCurriculum(classId, curriculum)
+  }
+}
+
+export const storage = new Storage()
+
+/**
+ * Upload a file to Firebase Storage
+ * @param file The file to upload
+ * @param path The path where the file should be stored (e.g., 'assignments/course123/')
+ * @returns Promise with the download URL and storage path
+ */
+export const uploadFile = async (
+  file: File,
+  path: string
+): Promise<UploadResult> => {
+  try {
+    // Create a storage reference
+    const storageRef = ref(storage, `${path}${file.name}`);
+    
+    // Upload the file
+    const snapshot = await uploadBytes(storageRef, file);
+    
+    // Get the download URL
+    const url = await getDownloadURL(snapshot.ref);
+    
+    return {
+      url,
+      path: snapshot.ref.fullPath
+    };
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get the download URL for a file
+ * @param path The storage path of the file
+ * @returns Promise with the download URL
+ */
+export const getFileUrl = async (path: string): Promise<string> => {
+  try {
+    const storageRef = ref(storage, path);
+    return await getDownloadURL(storageRef);
+  } catch (error) {
+    console.error('Error getting file URL:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a file from Firebase Storage
+ * @param path The storage path of the file to delete
+ * @returns Promise that resolves when the file is deleted
+ */
+export const deleteFile = async (path: string): Promise<void> => {
+  try {
+    const storageRef = ref(storage, path);
+    await deleteObject(storageRef);
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    throw error;
+  }
+};
+
+/**
+ * List all files in a directory
+ * @param path The directory path to list
+ * @returns Promise with an array of file references
+ */
+export const listFiles = async (path: string): Promise<StorageReference[]> => {
+  try {
+    const storageRef = ref(storage, path);
+    const result = await listAll(storageRef);
+    return result.items;
+  } catch (error) {
+    console.error('Error listing files:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get file metadata
+ * @param file The file to get metadata for
+ * @returns FileMetadata object
+ */
+export const getFileMetadata = (file: File): FileMetadata => {
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    lastModified: file.lastModified
+  };
+};

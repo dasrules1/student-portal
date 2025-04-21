@@ -1,0 +1,1570 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useRouter, useParams } from "next/navigation"
+import Link from "next/link"
+import {
+  ArrowLeft,
+  FileText,
+  Upload,
+  CheckCircle2,
+  BookOpen,
+  PenTool,
+  ClipboardList,
+  BookMarked,
+  FileQuestion,
+  X,
+  Users,
+  BarChart,
+  Clock,
+  AlertCircle,
+  Edit,
+  Save,
+  Check,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useToast } from "@/hooks/use-toast"
+import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
+import { Slider } from "@/components/ui/slider"
+import { storage } from "@/lib/storage"
+import { sessionManager } from "@/lib/session"
+import { onSnapshot, collection, query, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
+// Content types for curriculum
+const contentTypes = [
+  { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
+  { id: "guided-practice", name: "Guided Practice", icon: <PenTool className="w-4 h-4 mr-2" /> },
+  { id: "classwork", name: "Classwork", icon: <ClipboardList className="w-4 h-4 mr-2" /> },
+  { id: "homework", name: "Homework", icon: <BookMarked className="w-4 h-4 mr-2" /> },
+  { id: "quiz", name: "Quiz", icon: <FileQuestion className="w-4 h-4 mr-2" /> },
+  { id: "test", name: "Test", icon: <FileText className="w-4 h-4 mr-2" /> },
+]
+
+export default function TeacherCurriculum() {
+  const router = useRouter()
+  const params = useParams()
+  const { toast } = useToast()
+  const classId = params.classId as string
+
+  const [currentClass, setCurrentClass] = useState(null)
+  const [curriculum, setCurriculum] = useState(null)
+  const [activeLesson, setActiveLesson] = useState(1)
+  const [activeContent, setActiveContent] = useState(null)
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false)
+  const [contentToPublish, setContentToPublish] = useState(null)
+  const [activeTab, setActiveTab] = useState("content")
+  const [studentFeedback, setStudentFeedback] = useState({})
+  const [gradeOverrideDialogOpen, setGradeOverrideDialogOpen] = useState(false)
+  const [studentToGrade, setStudentToGrade] = useState(null)
+  const [overrideScore, setOverrideScore] = useState("")
+  const [overrideFeedback, setOverrideFeedback] = useState("")
+  const [halfCredit, setHalfCredit] = useState(false)
+  const [manualGradingDialogOpen, setManualGradingDialogOpen] = useState(false)
+  const [studentSubmission, setStudentSubmission] = useState(null)
+  const [problemGrades, setProblemGrades] = useState({})
+  const [students, setStudents] = useState([])
+
+  // Load class and curriculum data
+  useEffect(() => {
+    // Check if user is a teacher
+    const user = sessionManager.getCurrentUser()
+    if (!user || user.role !== "teacher") {
+      toast({
+        title: "Access denied",
+        description: "You must be logged in as a teacher to view this page",
+        variant: "destructive",
+      })
+      router.push("/staff-portal")
+      return
+    }
+
+    // Get class data
+    const foundClass = storage.getClassById(classId)
+    if (foundClass) {
+      // Check if this teacher is assigned to this class
+      if (foundClass.teacher !== user.name && foundClass.teacherId !== user.id) {
+        toast({
+          title: "Access denied",
+          description: "You are not assigned to this class",
+          variant: "destructive",
+        })
+        router.push("/teacher/dashboard")
+        return
+      }
+
+      setCurrentClass(foundClass)
+
+      // Get curriculum
+      if (foundClass.curriculum) {
+        setCurriculum(foundClass.curriculum)
+      } else {
+        // If no curriculum exists, check if there's one created by an admin
+        const adminClass = storage.getClassById(classId)
+        if (adminClass && adminClass.curriculum) {
+          setCurriculum(adminClass.curriculum)
+
+          // Update the class with the admin curriculum
+          storage.updateClass(classId, {
+            ...foundClass,
+            curriculum: adminClass.curriculum,
+          })
+        } else {
+          // Create empty curriculum
+          setCurriculum({ lessons: [] })
+        }
+      }
+
+      // Get students enrolled in this class
+      const allUsers = storage.getUsers()
+      const classStudents = allUsers.filter(
+        (user) =>
+          user.role === "student" &&
+          (user.classes.includes(classId) ||
+            (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id))),
+      )
+      setStudents(classStudents)
+    } else {
+      toast({
+        title: "Class not found",
+        description: "The requested class could not be found.",
+        variant: "destructive",
+      })
+      router.push("/teacher/dashboard")
+    }
+  }, [classId, router, toast])
+
+  // Add real-time listener for student submissions
+  useEffect(() => {
+    if (!classId) return;
+
+    // Create a query for submissions in this class
+    const submissionsQuery = query(
+      collection(db, 'submissions'),
+      where('classId', '==', classId)
+    );
+
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(submissionsQuery, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added' || change.type === 'modified') {
+          const submission = { id: change.doc.id, ...change.doc.data() };
+          
+          // Update the curriculum state with the new submission
+          setCurriculum(prevCurriculum => {
+            if (!prevCurriculum) return prevCurriculum;
+            
+            const updatedCurriculum = { ...prevCurriculum };
+            const lessonIndex = updatedCurriculum.lessons.findIndex(
+              lesson => lesson.id === submission.lessonId
+            );
+            
+            if (lessonIndex !== -1) {
+              const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
+                content => content.id === submission.contentId
+              );
+              
+              if (contentIndex !== -1) {
+                const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
+                const submissions = content.studentProgress?.submissions || [];
+                const submissionIndex = submissions.findIndex(
+                  sub => sub.studentId === submission.studentId
+                );
+                
+                if (submissionIndex !== -1) {
+                  submissions[submissionIndex] = submission;
+                } else {
+                  submissions.push(submission);
+                }
+                
+                updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = submissions;
+                
+                // Show notification for new submissions
+                if (change.type === 'added') {
+                  const student = students.find(s => s.id === submission.studentId);
+                  if (student) {
+                    toast({
+                      title: "New Submission",
+                      description: `${student.name} has submitted their work for ${content.title}`,
+                      duration: 5000,
+                    });
+                  }
+                }
+              }
+            }
+            
+            return updatedCurriculum;
+          });
+        }
+      });
+    });
+
+    // Cleanup listener on unmount
+    return () => unsubscribe();
+  }, [classId, students]);
+
+  // Function to render LaTeX in the UI
+  const renderLatex = (text) => {
+    if (!text) return ""
+
+    // Simple regex to identify LaTeX-like content between $$ delimiters
+    const parts = text.split(/(\$\$.*?\$\$)/g)
+
+    if (parts.length === 1) return text
+
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (part.startsWith("$$") && part.endsWith("$$")) {
+            const latex = part.slice(2, -2)
+            return (
+              <span
+                key={index}
+                className="inline-block px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-sm"
+              >
+                {latex}
+              </span>
+            )
+          }
+          return part
+        })}
+      </>
+    )
+  }
+
+  // Handle publishing content to students
+  const handlePublishContent = (content, lessonIndex, contentIndex) => {
+    setContentToPublish({ content, lessonIndex, contentIndex })
+    setPublishDialogOpen(true)
+  }
+
+  // Confirm publishing content
+  const confirmPublish = () => {
+    if (!contentToPublish) return
+
+    const { content, lessonIndex, contentIndex } = contentToPublish
+    const updatedCurriculum = { ...curriculum }
+
+    // Toggle published status
+    const newPublishedStatus = !content.isPublished
+    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].isPublished = newPublishedStatus
+
+    // Save the updated curriculum to localStorage for students to access
+    if (typeof window !== "undefined") {
+      try {
+        // Get the existing published curriculum or create a new one
+        const publishedCurriculumKey = `published-curriculum-${classId}`
+        let publishedCurriculum = {}
+
+        const existingData = localStorage.getItem(publishedCurriculumKey)
+        if (existingData) {
+          publishedCurriculum = JSON.parse(existingData)
+        }
+
+        // Update the specific content's published status
+        if (!publishedCurriculum[lessonIndex]) {
+          publishedCurriculum[lessonIndex] = {}
+        }
+
+        if (newPublishedStatus) {
+          // If publishing, add the content
+          publishedCurriculum[lessonIndex][contentIndex] = content
+        } else {
+          // If unpublishing, remove the content
+          delete publishedCurriculum[lessonIndex][contentIndex]
+        }
+
+        // Save back to localStorage
+        localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum))
+      } catch (error) {
+        console.error("Error saving published curriculum:", error)
+      }
+    }
+
+    setCurriculum(updatedCurriculum)
+    setPublishDialogOpen(false)
+
+    // Update the class in storage
+    if (currentClass) {
+      const updatedClass = {
+        ...currentClass,
+        curriculum: updatedCurriculum,
+      }
+      storage.updateClass(classId, updatedClass)
+    }
+
+    toast({
+      title: newPublishedStatus ? "Content published" : "Content unpublished",
+      description: newPublishedStatus
+        ? `${content.title} is now visible to students.`
+        : `${content.title} is now hidden from students.`,
+    })
+
+    // Add activity log
+    storage.addActivityLog({
+      action: newPublishedStatus ? "Content Published" : "Content Unpublished",
+      details: `${content.title} for ${currentClass?.name}`,
+      timestamp: new Date().toLocaleString(),
+      category: "Class Management",
+    })
+  }
+
+  // Handle grade override
+  const handleGradeOverride = (student, content) => {
+    setStudentToGrade(student)
+
+    // Find the student's current score if available
+    const studentSubmission = content.studentProgress?.submissions?.find((sub) => sub.studentId === student.id)
+
+    if (studentSubmission && studentSubmission.score !== undefined) {
+      setOverrideScore(studentSubmission.score.toString())
+    } else {
+      setOverrideScore("")
+    }
+
+    // Set feedback if available
+    setOverrideFeedback(studentSubmission?.feedback || "")
+
+    setGradeOverrideDialogOpen(true)
+    setHalfCredit(false) // Reset half credit state when opening the dialog
+  }
+
+  // Save grade override
+  const saveGradeOverride = () => {
+    if (!studentToGrade || !activeContent) return
+
+    let score = Number.parseInt(overrideScore)
+    if (isNaN(score) || score < 0 || score > 100) {
+      toast({
+        title: "Invalid score",
+        description: "Please enter a valid score between 0 and 100.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // If half credit is selected, divide the score by 2
+    if (halfCredit) {
+      score = score / 2
+    }
+
+    const updatedCurriculum = { ...curriculum }
+    const lessonIndex = activeLesson - 1
+    const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex((c) => c.id === activeContent.id)
+
+    if (contentIndex === -1) return
+
+    // Initialize studentProgress if it doesn't exist
+    if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
+      updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
+        status: "in-progress",
+        submissions: [],
+      }
+    }
+
+    // Find the student's submission
+    const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions || []
+    const studentSubmissionIndex = submissions.findIndex((sub) => sub.studentId === studentToGrade.id)
+
+    if (studentSubmissionIndex >= 0) {
+      // Update existing submission
+      submissions[studentSubmissionIndex] = {
+        ...submissions[studentSubmissionIndex],
+        status: "completed",
+        score,
+        feedback: overrideFeedback,
+        gradedBy: "teacher",
+        gradedAt: new Date().toISOString(),
+      }
+    } else {
+      // Add new submission
+      submissions.push({
+        studentId: studentToGrade.id,
+        status: "completed",
+        score,
+        feedback: overrideFeedback,
+        gradedBy: "teacher",
+        gradedAt: new Date().toISOString(),
+        submittedAt: new Date().toISOString(),
+      })
+    }
+
+    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = submissions
+
+    // Update the status based on submissions
+    const allCompleted = submissions.every((sub) => sub.status === "completed")
+    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.status = allCompleted
+      ? "completed"
+      : "in-progress"
+
+    // Save the updated curriculum with grades to localStorage
+    if (typeof window !== "undefined") {
+      try {
+        // Save the graded content for this student
+        const gradedContentKey = `graded-content-${classId}-${activeContent.id}`
+        localStorage.setItem(gradedContentKey, JSON.stringify(submissions))
+      } catch (error) {
+        console.error("Error saving graded content:", error)
+      }
+    }
+
+    setCurriculum(updatedCurriculum)
+    setGradeOverrideDialogOpen(false)
+    setHalfCredit(false)
+
+    // Update the class in storage
+    if (currentClass) {
+      const updatedClass = {
+        ...currentClass,
+        curriculum: updatedCurriculum,
+      }
+      storage.updateClass(classId, updatedClass)
+    }
+
+    toast({
+      title: "Grade updated",
+      description: `${studentToGrade.name}'s grade has been updated to ${score}%.`,
+    })
+
+    // Add activity log
+    storage.addActivityLog({
+      action: "Student Work Graded",
+      details: `${studentToGrade.name}'s work on ${activeContent.title} has been graded`,
+      timestamp: new Date().toLocaleString(),
+      category: "Grading",
+    })
+  }
+
+  // Open manual grading dialog
+  const openManualGrading = (student, content) => {
+    setStudentToGrade(student)
+
+    // Find the student's submission
+    const submission = content.studentProgress?.submissions?.find((sub) => sub.studentId === student.id)
+    setStudentSubmission(submission)
+
+    // Initialize problem grades
+    const initialGrades = {}
+    if (content.problems && content.problems.length > 0) {
+      content.problems.forEach((problem, index) => {
+        const problemResult = submission?.problemResults?.[index]
+        initialGrades[index] = {
+          correct: problemResult?.correct || false,
+          points: problemResult?.points || 0,
+          maxPoints: problem.points || 10,
+          feedback: problemResult?.feedback || "",
+        }
+      })
+    }
+
+    setProblemGrades(initialGrades)
+    setManualGradingDialogOpen(true)
+  }
+
+  // Save manual grading
+  const saveManualGrading = () => {
+    if (!studentToGrade || !activeContent) return
+
+    const updatedCurriculum = { ...curriculum }
+    const lessonIndex = activeLesson - 1
+    const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex((c) => c.id === activeContent.id)
+
+    if (contentIndex === -1) return
+
+    // Calculate total score based on problem grades
+    let totalPoints = 0
+    let earnedPoints = 0
+    const problemResults = []
+
+    Object.entries(problemGrades).forEach(([index, grade]) => {
+      const problem = activeContent.problems[Number.parseInt(index)]
+      totalPoints += grade.maxPoints
+      earnedPoints += grade.points
+
+      problemResults[Number.parseInt(index)] = {
+        type: problem.type,
+        correct: grade.correct,
+        points: grade.points,
+        maxPoints: grade.maxPoints,
+        feedback: grade.feedback,
+        studentAnswer: studentSubmission?.answers?.[problem.type]?.[index] || "",
+        correctAnswer: problem.correctAnswer,
+        gradedBy: "teacher",
+      }
+    })
+
+    const score = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0
+
+    // Initialize studentProgress if it doesn't exist
+    if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
+      updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
+        status: "in-progress",
+        submissions: [],
+      }
+    }
+
+    // Find the student's submission
+    const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions || []
+    const studentSubmissionIndex = submissions.findIndex((sub) => sub.studentId === studentToGrade.id)
+
+    if (studentSubmissionIndex >= 0) {
+      // Update existing submission
+      submissions[studentSubmissionIndex] = {
+        ...submissions[studentSubmissionIndex],
+        status: "completed",
+        score,
+        problemResults,
+        gradedBy: "teacher",
+        gradedAt: new Date().toISOString(),
+      }
+    } else {
+      // Add new submission
+      submissions.push({
+        studentId: studentToGrade.id,
+        status: "completed",
+        score,
+        problemResults,
+        gradedBy: "teacher",
+        gradedAt: new Date().toISOString(),
+        submittedAt: new Date().toISOString(),
+      })
+    }
+
+    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = submissions
+
+    // Save the updated curriculum with grades to localStorage
+    if (typeof window !== "undefined") {
+      try {
+        // Save the graded content for this student
+        const gradedContentKey = `graded-content-${classId}-${activeContent.id}`
+        localStorage.setItem(gradedContentKey, JSON.stringify(submissions))
+      } catch (error) {
+        console.error("Error saving graded content:", error)
+      }
+    }
+
+    setCurriculum(updatedCurriculum)
+    setManualGradingDialogOpen(false)
+
+    // Update the class in storage
+    if (currentClass) {
+      const updatedClass = {
+        ...currentClass,
+        curriculum: updatedCurriculum,
+      }
+      storage.updateClass(classId, updatedClass)
+    }
+
+    toast({
+      title: "Manual grading saved",
+      description: `${studentToGrade.name}'s work has been graded with a score of ${score}%.`,
+    })
+
+    // Add activity log
+    storage.addActivityLog({
+      action: "Manual Grading Completed",
+      details: `${studentToGrade.name}'s work on ${activeContent.title} has been manually graded`,
+      timestamp: new Date().toLocaleString(),
+      category: "Grading",
+    })
+  }
+
+  // Render content type icon
+  const renderContentTypeIcon = (type) => {
+    const contentType = contentTypes.find((ct) => ct.id === type)
+    return contentType ? contentType.icon : <FileText className="w-4 h-4 mr-2" />
+  }
+
+  // Get student status badge
+  const getStudentStatusBadge = (status, score) => {
+    switch (status) {
+      case "completed":
+        return (
+          <Badge variant="success" className="bg-green-500">
+            <CheckCircle2 className="w-3 h-3 mr-1" />
+            {score !== undefined ? `${score}%` : "Completed"}
+          </Badge>
+        )
+      case "in-progress":
+        return (
+          <Badge variant="secondary">
+            <Clock className="w-3 h-3 mr-1" />
+            In Progress
+          </Badge>
+        )
+      case "not-started":
+      default:
+        return (
+          <Badge variant="outline">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Not Started
+          </Badge>
+        )
+    }
+  }
+
+  // Calculate class average for a content item
+  const calculateClassAverage = (content) => {
+    if (!content.studentProgress?.submissions) return null
+
+    const completedSubmissions = content.studentProgress.submissions.filter(
+      (sub) => sub.status === "completed" && sub.score !== undefined,
+    )
+
+    if (completedSubmissions.length === 0) return null
+
+    const totalScore = completedSubmissions.reduce((sum, sub) => sum + sub.score, 0)
+    return Math.round(totalScore / completedSubmissions.length)
+  }
+
+  if (!currentClass || !curriculum) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Loading curriculum...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <div className="container py-6">
+        {/* Header */}
+        <div className="flex flex-col items-start justify-between mb-6 space-y-4 md:flex-row md:items-center md:space-y-0">
+          <div>
+            <div className="flex items-center space-x-2">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/teacher/dashboard">
+                  <ArrowLeft className="w-4 h-4 mr-1" />
+                  Back to Dashboard
+                </Link>
+              </Button>
+            </div>
+            <h1 className="text-2xl font-bold md:text-3xl">{currentClass.name} Curriculum</h1>
+            <p className="text-muted-foreground">View and manage the curriculum for this class</p>
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="grid gap-6 md:grid-cols-12">
+          {/* Lesson sidebar */}
+          <div className="md:col-span-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Lessons</CardTitle>
+                <CardDescription>Curriculum structure</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  {curriculum.lessons &&
+                    curriculum.lessons.map((lesson, index) => {
+                      const hasContent = lesson.contents && lesson.contents.length > 0
+                      if (!hasContent) return null
+
+                      return (
+                        <Button
+                          key={lesson.id || index}
+                          variant={activeLesson === index + 1 ? "default" : "ghost"}
+                          className="justify-start w-full"
+                          onClick={() => {
+                            setActiveLesson(index + 1)
+                            setActiveContent(null)
+                          }}
+                        >
+                          <span className="mr-2">{index + 1}.</span>
+                          {lesson.title}
+                          {hasContent && (
+                            <Badge variant="secondary" className="ml-auto">
+                              {lesson.contents.length}
+                            </Badge>
+                          )}
+                        </Button>
+                      )
+                    })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Content area */}
+          <div className="md:col-span-9">
+            {!activeContent && curriculum.lessons && curriculum.lessons.length > 0 ? (
+              // Lesson overview
+              <Card>
+                <CardHeader>
+                  <CardTitle>
+                    Lesson {activeLesson}: {curriculum.lessons[activeLesson - 1]?.title}
+                  </CardTitle>
+                  <CardDescription>
+                    {curriculum.lessons[activeLesson - 1]?.description
+                      ? renderLatex(curriculum.lessons[activeLesson - 1].description)
+                      : "No description provided"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {curriculum.lessons[activeLesson - 1]?.contents &&
+                    curriculum.lessons[activeLesson - 1].contents.length > 0 ? (
+                      curriculum.lessons[activeLesson - 1].contents.map((content) => (
+                        <Card key={content.id} className="overflow-hidden">
+                          <div
+                            className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+                            onClick={() => setActiveContent(content)}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center">
+                                {renderContentTypeIcon(content.type)}
+                                <div>
+                                  <CardTitle className="text-base">{content.title}</CardTitle>
+                                  <p className="text-sm text-muted-foreground">{renderLatex(content.description)}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Badge
+                                  variant={content.isPublished ? "success" : "outline"}
+                                  className={content.isPublished ? "bg-green-500" : ""}
+                                >
+                                  {content.isPublished ? "Published" : "Draft"}
+                                </Badge>
+                                <Button
+                                  variant={content.isPublished ? "destructive" : "default"}
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handlePublishContent(
+                                      content,
+                                      activeLesson - 1,
+                                      curriculum.lessons[activeLesson - 1].contents.indexOf(content),
+                                    )
+                                  }}
+                                >
+                                  {content.isPublished ? (
+                                    <>
+                                      <X className="w-4 h-4 mr-2" />
+                                      Unpublish
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="w-4 h-4 mr-2" />
+                                      Publish
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Show progress summary if available */}
+                            {content.studentProgress && (
+                              <div className="mt-3 pt-3 border-t">
+                                <div className="flex justify-between items-center">
+                                  <div className="text-sm">
+                                    <span className="font-medium">Student Progress:</span>{" "}
+                                    {content.studentProgress.submissions?.filter((s) => s.status === "completed")
+                                      .length || 0}
+                                    {" / "}
+                                    {content.studentProgress.submissions?.length || 0}
+                                    {" completed"}
+                                  </div>
+
+                                  {calculateClassAverage(content) !== null && (
+                                    <div className="text-sm">
+                                      <span className="font-medium">Class Average:</span>{" "}
+                                      {calculateClassAverage(content)}%
+                                    </div>
+                                  )}
+                                </div>
+
+                                <Progress
+                                  value={
+                                    content.studentProgress.submissions?.length
+                                      ? (content.studentProgress.submissions.filter((s) => s.status === "completed")
+                                          .length /
+                                          content.studentProgress.submissions.length) *
+                                        100
+                                      : 0
+                                  }
+                                  className="h-2 mt-2"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </Card>
+                      ))
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-8 border border-dashed rounded-lg">
+                        <FileText className="w-12 h-12 mb-4 text-muted-foreground" />
+                        <h3 className="text-lg font-medium">No content available</h3>
+                        <p className="text-sm text-muted-foreground">
+                          This lesson doesn't have any content yet. Contact an administrator to add curriculum
+                          materials.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : activeContent ? (
+              // Content detail view
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      {renderContentTypeIcon(activeContent.type)}
+                      <div>
+                        <CardTitle>{activeContent.title}</CardTitle>
+                        <CardDescription>{renderLatex(activeContent.description)}</CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setActiveContent(null)
+                          setActiveTab("content")
+                        }}
+                      >
+                        <ArrowLeft className="w-4 h-4 mr-2" />
+                        Back to Lesson
+                      </Button>
+                      <Button
+                        variant={activeContent.isPublished ? "destructive" : "default"}
+                        size="sm"
+                        onClick={() =>
+                          handlePublishContent(
+                            activeContent,
+                            activeLesson - 1,
+                            curriculum.lessons[activeLesson - 1].contents.findIndex((c) => c.id === activeContent.id),
+                          )
+                        }
+                      >
+                        {activeContent.isPublished ? (
+                          <>
+                            <X className="w-4 h-4 mr-2" />
+                            Unpublish
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Publish
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="content">Content</TabsTrigger>
+                      <TabsTrigger value="student-progress">
+                        Student Progress
+                        {activeContent.studentProgress?.submissions?.some((s) => s.status === "completed") && (
+                          <Badge variant="secondary" className="ml-2">
+                            {activeContent.studentProgress.submissions.filter((s) => s.status === "completed").length}
+                          </Badge>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="analytics">Analytics</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="content" className="space-y-6">
+                      {activeContent.problems && activeContent.problems.length > 0 ? (
+                        <div className="space-y-8">
+                          {activeContent.problems.map((problem, problemIndex) => (
+                            <div key={problemIndex} className="p-4 border rounded-lg">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center mb-2">
+                                    <p className="font-medium">Problem {problemIndex + 1}</p>
+                                    <Badge variant="outline" className="ml-2">
+                                      {problem.type === "multiple-choice"
+                                        ? "Multiple Choice"
+                                        : problem.type === "open-ended"
+                                          ? "Open Ended"
+                                          : "Math Expression"}
+                                    </Badge>
+                                    <Badge variant="secondary" className="ml-2">
+                                      {problem.points} {problem.points === 1 ? "point" : "points"}
+                                    </Badge>
+                                  </div>
+
+                                  <p className="mt-2 mb-4">{renderLatex(problem.question)}</p>
+
+                                  {problem.type === "multiple-choice" && (
+                                    <div className="space-y-3">
+                                      {problem.options.map((option, optionIndex) => (
+                                        <div
+                                          key={optionIndex}
+                                          className={`flex items-center space-x-2 p-2 rounded-md ${
+                                            optionIndex === problem.correctAnswer
+                                              ? "bg-green-50 dark:bg-green-900/20"
+                                              : ""
+                                          }`}
+                                        >
+                                          <div
+                                            className={`w-4 h-4 rounded-full flex items-center justify-center border ${
+                                              optionIndex === problem.correctAnswer
+                                                ? "bg-green-100 border-green-500 dark:bg-green-900 dark:border-green-400"
+                                                : "border-gray-300 dark:border-gray-600"
+                                            }`}
+                                          >
+                                            {optionIndex === problem.correctAnswer && (
+                                              <CheckCircle2 className="w-3 h-3 text-green-500 dark:text-green-400" />
+                                            )}
+                                          </div>
+                                          <span>{renderLatex(option)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {problem.type === "open-ended" && (
+                                    <div className="space-y-3">
+                                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                        <p className="font-medium text-sm">Correct Answer:</p>
+                                        <p>{problem.correctAnswer}</p>
+                                      </div>
+
+                                      {problem.keywords && problem.keywords.length > 0 && (
+                                        <div>
+                                          <p className="font-medium text-sm">Keywords for auto-grading:</p>
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {problem.keywords.map((keyword, keywordIndex) => (
+                                              <Badge key={keywordIndex} variant="outline">
+                                                {keyword}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center text-sm text-muted-foreground">
+                                        <span className="mr-2">Partial credit:</span>
+                                        {problem.allowPartialCredit ? (
+                                          <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                        ) : (
+                                          <X className="w-4 h-4 text-red-500" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {problem.type === "math-expression" && (
+                                    <div className="space-y-3">
+                                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                        <p className="font-medium text-sm">Correct Answer:</p>
+                                        <p>{renderLatex(`$$${problem.correctAnswer}$$`)}</p>
+                                      </div>
+
+                                      <div className="text-sm text-muted-foreground">
+                                        Numerical tolerance: ±{problem.tolerance}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {problem.explanation && (
+                                    <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                      <p className="font-medium text-sm">Explanation:</p>
+                                      <p className="text-sm">{renderLatex(problem.explanation)}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-4 border rounded-lg">
+                          <p>{renderLatex(activeContent.description)}</p>
+                          <p className="mt-4 text-sm text-muted-foreground">
+                            This content doesn't have any problems to solve.
+                          </p>
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="student-progress">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Student Progress</CardTitle>
+                          <CardDescription>Track student progress and manually grade submissions</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {students.length > 0 ? (
+                            <div className="space-y-4">
+                              {students.map((student) => {
+                                const submission = activeContent.studentProgress?.submissions?.find(
+                                  (sub) => sub.studentId === student.id,
+                                ) || { status: "not-started" }
+
+                                return (
+                                  <div key={student.id} className="p-4 border rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-3">
+                                        <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                                          {student.avatar}
+                                        </div>
+                                        <div>
+                                          <p className="font-medium">{student.name}</p>
+                                          <p className="text-sm text-muted-foreground">{student.email}</p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center space-x-3">
+                                        {getStudentStatusBadge(submission.status, submission.score)}
+
+                                        <div className="flex space-x-2">
+                                          {submission.status === "completed" ? (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleGradeOverride(student, activeContent)}
+                                            >
+                                              <Edit className="w-4 h-4 mr-2" />
+                                              Update Grade
+                                            </Button>
+                                          ) : (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleGradeOverride(student, activeContent)}
+                                            >
+                                              <Edit className="w-4 h-4 mr-2" />
+                                              Grade
+                                            </Button>
+                                          )}
+
+                                          {activeContent.problems && activeContent.problems.length > 0 && (
+                                            <Button
+                                              variant="default"
+                                              size="sm"
+                                              onClick={() => openManualGrading(student, activeContent)}
+                                            >
+                                              <Check className="w-4 h-4 mr-2" />
+                                              Manual Grading
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {submission.status === "completed" && (
+                                      <div className="mt-3 pt-3 border-t">
+                                        <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                            <p className="text-sm text-muted-foreground">Submitted:</p>
+                                            <p className="text-sm">
+                                              {submission.submittedAt
+                                                ? new Date(submission.submittedAt).toLocaleString()
+                                                : "N/A"}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-sm text-muted-foreground">Graded:</p>
+                                            <p className="text-sm">
+                                              {submission.gradedBy
+                                                ? `${submission.gradedBy === "auto" ? "Auto-graded" : "Teacher"} on ${new Date(submission.gradedAt).toLocaleString()}`
+                                                : "N/A"}
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        {submission.feedback && (
+                                          <div className="mt-2">
+                                            <p className="text-sm text-muted-foreground">Feedback:</p>
+                                            <p className="text-sm p-2 bg-slate-50 dark:bg-slate-800 rounded-md mt-1">
+                                              {submission.feedback}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {submission.status === "in-progress" && submission.lastActive && (
+                                      <div className="mt-3 pt-3 border-t">
+                                        <p className="text-sm text-muted-foreground">
+                                          Last active: {new Date(submission.lastActive).toLocaleString()}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-8 text-center">
+                              <Users className="w-12 h-12 mb-4 text-muted-foreground" />
+                              <h3 className="text-lg font-medium">No students enrolled</h3>
+                              <p className="text-sm text-muted-foreground max-w-md">
+                                There are no students enrolled in this class yet. Contact an administrator to enroll
+                                students.
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+
+                    <TabsContent value="analytics">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Performance Analytics</CardTitle>
+                          <CardDescription>Insights into student performance on this content</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {activeContent.studentProgress?.submissions?.some((s) => s.status === "completed") ? (
+                            <div className="space-y-6">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <Card>
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm">Class Average</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold">{calculateClassAverage(activeContent)}%</div>
+                                    <Progress value={calculateClassAverage(activeContent)} className="h-2 mt-2" />
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm">Completion Rate</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold">
+                                      {Math.round(
+                                        (activeContent.studentProgress.submissions.filter(
+                                          (s) => s.status === "completed",
+                                        ).length /
+                                          activeContent.studentProgress.submissions.length) *
+                                          100,
+                                      )}
+                                      %
+                                    </div>
+                                    <Progress
+                                      value={
+                                        (activeContent.studentProgress.submissions.filter(
+                                          (s) => s.status === "completed",
+                                        ).length /
+                                          activeContent.studentProgress.submissions.length) *
+                                        100
+                                      }
+                                      className="h-2 mt-2"
+                                    />
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm">Highest Score</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold">
+                                      {Math.max(
+                                        ...activeContent.studentProgress.submissions
+                                          .filter((s) => s.status === "completed" && s.score !== undefined)
+                                          .map((s) => s.score),
+                                        0,
+                                      )}
+                                      %
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </div>
+
+                              <Card>
+                                <CardHeader>
+                                  <CardTitle>Score Distribution</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                      <span>90-100%</span>
+                                      <div className="w-full mx-4">
+                                        <Progress
+                                          value={
+                                            (activeContent.studentProgress.submissions.filter(
+                                              (s) => s.status === "completed" && s.score >= 90,
+                                            ).length /
+                                              activeContent.studentProgress.submissions.filter(
+                                                (s) => s.status === "completed",
+                                              ).length) *
+                                            100
+                                          }
+                                          className="h-4"
+                                        />
+                                      </div>
+                                      <span>
+                                        {
+                                          activeContent.studentProgress.submissions.filter(
+                                            (s) => s.status === "completed" && s.score >= 90,
+                                          ).length
+                                        }
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span>80-89%</span>
+                                      <div className="w-full mx-4">
+                                        <Progress
+                                          value={
+                                            (activeContent.studentProgress.submissions.filter(
+                                              (s) => s.status === "completed" && s.score >= 80 && s.score < 90,
+                                            ).length /
+                                              activeContent.studentProgress.submissions.filter(
+                                                (s) => s.status === "completed",
+                                              ).length) *
+                                            100
+                                          }
+                                          className="h-4"
+                                        />
+                                      </div>
+                                      <span>
+                                        {
+                                          activeContent.studentProgress.submissions.filter(
+                                            (s) => s.status === "completed" && s.score >= 80 && s.score < 90,
+                                          ).length
+                                        }
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span>70-79%</span>
+                                      <div className="w-full mx-4">
+                                        <Progress
+                                          value={
+                                            (activeContent.studentProgress.submissions.filter(
+                                              (s) => s.status === "completed" && s.score >= 70 && s.score < 80,
+                                            ).length /
+                                              activeContent.studentProgress.submissions.filter(
+                                                (s) => s.status === "completed",
+                                              ).length) *
+                                            100
+                                          }
+                                          className="h-4"
+                                        />
+                                      </div>
+                                      <span>
+                                        {
+                                          activeContent.studentProgress.submissions.filter(
+                                            (s) => s.status === "completed" && s.score >= 70 && s.score < 80,
+                                          ).length
+                                        }
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span>Below 70%</span>
+                                      <div className="w-full mx-4">
+                                        <Progress
+                                          value={
+                                            (activeContent.studentProgress.submissions.filter(
+                                              (s) => s.status === "completed" && s.score < 70,
+                                            ).length /
+                                              activeContent.studentProgress.submissions.filter(
+                                                (s) => s.status === "completed",
+                                              ).length) *
+                                            100
+                                          }
+                                          className="h-4"
+                                        />
+                                      </div>
+                                      <span>
+                                        {
+                                          activeContent.studentProgress.submissions.filter(
+                                            (s) => s.status === "completed" && s.score < 70,
+                                          ).length
+                                        }
+                                      </span>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+
+                              {activeContent.problems && activeContent.problems.length > 0 && (
+                                <Card>
+                                  <CardHeader>
+                                    <CardTitle>Problem Analysis</CardTitle>
+                                    <CardDescription>Performance breakdown by problem</CardDescription>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="space-y-4">
+                                      {activeContent.problems.map((problem, index) => {
+                                        // Calculate success rate for this problem
+                                        const problemResults = activeContent.studentProgress.submissions
+                                          .filter((sub) => sub.status === "completed" && sub.problemResults)
+                                          .map((sub) => sub.problemResults[index])
+                                          .filter(Boolean)
+
+                                        const correctCount = problemResults.filter((result) => result.correct).length
+                                        const totalAttempts = problemResults.length
+                                        const successRate = totalAttempts > 0 ? (correctCount / totalAttempts) * 100 : 0
+
+                                        return (
+                                          <div key={index} className="border rounded-lg p-4">
+                                            <div className="flex justify-between items-center mb-2">
+                                              <div>
+                                                <p className="font-medium">Problem {index + 1}</p>
+                                                <p className="text-sm text-muted-foreground">
+                                                  {problem.type === "multiple-choice"
+                                                    ? "Multiple Choice"
+                                                    : problem.type === "open-ended"
+                                                      ? "Open Ended"
+                                                      : "Math Expression"}
+                                                </p>
+                                              </div>
+                                              <Badge variant={successRate > 70 ? "default" : "outline"}>
+                                                {Math.round(successRate)}% Success Rate
+                                              </Badge>
+                                            </div>
+                                            <Progress value={successRate} className="h-2 mt-2" />
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center p-8 text-center">
+                              <BarChart className="w-12 h-12 mb-4 text-muted-foreground" />
+                              <h3 className="text-lg font-medium">No analytics available</h3>
+                              <p className="text-sm text-muted-foreground max-w-md">
+                                Analytics will be available once students complete this content.
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-8 border border-dashed rounded-lg">
+                <FileText className="w-12 h-12 mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-medium">No curriculum available</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-md">
+                  This class doesn't have any curriculum content yet. Contact an administrator to add curriculum
+                  materials.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Publish confirmation dialog */}
+      <AlertDialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {contentToPublish?.content.isPublished ? "Unpublish Content" : "Publish Content"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {contentToPublish?.content.isPublished
+                ? "Are you sure you want to unpublish this content? Students will no longer be able to access it."
+                : "Are you sure you want to publish this content? It will be visible to all students in this class."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPublish}>
+              {contentToPublish?.content.isPublished ? "Unpublish" : "Publish"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Grade override dialog */}
+      <AlertDialog open={gradeOverrideDialogOpen} onOpenChange={setGradeOverrideDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{studentToGrade ? `Grade ${studentToGrade.name}` : "Grade Student"}</AlertDialogTitle>
+            <AlertDialogDescription>Manually update the student's grade and provide feedback</AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div>
+              <Label htmlFor="override-score">Score (%)</Label>
+              <Input
+                id="override-score"
+                type="number"
+                min="0"
+                max="100"
+                value={overrideScore}
+                onChange={(e) => setOverrideScore(e.target.value)}
+                placeholder="Enter score (0-100)"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="override-feedback">Feedback (Optional)</Label>
+              <Textarea
+                id="override-feedback"
+                value={overrideFeedback}
+                onChange={(e) => setOverrideFeedback(e.target.value)}
+                placeholder="Provide feedback to the student"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Label htmlFor="half-credit">Half Credit</Label>
+            <Switch id="half-credit" checked={halfCredit} onCheckedChange={setHalfCredit} />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={saveGradeOverride}>Save Grade</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Manual grading dialog */}
+      <AlertDialog open={manualGradingDialogOpen} onOpenChange={setManualGradingDialogOpen} className="max-w-4xl">
+        <AlertDialogContent className="max-w-4xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Manual Grading: {studentToGrade?.name}</AlertDialogTitle>
+            <AlertDialogDescription>Grade each problem individually and provide feedback</AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto pr-2">
+            {activeContent?.problems?.map((problem, index) => (
+              <div key={index} className="mb-6 p-4 border rounded-lg">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-medium">Problem {index + 1}</h3>
+                    <p className="text-sm text-muted-foreground">{renderLatex(problem.question)}</p>
+                  </div>
+                  <Badge variant="outline">
+                    {problem.type === "multiple-choice"
+                      ? "Multiple Choice"
+                      : problem.type === "open-ended"
+                        ? "Open Ended"
+                        : "Math Expression"}
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div className="border rounded-lg p-3">
+                    <h4 className="text-sm font-medium mb-2">Student Answer</h4>
+                    <p className="text-sm">
+                      {problem.type === "multiple-choice" &&
+                      studentSubmission?.answers?.multipleChoice?.[index] !== undefined
+                        ? `Option ${Number.parseInt(studentSubmission.answers.multipleChoice[index]) + 1}: ${problem.options[studentSubmission.answers.multipleChoice[index]]}`
+                        : problem.type === "math-expression" && studentSubmission?.answers?.mathExpression?.[index]
+                          ? renderLatex(`$$${studentSubmission.answers.mathExpression[index]}$$`)
+                          : problem.type === "open-ended" && studentSubmission?.answers?.openEnded?.[index]
+                            ? studentSubmission.answers.openEnded[index]
+                            : "No answer provided"}
+                    </p>
+                  </div>
+
+                  <div className="border rounded-lg p-3">
+                    <h4 className="text-sm font-medium mb-2">Correct Answer</h4>
+                    <p className="text-sm">
+                      {problem.type === "multiple-choice"
+                        ? `Option ${Number.parseInt(problem.correctAnswer) + 1}: ${problem.options[problem.correctAnswer]}`
+                        : problem.type === "math-expression"
+                          ? renderLatex(`$$${problem.correctAnswer}$$`)
+                          : problem.correctAnswer}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <Label htmlFor={`problem-${index}-correct`}>Mark as Correct</Label>
+                      <Switch
+                        id={`problem-${index}-correct`}
+                        checked={problemGrades[index]?.correct || false}
+                        onCheckedChange={(checked) => {
+                          setProblemGrades({
+                            ...problemGrades,
+                            [index]: {
+                              ...problemGrades[index],
+                              correct: checked,
+                              points: checked ? problem.points : 0,
+                            },
+                          })
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor={`problem-${index}-points`}>
+                      Points ({problemGrades[index]?.points || 0}/{problem.points})
+                    </Label>
+                    <Slider
+                      id={`problem-${index}-points`}
+                      min={0}
+                      max={problem.points}
+                      step={1}
+                      value={[problemGrades[index]?.points || 0]}
+                      onValueChange={(value) => {
+                        setProblemGrades({
+                          ...problemGrades,
+                          [index]: {
+                            ...problemGrades[index],
+                            points: value[0],
+                            correct: value[0] === problem.points,
+                          },
+                        })
+                      }}
+                      className="mt-2"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor={`problem-${index}-feedback`}>Problem-specific Feedback</Label>
+                    <Textarea
+                      id={`problem-${index}-feedback`}
+                      value={problemGrades[index]?.feedback || ""}
+                      onChange={(e) => {
+                        setProblemGrades({
+                          ...problemGrades,
+                          [index]: {
+                            ...problemGrades[index],
+                            feedback: e.target.value,
+                          },
+                        })
+                      }}
+                      placeholder="Provide feedback for this problem"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={saveManualGrading}>
+              <Save className="w-4 h-4 mr-2" />
+              Save Grading
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}
