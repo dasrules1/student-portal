@@ -67,16 +67,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session.user)
       setRole(session.role)
       
-      // Wait for a small delay to ensure state is updated
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // Wait for a longer delay to ensure state is properly updated
+      await new Promise(resolve => setTimeout(resolve, 500))
       
       // Then handle navigation based on role
       if (session.role === 'admin') {
-        await router.push('/admin/dashboard')
+        window.location.href = '/admin/dashboard'
       } else if (session.role === 'student') {
-        await router.push('/student/dashboard')
+        window.location.href = '/student/dashboard'
       } else {
-        await router.push('/teacher/dashboard')
+        window.location.href = '/teacher/dashboard'
       }
     } catch (error: any) {
       console.error('Sign in error:', error)
