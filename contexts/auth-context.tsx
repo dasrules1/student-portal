@@ -159,33 +159,35 @@ export function useAuth() {
 
 // Custom hook for protected routes
 export function useRequireAuth(role?: "student" | "teacher" | "admin" | null) {
-  const { user, isLoading } = useAuth()
+  const { user, role: userRole, loading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!loading) {
       if (!user) {
         // Not logged in, redirect to login
         console.log("Not logged in, redirecting to login")
         const currentRole = pathname.split("/")[1] // Extract role from URL path
         router.push(`/login?role=${currentRole}`)
-      } else if (role) {
+      } else if (role && userRole) {
         // Check for role requirements
-        console.log(`Checking role requirements: user role=${user.role}, required role=${role}`)
-        if (role === "admin" && user.role !== "admin") {
-          console.log("Admin role required, redirecting")
+        console.log(`Checking role requirements: user role=${userRole}, required role=${role}`)
+        // Only redirect if the user doesn't have the required role
+        if (role === "admin" && userRole !== "admin") {
+          console.log("Admin role required but user is not admin, redirecting")
           router.push("/login?role=admin")
-        } else if (role === "teacher" && user.role !== "teacher" && user.role !== "admin") {
-          console.log("Teacher role required, redirecting")
+        } else if (role === "teacher" && userRole !== "teacher" && userRole !== "admin") {
+          console.log("Teacher role required but user is not teacher or admin, redirecting")
           router.push("/login?role=teacher")
-        } else if (role === "student" && user.role !== "student") {
-          console.log("Student role required, redirecting")
+        } else if (role === "student" && userRole !== "student") {
+          console.log("Student role required but user is not student, redirecting")
           router.push("/login?role=student")
         }
+        // If user has the correct role, do nothing (allow access)
       }
     }
-  }, [isLoading, user, router, pathname, role])
+  }, [loading, user, userRole, router, pathname, role])
 
-  return { user, isLoading }
+  return { user, loading }
 }
