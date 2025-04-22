@@ -62,16 +62,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session.error) {
         throw new Error(session.error)
       }
+      
+      // First set the user and role
       setUser(session.user)
       setRole(session.role)
       
-      // Updated routing logic to handle admin role
+      // Wait for a small delay to ensure state is updated
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Then handle navigation based on role
       if (session.role === 'admin') {
-        router.push('/admin/dashboard')
+        await router.push('/admin/dashboard')
       } else if (session.role === 'student') {
-        router.push('/student/dashboard')
+        await router.push('/student/dashboard')
       } else {
-        router.push('/teacher/dashboard')
+        await router.push('/teacher/dashboard')
       }
     } catch (error: any) {
       console.error('Sign in error:', error)
