@@ -64,7 +64,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setUser(session.user)
       setRole(session.role)
-      router.push(session.role === 'student' ? '/student/dashboard' : '/teacher/dashboard')
+      
+      // Updated routing logic to handle admin role
+      if (session.role === 'admin') {
+        router.push('/admin/dashboard')
+      } else if (session.role === 'student') {
+        router.push('/student/dashboard')
+      } else {
+        router.push('/teacher/dashboard')
+      }
     } catch (error: any) {
       console.error('Sign in error:', error)
       throw error
