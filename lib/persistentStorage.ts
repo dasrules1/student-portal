@@ -580,35 +580,138 @@ export class PersistentStorage {
   public getActivityLogs(): ActivityLog[] {
     try {
       this.ensureInitialized();
+      
+      // Check if activityLogs exists and is an array
       if (Array.isArray(this.activityLogs)) {
-        return [...this.activityLogs];
+        // Additional validation to ensure each log is valid
+        const validatedLogs = this.activityLogs.filter(log => 
+          log && 
+          typeof log === 'object' && 
+          typeof log.id === 'string' &&
+          typeof log.action === 'string'
+        );
+        
+        if (validatedLogs.length > 0) {
+          return [...validatedLogs];
+        }
       }
-      // If activityLogs isn't an array, reset it to default and return
+      
+      // Reset activityLogs if it's not valid
+      console.log("Activity logs were invalid, resetting to defaults");
       this.activityLogs = [...initialActivityLogs];
+      
+      // Ensure initialActivityLogs is valid too
+      if (!Array.isArray(initialActivityLogs) || initialActivityLogs.length === 0) {
+        console.log("Initial activity logs data is also invalid, creating fallback logs");
+        this.activityLogs = [
+          {
+            id: "log_fallback_1",
+            action: "System Initialized",
+            details: "Default logs created",
+            timestamp: new Date().toISOString(),
+            category: "System"
+          }
+        ];
+      }
+      
+      this.saveToStorage();
       return [...this.activityLogs];
     } catch (error) {
-      console.error("Error getting activity logs:", error);
-      return [...initialActivityLogs];
+      console.error("Critical error getting activity logs:", error);
+      
+      // Last resort fallback
+      const fallbackLogs = [
+        {
+          id: "log_error_recovery",
+          action: "Error Recovery",
+          details: "System recovered from error",
+          timestamp: new Date().toISOString(),
+          category: "System Error"
+        }
+      ];
+      
+      // Try to update activityLogs if possible
+      try {
+        this.activityLogs = fallbackLogs;
+        this.saveToStorage();
+      } catch (e) {
+        console.error("Failed to save fallback logs:", e);
+      }
+      
+      return fallbackLogs;
     }
   }
 
-  // Add activity log
+  // Add activity log with extensive validation
   public addActivityLog(log: Omit<ActivityLog, "id">): ActivityLog {
-    this.ensureInitialized()
-
-    // Generate ID
-    const timestamp = Date.now()
-    const randomStr = Math.random().toString(36).substring(2, 9)
-    const newId = `log_${timestamp}_${randomStr}`
-
-    // Create log
-    const newLog = { ...log, id: newId }
-
-    // Add log
-    this.activityLogs.unshift(newLog)
-    this.saveToStorage()
-
-    return newLog
+    try {
+      this.ensureInitialized();
+      
+      // Validate log object
+      if (!log || typeof log !== 'object') {
+        throw new Error("Invalid activity log object");
+      }
+      
+      // Generate ID
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 9);
+      const newId = `log_${timestamp}_${randomStr}`;
+      
+      // Create log with defaults for missing properties
+      const newLog = { 
+        id: newId,
+        action: log.action || "Unknown Action",
+        details: log.details || "",
+        timestamp: log.timestamp || new Date().toISOString(),
+        category: log.category || "System" 
+      };
+      
+      // Ensure activityLogs is initialized as an array
+      if (!Array.isArray(this.activityLogs)) {
+        console.log("Activity logs was not an array, initializing empty array");
+        this.activityLogs = [];
+      }
+      
+      // Add log to the beginning of the array
+      this.activityLogs.unshift(newLog);
+      
+      // Trim array if it gets too long (optional)
+      if (this.activityLogs.length > 100) {
+        this.activityLogs = this.activityLogs.slice(0, 100);
+      }
+      
+      // Save to storage
+      try {
+        this.saveToStorage();
+      } catch (e) {
+        console.error("Error saving logs to storage:", e);
+      }
+      
+      return newLog;
+    } catch (error) {
+      console.error("Error adding activity log:", error);
+      
+      // Create a fallback log
+      const fallbackLog = {
+        id: `log_fallback_${Date.now()}`,
+        action: log?.action || "Failed Log Creation",
+        details: log?.details || "Error occurred while creating log",
+        timestamp: new Date().toISOString(),
+        category: log?.category || "Error"
+      };
+      
+      // Try to add the fallback log
+      try {
+        if (Array.isArray(this.activityLogs)) {
+          this.activityLogs.unshift(fallbackLog);
+          this.saveToStorage();
+        }
+      } catch (e) {
+        console.error("Failed to save fallback log:", e);
+      }
+      
+      return fallbackLog;
+    }
   }
 
   // Save curriculum
@@ -619,7 +722,7 @@ export class PersistentStorage {
       const q = query(curriculumRef, where("classId", "==", classId))
       const querySnapshot = await getDocs(q)
 
-      if (!querySnapshot.empty) {
+      if (querySnapshot && querySnapshot.docs && querySnapshot.docs.length > 0) {
         const docRef = doc(db, "curriculum", querySnapshot.docs[0].id)
         await updateDoc(docRef, {
           content: curriculum,
@@ -650,7 +753,7 @@ export class PersistentStorage {
       const q = query(curriculumRef, where("classId", "==", classId))
       const querySnapshot = await getDocs(q)
 
-      if (!querySnapshot.empty) {
+      if (querySnapshot && querySnapshot.docs && querySnapshot.docs.length > 0) {
         return querySnapshot.docs[0].data().content
       }
 
@@ -680,7 +783,7 @@ export class PersistentStorage {
       const q = query(curriculumRef, where("classId", "==", classId))
       const querySnapshot = await getDocs(q)
 
-      if (!querySnapshot.empty) {
+      if (querySnapshot && querySnapshot.docs && querySnapshot.docs.length > 0) {
         const docRef = doc(db, "curriculum", querySnapshot.docs[0].id)
         await updateDoc(docRef, {
           content: curriculum,

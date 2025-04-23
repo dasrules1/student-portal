@@ -450,65 +450,97 @@ class StorageService {
       const logsRef = collection(db, 'activityLogs');
       const snapshot = await getDocs(logsRef);
       
-      if (snapshot.docs && snapshot.docs.length > 0) {
-        const logs = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            action: data.action || '',
-            details: data.details || '',
-            timestamp: data.timestamp || '',
-            category: data.category || ''
-          } as ActivityLog;
-        });
-        
-        if (Array.isArray(logs)) {
-          console.log(`Retrieved ${logs.length} activity logs from Firestore`);
-          this.activityLogs = logs;
-          return logs;
+      if (snapshot && snapshot.docs && Array.isArray(snapshot.docs) && snapshot.docs.length > 0) {
+        try {
+          const logs = snapshot.docs.map((doc) => {
+            if (!doc || typeof doc.data !== 'function') return null;
+            
+            const data = doc.data();
+            return {
+              id: doc.id || `log_${Date.now()}`,
+              action: data.action || '',
+              details: data.details || '',
+              timestamp: data.timestamp || new Date().toISOString(),
+              category: data.category || 'General'
+            };
+          }).filter(log => log !== null);
+          
+          if (Array.isArray(logs) && logs.length > 0) {
+            console.log(`Retrieved ${logs.length} activity logs from Firestore`);
+            this.activityLogs = logs;
+            return logs;
+          }
+        } catch (mapError) {
+          console.error("Error mapping Firestore logs:", mapError);
         }
       }
     } catch (error) {
       console.error("Error fetching activity logs from Firestore:", error);
     }
     
-    // Fall back to localStorage
+    // Fall back to localStorage with extensive error handling
     try {
-      const localLogs = persistentStorage.getActivityLogs();
-      // Ensure we have a valid array of logs
-      if (localLogs && Array.isArray(localLogs)) {
-        console.log('Falling back to local storage activity logs:', localLogs);
-        this.activityLogs = localLogs;
-        return localLogs;
+      let localLogs = null;
+      try {
+        localLogs = persistentStorage.getActivityLogs();
+      } catch (e) {
+        console.error("Error calling persistent storage getActivityLogs:", e);
+      }
+
+      // Ensure we have a valid array of logs with multiple validation layers
+      if (localLogs && Array.isArray(localLogs) && localLogs.length > 0) {
+        // Additional validation to ensure each log has required properties
+        const validLogs = localLogs.filter(log => 
+          log && typeof log === 'object' && log.id && typeof log.id === 'string'
+        );
+        
+        if (validLogs.length > 0) {
+          console.log('Falling back to local storage activity logs:', validLogs);
+          this.activityLogs = validLogs;
+          return validLogs;
+        }
       }
     } catch (error) {
-      console.error("Error getting activity logs from local storage:", error);
+      console.error("Critical error getting activity logs from local storage:", error);
     }
     
-    // If everything fails, return empty array
+    // If everything fails, return an empty array
     console.log('Unable to load activity logs, returning empty array');
     return [];
   }
 
   async addActivityLog(log: Omit<ActivityLog, "id">): Promise<ActivityLog> {
     try {
+      if (!log || typeof log !== 'object') {
+        throw new Error('Invalid activity log object');
+      }
+      
       console.log("Adding activity log to Firestore:", log);
+      
+      // Ensure we have minimal required properties
+      const safeLog = {
+        action: log.action || 'Unknown action',
+        details: log.details || '',
+        timestamp: log.timestamp || new Date().toISOString(),
+        category: log.category || 'General',
+        createdAt: new Date().toISOString()
+      };
       
       // Add to Firestore
       const logsRef = collection(db, 'activityLogs');
-      const docRef = await addDoc(logsRef, {
-        ...log,
-        createdAt: new Date().toISOString()
-      });
+      const docRef = await addDoc(logsRef, safeLog);
       
-      const newLog = { id: docRef.id, ...log };
+      const newLog = { id: docRef.id, ...safeLog };
       
-      // Update local cache
+      // Update local cache safely
+      if (!Array.isArray(this.activityLogs)) {
+        this.activityLogs = [];
+      }
       this.activityLogs.push(newLog);
       
       // Also add to persistent storage as backup
       try {
-        persistentStorage.addActivityLog(log);
+        persistentStorage.addActivityLog(safeLog);
       } catch (e) {
         console.log('Error adding activity log to persistent storage:', e);
       }
@@ -516,8 +548,21 @@ class StorageService {
       return newLog;
     } catch (error) {
       console.error('Error adding activity log to Firestore:', error);
-      // Fallback to localStorage
-      return persistentStorage.addActivityLog(log);
+      // Fallback to localStorage with error handling
+      try {
+        return persistentStorage.addActivityLog(log);
+      } catch (e) {
+        console.error('Critical error adding activity log:', e);
+        // Create a fallback log with generated ID
+        const fallbackLog = {
+          id: `log_fallback_${Date.now()}`,
+          action: log?.action || 'Unknown action',
+          details: log?.details || 'Error creating log',
+          timestamp: new Date().toISOString(),
+          category: log?.category || 'Error'
+        };
+        return fallbackLog;
+      }
     }
   }
 
