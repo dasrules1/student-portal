@@ -72,14 +72,14 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     // Check if user is an admin
-    const user = sessionManager.getCurrentUser()
-    if (!user || user.role !== "admin") {
+    const { user, role } = sessionManager.getCurrentUser()
+    if (!user || role !== "admin") {
       toast({
         title: "Access denied",
         description: "You must be logged in as an admin to view this page",
         variant: "destructive",
       })
-      router.push("/admin-portal")
+      router.push("/login?role=admin")
       return
     }
 
