@@ -47,8 +47,15 @@ export default function AdminProfile() {
     if (userData) {
       setFormData({
         ...formData,
-        name: userData.name,
-        email: userData.email,
+        name: userData.name || "Dylan Sood",
+        email: userData.email || "dylan.sood@educationmore.org",
+      })
+    } else {
+      // Set default values if no user data found
+      setFormData({
+        ...formData,
+        name: "Dylan Sood",
+        email: "dylan.sood@educationmore.org",
       })
     }
   }, [router, toast])

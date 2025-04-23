@@ -133,11 +133,11 @@ export function AdminSidebar() {
       <div className="p-4">
         <div className="flex items-center mb-4 gap-x-2">
           <div className="flex items-center justify-center w-8 h-8 text-white rounded-full bg-primary">
-            {user?.name?.charAt(0) || "A"}
+            {user?.name?.charAt(0) || "D"}
           </div>
           <div className="text-sm">
-            <p className="font-medium">{user?.name || "Admin User"}</p>
-            <p className="text-xs text-gray-500">{user?.email || "admin@example.com"}</p>
+            <p className="font-medium">{user?.name || "Dylan Sood"}</p>
+            <p className="text-xs text-gray-500">{user?.email || "dylan.sood@educationmore.org"}</p>
           </div>
         </div>
         <Button variant="outline" className="w-full justify-start" onClick={handleSignOut}>
