@@ -578,8 +578,18 @@ export class PersistentStorage {
 
   // Get activity logs
   public getActivityLogs(): ActivityLog[] {
-    this.ensureInitialized()
-    return [...this.activityLogs]
+    try {
+      this.ensureInitialized();
+      if (Array.isArray(this.activityLogs)) {
+        return [...this.activityLogs];
+      }
+      // If activityLogs isn't an array, reset it to default and return
+      this.activityLogs = [...initialActivityLogs];
+      return [...this.activityLogs];
+    } catch (error) {
+      console.error("Error getting activity logs:", error);
+      return [...initialActivityLogs];
+    }
   }
 
   // Add activity log

@@ -450,7 +450,7 @@ class StorageService {
       const logsRef = collection(db, 'activityLogs');
       const snapshot = await getDocs(logsRef);
       
-      if (snapshot.docs.length > 0) {
+      if (snapshot.docs && snapshot.docs.length > 0) {
         const logs = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
           const data = doc.data();
           return {
@@ -462,19 +462,32 @@ class StorageService {
           } as ActivityLog;
         });
         
-        console.log(`Retrieved ${logs.length} activity logs from Firestore`);
-        this.activityLogs = logs;
-        return logs;
+        if (Array.isArray(logs)) {
+          console.log(`Retrieved ${logs.length} activity logs from Firestore`);
+          this.activityLogs = logs;
+          return logs;
+        }
       }
     } catch (error) {
       console.error("Error fetching activity logs from Firestore:", error);
     }
     
     // Fall back to localStorage
-    const localLogs = persistentStorage.getActivityLogs();
-    console.log('Falling back to local storage activity logs:', localLogs);
-    this.activityLogs = localLogs;
-    return localLogs;
+    try {
+      const localLogs = persistentStorage.getActivityLogs();
+      // Ensure we have a valid array of logs
+      if (localLogs && Array.isArray(localLogs)) {
+        console.log('Falling back to local storage activity logs:', localLogs);
+        this.activityLogs = localLogs;
+        return localLogs;
+      }
+    } catch (error) {
+      console.error("Error getting activity logs from local storage:", error);
+    }
+    
+    // If everything fails, return empty array
+    console.log('Unable to load activity logs, returning empty array');
+    return [];
   }
 
   async addActivityLog(log: Omit<ActivityLog, "id">): Promise<ActivityLog> {
