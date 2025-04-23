@@ -64,48 +64,85 @@ export default function TeacherDashboard() {
 
     setTeacherData(currentUser)
 
-    // Get classes assigned to this teacher
-    const allClasses = storage.getClasses()
-    const teacherClasses = allClasses.filter(
-      (classItem) => classItem.teacher === currentUser.name || classItem.teacherId === currentUser.id,
-    )
-    setClasses(teacherClasses)
+    // Safely load teacher's classes using our new safe method
+    const loadData = async () => {
+      try {
+        // Use our new safe method that guarantees an array
+        const allClasses = await storage.getSafeClasses();
+        console.log("Loaded classes:", allClasses);
+        
+        // Filter teacher's classes
+        const teacherClasses = Array.isArray(allClasses) 
+          ? allClasses.filter(classItem => 
+              classItem.teacher === currentUser.name || 
+              classItem.teacherId === currentUser.id)
+          : [];
+        
+        setClasses(teacherClasses);
 
-    // Get all students
-    const allUsers = storage.getUsers()
-    const classStudents = allUsers.filter((user) => {
-      return (
-        user.role === "student" &&
-        teacherClasses.some(
-          (cls) => user.classes.includes(cls.id) || (cls.enrolledStudents && cls.enrolledStudents.includes(user.id)),
-        )
-      )
-    })
-    setStudents(classStudents)
-
-    // Get assignments for this teacher's classes
-    const allAssignments: any[] = []
-    teacherClasses.forEach((classItem) => {
-      if (classItem.curriculum && classItem.curriculum.lessons) {
-        classItem.curriculum.lessons.forEach((lesson: any) => {
-          if (lesson.contents) {
-            lesson.contents.forEach((content: any) => {
-              if (content.isPublished) {
-                allAssignments.push({
-                  ...content,
-                  classId: classItem.id,
-                  className: classItem.name,
-                  lessonId: lesson.id,
-                  lessonTitle: lesson.title,
-                })
-              }
-            })
+        // Get all students
+        try {
+          const allUsers = await storage.getUsers();
+          
+          if (Array.isArray(allUsers) && Array.isArray(teacherClasses)) {
+            const classStudents = allUsers.filter((user) => {
+              return (
+                user.role === "student" &&
+                teacherClasses.some(
+                  (cls) => 
+                    (user.classes && Array.isArray(user.classes) && user.classes.includes(cls.id)) || 
+                    (cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && cls.enrolledStudents.includes(user.id))
+                )
+              );
+            });
+            setStudents(classStudents);
+          } else {
+            setStudents([]);
           }
-        })
-      }
-    })
+        } catch (userError) {
+          console.error("Error loading users:", userError);
+          setStudents([]);
+        }
 
-    setAssignments(allAssignments)
+        // Get assignments for this teacher's classes
+        const allAssignments: any[] = [];
+        if (Array.isArray(teacherClasses)) {
+          teacherClasses.forEach((classItem) => {
+            if (classItem.curriculum && classItem.curriculum.lessons) {
+              classItem.curriculum.lessons.forEach((lesson: any) => {
+                if (lesson.contents) {
+                  lesson.contents.forEach((content: any) => {
+                    if (content.isPublished) {
+                      allAssignments.push({
+                        ...content,
+                        classId: classItem.id,
+                        className: classItem.name,
+                        lessonId: lesson.id,
+                        lessonTitle: lesson.title,
+                      });
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+        setAssignments(allAssignments);
+      } catch (error) {
+        console.error("Error loading data:", error);
+        toast({
+          title: "Error loading data",
+          description: "There was a problem loading your dashboard data.",
+          variant: "destructive",
+        });
+        // Set default empty arrays
+        setClasses([]);
+        setStudents([]);
+        setAssignments([]);
+      }
+    };
+
+    loadData();
   }, [router, toast, searchParams])
 
   const handleViewClass = (classId: string) => {

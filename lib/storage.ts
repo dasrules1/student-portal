@@ -325,47 +325,97 @@ class StorageService {
   // Classes
   async getClasses(): Promise<Class[]> {
     try {
-      // Load from Firestore
-      const classesRef = collection(db, 'classes');
-      const snapshot = await getDocs(classesRef);
+      // Create a safe fallback array
+      const fallbackClasses: Class[] = [];
       
-      if (snapshot.docs.length > 0) {
-        console.log(`Retrieved ${snapshot.docs.length} classes from Firestore`);
+      // Try to load from Firestore
+      try {
+        console.log("Getting classes from Firestore...");
+        const classesRef = collection(db, 'classes');
+        const snapshot = await getDocs(classesRef);
         
-        const classesWithData = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name || '',
-            teacher: data.teacher || 'Unknown Teacher',
-            location: data.location || '',
-            meetingDates: data.meetingDates || '',
-            startDate: data.startDate || '',
-            endDate: data.endDate || '',
-            startTime: data.startTime || '',
-            endTime: data.endTime || '',
-            virtualLink: data.virtualLink || '',
-            status: data.status || 'active',
-            students: data.students || 0,
-            enrolledStudents: data.enrolledStudents || [],
-            subject: data.subject || '',
-            meeting_day: data.meeting_day || ''
-          } as Class;
-        });
-        
-        // Cache classes locally
-        this.classes = classesWithData;
-        return classesWithData;
+        if (snapshot && snapshot.docs && Array.isArray(snapshot.docs) && snapshot.docs.length > 0) {
+          console.log(`Retrieved ${snapshot.docs.length} classes from Firestore`);
+          
+          const classesWithData = [];
+          // Use for loop instead of map for better error handling
+          for (let i = 0; i < snapshot.docs.length; i++) {
+            try {
+              const doc = snapshot.docs[i];
+              if (doc && typeof doc.data === 'function') {
+                const data = doc.data();
+                classesWithData.push({
+                  id: doc.id,
+                  name: data.name || '',
+                  teacher: data.teacher || 'Unknown Teacher',
+                  location: data.location || '',
+                  meetingDates: data.meetingDates || '',
+                  startDate: data.startDate || '',
+                  endDate: data.endDate || '',
+                  startTime: data.startTime || '',
+                  endTime: data.endTime || '',
+                  virtualLink: data.virtualLink || '',
+                  status: data.status || 'active',
+                  students: data.students || 0,
+                  enrolledStudents: data.enrolledStudents || [],
+                  subject: data.subject || '',
+                  meeting_day: data.meeting_day || ''
+                });
+              }
+            } catch (docError) {
+              console.error("Error processing class document:", docError);
+            }
+          }
+          
+          if (classesWithData.length > 0) {
+            // Cache classes locally
+            this.classes = classesWithData;
+            return [...classesWithData]; // Return a new copy
+          }
+        }
+      } catch (firestoreError) {
+        console.error("Error fetching classes from Firestore:", firestoreError);
       }
-    } catch (err) {
-      console.error("Error fetching classes from Firestore:", err);
-    }
 
-    // Fall back to local storage
-    const localClasses = persistentStorage.getAllClasses();
-    console.log('Falling back to local storage classes:', localClasses);
-    this.classes = localClasses;
-    return localClasses;
+      // Fall back to local storage
+      try {
+        const localClasses = persistentStorage.getAllClasses();
+        if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
+          console.log('Using local storage classes:', localClasses);
+          this.classes = [...localClasses];
+          return [...localClasses]; // Return a new copy
+        }
+      } catch (localError) {
+        console.error("Error getting classes from local storage:", localError);
+      }
+      
+      // If everything failed, return an empty array
+      console.log('No classes found, returning empty array');
+      this.classes = [];
+      return [];
+    } catch (error) {
+      console.error("Critical error in getClasses:", error);
+      // Last resort fallback
+      this.classes = [];
+      return [];
+    }
+  }
+
+  // Safe wrapper for UI components
+  async getSafeClasses(): Promise<Class[]> {
+    try {
+      const classes = await this.getClasses();
+      // Ensure it's a valid array
+      if (classes && Array.isArray(classes)) {
+        return classes;
+      } else {
+        console.error("getClasses returned non-array, using empty array");
+        return [];
+      }
+    } catch (error) {
+      console.error("Error in getSafeClasses:", error);
+      return [];
+    }
   }
 
   async getClassById(id: string): Promise<Class | undefined> {
