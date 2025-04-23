@@ -33,6 +33,10 @@ import {
   QueryDocumentSnapshot,
   DocumentReference
 } from 'firebase/firestore';
+// Import Firebase Auth functionality
+import { firebaseAuth } from './firebase-auth';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from './firebase';
 
 // Types
 export interface User {
@@ -201,12 +205,45 @@ class StorageService {
         updatedAt: new Date().toISOString()
       };
       
-      // Add to Firestore
-      const usersRef = collection(db, 'users');
-      const docRef = await addDoc(usersRef, enhancedUserData);
-      const newUser = { id: docRef.id, ...enhancedUserData } as User;
+      // First, create the user in Firebase Authentication
+      let authUserId = '';
+      try {
+        // Create the authentication user
+        const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+        const authUser = userCredential.user;
+        authUserId = authUser.uid;
+        
+        // Update the user's display name
+        await updateProfile(authUser, {
+          displayName: userData.name
+        });
+        
+        console.log('User created in Firebase Auth with ID:', authUserId);
+      } catch (authError) {
+        console.error('Error creating user in Firebase Auth:', authError);
+        // If the user already exists in Firebase Auth, continue with Firestore update
+        if (authError.code === 'auth/email-already-in-use') {
+          console.log('User already exists in Firebase Auth, continuing with Firestore update');
+        } else {
+          throw authError;
+        }
+      }
       
-      console.log('User created in Firestore with ID:', docRef.id);
+      // Add to Firestore using the Firebase Auth UID if available
+      let firestoreId = authUserId;
+      if (!firestoreId) {
+        // If Firebase Auth creation failed, generate a new ID for Firestore
+        const usersRef = collection(db, 'users');
+        const docRef = await addDoc(usersRef, enhancedUserData);
+        firestoreId = docRef.id;
+      } else {
+        // Use the Firebase Auth UID for Firestore document ID
+        await setDoc(doc(db, 'users', authUserId), enhancedUserData);
+      }
+      
+      const newUser = { id: firestoreId, ...enhancedUserData } as User;
+      
+      console.log('User created in Firestore with ID:', firestoreId);
       
       // Update local cache
       this.users.push(newUser);
