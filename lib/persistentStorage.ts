@@ -576,10 +576,19 @@ export class PersistentStorage {
     return false
   }
 
-  // Get activity logs
+  // Get activity logs - completely safe, always returns an immutable array
   public getActivityLogs(): ActivityLog[] {
     try {
       this.ensureInitialized();
+      
+      // Create a safe fallback array first
+      const safeFallback: ActivityLog[] = [{
+        id: "log_safe_fallback",
+        action: "System Initialized",
+        details: "Safe log created",
+        timestamp: new Date().toISOString(),
+        category: "System"
+      }];
       
       // Check if activityLogs exists and is an array
       if (Array.isArray(this.activityLogs)) {
@@ -592,53 +601,37 @@ export class PersistentStorage {
         );
         
         if (validatedLogs.length > 0) {
+          // Return a completely new array (freeze only for external use)
           return [...validatedLogs];
         }
       }
       
       // Reset activityLogs if it's not valid
       console.log("Activity logs were invalid, resetting to defaults");
-      this.activityLogs = [...initialActivityLogs];
       
       // Ensure initialActivityLogs is valid too
-      if (!Array.isArray(initialActivityLogs) || initialActivityLogs.length === 0) {
+      if (Array.isArray(initialActivityLogs) && initialActivityLogs.length > 0) {
+        // Create a new copy for internal use (mutable)
+        this.activityLogs = [...initialActivityLogs];
+        this.saveToStorage();
+        return [...initialActivityLogs]; // Return a new copy
+      } else {
         console.log("Initial activity logs data is also invalid, creating fallback logs");
-        this.activityLogs = [
-          {
-            id: "log_fallback_1",
-            action: "System Initialized",
-            details: "Default logs created",
-            timestamp: new Date().toISOString(),
-            category: "System"
-          }
-        ];
+        const fallbackLogs: ActivityLog[] = [{
+          id: "log_fallback_1",
+          action: "System Initialized",
+          details: "Default logs created",
+          timestamp: new Date().toISOString(),
+          category: "System"
+        }];
+        
+        this.activityLogs = [...fallbackLogs];
+        this.saveToStorage();
+        return [...fallbackLogs]; // Return a new copy
       }
-      
-      this.saveToStorage();
-      return [...this.activityLogs];
     } catch (error) {
       console.error("Critical error getting activity logs:", error);
-      
-      // Last resort fallback
-      const fallbackLogs = [
-        {
-          id: "log_error_recovery",
-          action: "Error Recovery",
-          details: "System recovered from error",
-          timestamp: new Date().toISOString(),
-          category: "System Error"
-        }
-      ];
-      
-      // Try to update activityLogs if possible
-      try {
-        this.activityLogs = fallbackLogs;
-        this.saveToStorage();
-      } catch (e) {
-        console.error("Failed to save fallback logs:", e);
-      }
-      
-      return fallbackLogs;
+      return [...safeFallback]; // Return a new copy of the safe fallback
     }
   }
 

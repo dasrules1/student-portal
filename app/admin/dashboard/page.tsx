@@ -111,9 +111,11 @@ export default function AdminDashboard() {
       const loadedClasses = await storage.getClasses()
       setClasses(loadedClasses)
 
-      // Load activity logs
-      const loadedLogs = storage.getActivityLogs()
-      setActivityLogs(loadedLogs)
+      // Load activity logs using the safe method
+      const loadedLogs = await storage.getSafeActivityLogs()
+      console.log("Loaded activity logs (safe):", loadedLogs)
+      // Ensure it's an array when setting state
+      setActivityLogs(Array.isArray(loadedLogs) ? loadedLogs : [])
     } catch (error) {
       console.error("Error loading data:", error)
       toast({
@@ -121,6 +123,10 @@ export default function AdminDashboard() {
         description: "There was an error loading the dashboard data",
         variant: "destructive",
       })
+      // Set empty arrays for safety
+      setUsers([])
+      setClasses([])
+      setActivityLogs([])
     } finally {
       setIsLoading(false)
     }
