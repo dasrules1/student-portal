@@ -442,7 +442,7 @@ export class PersistentStorage {
   public async updateClass(id: string, classData: Partial<Class>): Promise<Class | undefined> {
     try {
       this.ensureInitialized()
-      console.log("PersistentStorage: Updating class:", id, classData)
+      console.log("PersistentStorage: Updating class:", id)
 
       const index = this.classes.findIndex((cls) => cls.id === id)
       if (index !== -1) {
@@ -486,10 +486,44 @@ export class PersistentStorage {
         console.log("PersistentStorage: Class updated successfully:", this.classes[index])
         return this.classes[index]
       } else {
+        // Try to fetch the class if it doesn't exist in our local array
+        console.warn("PersistentStorage: Class not found locally, trying to fetch it: ", id)
+        
+        // Check if the class exists in localStorage directly
+        const classJson = localStorage.getItem(`${STORAGE_PREFIX}class_${id}`)
+        if (classJson) {
+          try {
+            // Parse the class from localStorage
+            const foundClass = JSON.parse(classJson) as Class
+            console.log("PersistentStorage: Found class in localStorage:", foundClass)
+            
+            // Update it with the new data
+            const updatedClass = {
+              ...foundClass,
+              ...classData,
+              students: classData.enrolledStudents 
+                ? classData.enrolledStudents.length 
+                : foundClass.enrolledStudents
+                  ? foundClass.enrolledStudents.length
+                  : foundClass.students
+            }
+            
+            // Add it to our classes array
+            this.classes.push(updatedClass)
+            
+            // Save everything
+            this.saveToStorage()
+            
+            console.log("PersistentStorage: Class added and updated successfully:", updatedClass)
+            return updatedClass
+          } catch (parseError) {
+            console.error("PersistentStorage: Error parsing class from localStorage:", parseError)
+          }
+        }
+        
         console.warn("PersistentStorage: Class not found for update:", id)
+        return undefined
       }
-
-      return undefined
     } catch (error) {
       console.error("PersistentStorage: Error updating class:", error)
       return undefined
@@ -646,7 +680,15 @@ export class PersistentStorage {
       }
     } catch (error) {
       console.error("Critical error getting activity logs:", error);
-      return [...safeFallback]; // Return a new copy of the safe fallback
+      // Create a safe fallback for this error case
+      const errorFallback: ActivityLog[] = [{
+        id: "log_error_fallback",
+        action: "Error Recovery",
+        details: "Created during error recovery",
+        timestamp: new Date().toISOString(),
+        category: "System Error"
+      }];
+      return [...errorFallback]; // Return a new copy of the error fallback
     }
   }
 
@@ -725,56 +767,140 @@ export class PersistentStorage {
   // Save curriculum
   public async saveCurriculum(classId: string, curriculum: any): Promise<boolean> {
     try {
-      // Update in Firebase
-      const curriculumRef = collection(db, "curriculum")
-      const q = query(curriculumRef, where("classId", "==", classId))
-      const querySnapshot = await getDocs(q)
-
-      if (querySnapshot && querySnapshot.docs && querySnapshot.docs.length > 0) {
-        const docRef = doc(db, "curriculum", querySnapshot.docs[0].id)
-        await updateDoc(docRef, {
-          content: curriculum,
-          lastUpdated: new Date().toISOString()
-        })
-      } else {
-        await addDoc(curriculumRef, {
-          classId,
-          content: curriculum,
-          lastUpdated: new Date().toISOString()
-        })
+      console.log(`PersistentStorage: Saving curriculum for class ${classId}`);
+      
+      if (!classId) {
+        console.error("PersistentStorage: Invalid classId for saveCurriculum");
+        return false;
       }
-
-      // Also update in local storage
-      localStorage.setItem(`${STORAGE_PREFIX}curriculum_${classId}`, JSON.stringify(curriculum))
-      return true
+      
+      // First check if the class exists
+      const classData = this.getClassById(classId);
+      if (!classData) {
+        console.warn(`PersistentStorage: Saving curriculum for non-existent class ${classId}`);
+        // Continue anyway - we'll still save the curriculum data
+      }
+      
+      // Prepare curriculum data with timestamps
+      const curriculumData = {
+        ...curriculum,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // 1. Try to update in Firebase
+      let firebaseSuccess = false;
+      try {
+        const curriculumRef = collection(db, "curriculum");
+        const q = query(curriculumRef, where("classId", "==", classId));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
+          const docRef = doc(db, "curriculum", querySnapshot.docs[0].id);
+          await updateDoc(docRef, {
+            content: curriculumData,
+            lastUpdated: new Date().toISOString()
+          });
+          firebaseSuccess = true;
+        } else {
+          await addDoc(curriculumRef, {
+            classId,
+            content: curriculumData,
+            lastUpdated: new Date().toISOString()
+          });
+          firebaseSuccess = true;
+        }
+        console.log(`PersistentStorage: Successfully saved curriculum to Firebase for class ${classId}`);
+      } catch (firestoreError) {
+        console.error("PersistentStorage: Error saving curriculum to Firebase:", firestoreError);
+        // Continue with other storage methods
+      }
+      
+      // 2. Always save to localStorage, even if Firebase was successful
+      try {
+        const storageKey = `${STORAGE_PREFIX}curriculum_${classId}`;
+        localStorage.setItem(storageKey, JSON.stringify(curriculumData));
+        console.log(`PersistentStorage: Saved curriculum to localStorage for class ${classId}`);
+        return true;
+      } catch (localError) {
+        console.error("PersistentStorage: Error saving curriculum to localStorage:", localError);
+        // Return true if we at least saved to Firebase
+        return firebaseSuccess;
+      }
     } catch (error) {
-      console.error("Error saving curriculum:", error)
-      return false
+      console.error("PersistentStorage: Critical error in saveCurriculum:", error);
+      
+      // Last resort - try direct localStorage
+      try {
+        const storageKey = `${STORAGE_PREFIX}curriculum_${classId}`;
+        localStorage.setItem(storageKey, JSON.stringify(curriculum));
+        return true;
+      } catch (e) {
+        console.error("PersistentStorage: All curriculum save methods failed");
+        return false;
+      }
     }
   }
 
   // Get curriculum
   public async getCurriculum(classId: string): Promise<any> {
     try {
-      // First try to get from Firebase
-      const curriculumRef = collection(db, "curriculum")
-      const q = query(curriculumRef, where("classId", "==", classId))
-      const querySnapshot = await getDocs(q)
-
-      if (querySnapshot && querySnapshot.docs && querySnapshot.docs.length > 0) {
-        return querySnapshot.docs[0].data().content
+      console.log(`PersistentStorage: Getting curriculum for class ${classId}`);
+      
+      if (!classId) {
+        console.error("PersistentStorage: Invalid classId for getCurriculum");
+        return null;
       }
-
-      // If not in Firebase, try local storage
-      const curriculumJson = localStorage.getItem(`${STORAGE_PREFIX}curriculum_${classId}`)
-      if (curriculumJson) {
-        return JSON.parse(curriculumJson)
+      
+      // 1. First try to get from Firebase
+      try {
+        const curriculumRef = collection(db, "curriculum");
+        const q = query(curriculumRef, where("classId", "==", classId));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
+          const data = querySnapshot.docs[0].data();
+          if (data && data.content) {
+            console.log(`PersistentStorage: Found curriculum in Firebase for class ${classId}`);
+            return data.content;
+          }
+        }
+      } catch (firestoreError) {
+        console.warn("PersistentStorage: Error fetching curriculum from Firebase:", firestoreError);
       }
-
-      return null
+      
+      // 2. Try localStorage
+      try {
+        const storageKey = `${STORAGE_PREFIX}curriculum_${classId}`;
+        const curriculumJson = localStorage.getItem(storageKey);
+        
+        if (curriculumJson) {
+          const parsedData = JSON.parse(curriculumJson);
+          console.log(`PersistentStorage: Found curriculum in localStorage for class ${classId}`);
+          return parsedData;
+        }
+      } catch (localError) {
+        console.warn("PersistentStorage: Error fetching curriculum from localStorage:", localError);
+      }
+      
+      // 3. Try alternate storage key pattern as last resort
+      try {
+        const altKey = `curriculum_${classId}`;
+        const altData = localStorage.getItem(altKey);
+        
+        if (altData) {
+          const parsedAltData = JSON.parse(altData);
+          console.log(`PersistentStorage: Found curriculum in localStorage with alternate key for class ${classId}`);
+          return parsedAltData;
+        }
+      } catch (altError) {
+        console.warn("PersistentStorage: Error fetching curriculum with alternate key:", altError);
+      }
+      
+      console.log(`PersistentStorage: No curriculum found for class ${classId}`);
+      return null;
     } catch (error) {
-      console.error("Error getting curriculum:", error)
-      return null
+      console.error("PersistentStorage: Critical error in getCurriculum:", error);
+      return null;
     }
   }
 
@@ -786,31 +912,89 @@ export class PersistentStorage {
   // Update curriculum
   public async updateCurriculum(classId: string, curriculum: any): Promise<boolean> {
     try {
-      // Update in Firebase
-      const curriculumRef = collection(db, "curriculum")
-      const q = query(curriculumRef, where("classId", "==", classId))
-      const querySnapshot = await getDocs(q)
-
-      if (querySnapshot && querySnapshot.docs && querySnapshot.docs.length > 0) {
-        const docRef = doc(db, "curriculum", querySnapshot.docs[0].id)
-        await updateDoc(docRef, {
-          content: curriculum,
-          lastUpdated: new Date().toISOString()
-        })
-      } else {
-        await addDoc(curriculumRef, {
-          classId,
-          content: curriculum,
-          lastUpdated: new Date().toISOString()
-        })
+      console.log(`PersistentStorage: Updating curriculum for class ${classId}`);
+      
+      if (!classId) {
+        console.error("PersistentStorage: Invalid classId for updateCurriculum");
+        return false;
       }
-
-      // Also update in local storage
-      localStorage.setItem(`${STORAGE_PREFIX}curriculum_${classId}`, JSON.stringify(curriculum))
-      return true
+      
+      // First check if the class exists
+      const classData = this.getClassById(classId);
+      if (!classData) {
+        console.warn(`PersistentStorage: Updating curriculum for non-existent class ${classId}`);
+        // Continue anyway - we'll still update the curriculum data
+      }
+      
+      // First get existing curriculum to merge with
+      let existingCurriculum = null;
+      try {
+        existingCurriculum = await this.getCurriculum(classId);
+      } catch (getError) {
+        console.warn("PersistentStorage: Could not retrieve existing curriculum:", getError);
+      }
+      
+      // Prepare updated curriculum
+      const updatedCurriculum = existingCurriculum 
+        ? { ...existingCurriculum, ...curriculum, lastUpdated: new Date().toISOString() }
+        : { ...curriculum, lastUpdated: new Date().toISOString() };
+      
+      // 1. Try to update in Firebase
+      let firebaseSuccess = false;
+      try {
+        const curriculumRef = collection(db, "curriculum");
+        const q = query(curriculumRef, where("classId", "==", classId));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
+          const docRef = doc(db, "curriculum", querySnapshot.docs[0].id);
+          await updateDoc(docRef, {
+            content: updatedCurriculum,
+            lastUpdated: new Date().toISOString()
+          });
+          firebaseSuccess = true;
+        } else {
+          // No existing record - create a new one
+          await addDoc(curriculumRef, {
+            classId,
+            content: updatedCurriculum,
+            lastUpdated: new Date().toISOString()
+          });
+          firebaseSuccess = true;
+        }
+        console.log(`PersistentStorage: Successfully updated curriculum in Firebase for class ${classId}`);
+      } catch (firestoreError) {
+        console.error("PersistentStorage: Error updating curriculum in Firebase:", firestoreError);
+        // Continue with localStorage
+      }
+      
+      // 2. Always update in localStorage, even if Firebase was successful
+      try {
+        const storageKey = `${STORAGE_PREFIX}curriculum_${classId}`;
+        localStorage.setItem(storageKey, JSON.stringify(updatedCurriculum));
+        
+        // Also update with alternate key pattern for compatibility
+        localStorage.setItem(`curriculum_${classId}`, JSON.stringify(updatedCurriculum));
+        
+        console.log(`PersistentStorage: Updated curriculum in localStorage for class ${classId}`);
+        return true;
+      } catch (localError) {
+        console.error("PersistentStorage: Error updating curriculum in localStorage:", localError);
+        // Return true if we at least updated in Firebase
+        return firebaseSuccess;
+      }
     } catch (error) {
-      console.error("Error updating curriculum:", error)
-      return false
+      console.error("PersistentStorage: Critical error in updateCurriculum:", error);
+      
+      // Last resort - try direct localStorage
+      try {
+        localStorage.setItem(`${STORAGE_PREFIX}curriculum_${classId}`, JSON.stringify(curriculum));
+        localStorage.setItem(`curriculum_${classId}`, JSON.stringify(curriculum));
+        return true;
+      } catch (e) {
+        console.error("PersistentStorage: All curriculum update methods failed");
+        return false;
+      }
     }
   }
 

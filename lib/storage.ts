@@ -3,7 +3,7 @@
 
 // Type declarations for external modules to suppress errors
 // @ts-ignore
-import { persistentStorage } from "./persistentStorage"
+import { persistentStorage } from "@/lib/persistentStorage"
 // @ts-ignore
 import { 
   ref, 
@@ -420,18 +420,44 @@ class StorageService {
 
   async getClassById(id: string): Promise<Class | undefined> {
     try {
-      console.log(`Getting class ${id} from Firestore`);
-      const classRef = doc(db, 'classes', id);
-      const snapshot = await getDoc(classRef);
+      console.log(`Looking for class with ID: ${id}`);
       
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        return { id: snapshot.id, ...data } as Class;
+      // First check the local cache
+      const localClass = this.classes.find(cls => cls.id === id);
+      if (localClass) {
+        console.log(`Found class in local cache: ${id}`);
+        return localClass;
       }
-      return undefined;
+      
+      console.log(`Class not found in local cache, trying Firestore: ${id}`);
+      // Then try to get from Firestore
+      try {
+        const classRef = doc(db, 'classes', id);
+        const docSnap = await getDoc(classRef);
+        
+        if (docSnap.exists()) {
+          const classData = { id: docSnap.id, ...(docSnap.data() as Omit<Class, 'id'>) } as Class;
+          console.log(`Found class in Firestore: ${id}`);
+          
+          // Update local cache with this class
+          const existingIndex = this.classes.findIndex(c => c.id === id);
+          if (existingIndex >= 0) {
+            this.classes[existingIndex] = classData;
+          } else {
+            this.classes.push(classData);
+          }
+          
+          return classData;
+        }
+      } catch (firestoreError) {
+        console.error(`Error getting class from Firestore: ${id}`, firestoreError);
+      }
+      
+      console.log(`Class not found in Firestore, trying persistent storage: ${id}`);
+      // Try to fall back to persistent storage
+      return persistentStorage.getClassById(id);
     } catch (error) {
-      console.error(`Error getting class ${id} from Firestore:`, error);
-      // Fall back to localStorage
+      console.error(`Error in getClassById for ${id}:`, error);
       return persistentStorage.getClassById(id);
     }
   }
@@ -478,7 +504,24 @@ class StorageService {
 
   async updateClass(id: string, classData: Partial<Class>): Promise<Class | undefined> {
     try {
-      console.log("Updating class in storage:", id, classData);
+      console.log("Starting class update process for:", id);
+      
+      // First, ensure we have the class in our cache
+      let classToUpdate = this.classes.find(cls => cls.id === id);
+      
+      // If not in cache, try to fetch it first
+      if (!classToUpdate) {
+        console.log("Class not in cache, attempting to fetch it first:", id);
+        classToUpdate = await this.getClassById(id);
+        
+        if (!classToUpdate) {
+          console.error("Cannot update class that doesn't exist:", id);
+          throw new Error(`Class with id ${id} not found`);
+        }
+      }
+      
+      // Now we have the class, proceed with update
+      console.log("Updating class in storage:", id);
       
       // First try updating in Firestore
       try {
@@ -502,23 +545,31 @@ class StorageService {
         this.classes[index] = { ...this.classes[index], ...classData };
         console.log("Class updated in local cache");
       } else {
-        console.warn("Class not found in local cache for update:", id);
+        // This should not happen now that we prefetch the class if needed
+        console.warn("Class not found in local cache after prefetch, adding it now:", id);
+        if (classToUpdate) {
+          this.classes.push({...classToUpdate, ...classData});
+        }
       }
       
       // Also update in persistent storage
       const updatedClass = await persistentStorage.updateClass(id, classData);
       
+      // Return the updated class - either from persistent storage or our cache
       if (updatedClass) {
         console.log("Class updated successfully in all storage layers:", id);
         return updatedClass;
       } else {
-        console.warn("Class update may have been partial, returning from cache");
-        return index !== -1 ? this.classes[index] : undefined;
+        console.warn("Class update in persistent storage failed, returning from cache");
+        const cachedClass = this.classes.find(cls => cls.id === id);
+        if (!cachedClass) {
+          throw new Error("Class update returned no result");
+        }
+        return cachedClass;
       }
     } catch (error) {
       console.error("Error in overall updateClass process:", error);
-      // Try to update in persistent storage as a last resort
-      return persistentStorage.updateClass(id, classData);
+      throw error; // Let the caller handle this error
     }
   }
 
@@ -712,63 +763,280 @@ class StorageService {
   async getCurriculum(classId: string): Promise<Curriculum | null> {
     try {
       console.log(`Getting curriculum for class ${classId} from Firestore`);
-      const curriculumRef = doc(db, 'curricula', classId);
-      const snapshot = await getDoc(curriculumRef);
       
-      if (snapshot.exists()) {
-        return snapshot.data() as Curriculum;
+      if (!classId) {
+        console.error("Invalid classId provided to getCurriculum");
+        return null;
       }
+      
+      // Try to get from Firestore first
+      try {
+        const curriculumRef = doc(db, 'curricula', classId);
+        const snapshot = await getDoc(curriculumRef);
+        
+        if (snapshot.exists()) {
+          const curriculumData = snapshot.data();
+          console.log(`Found curriculum in Firestore for class ${classId}`);
+          return curriculumData as Curriculum;
+        } else {
+          console.log(`No curriculum found in Firestore for class ${classId}`);
+        }
+      } catch (firestoreError) {
+        console.warn(`Error fetching curriculum from Firestore for class ${classId}:`, firestoreError);
+      }
+      
+      // Try to get from persistent storage if Firestore failed
+      try {
+        const localCurriculum = await persistentStorage.getCurriculum(classId);
+        if (localCurriculum) {
+          console.log(`Found curriculum in persistent storage for class ${classId}`);
+          return localCurriculum as Curriculum;
+        } else {
+          console.log(`No curriculum found in persistent storage for class ${classId}`);
+        }
+      } catch (storageError) {
+        console.warn(`Error fetching curriculum from persistent storage for class ${classId}:`, storageError);
+      }
+      
+      // Last resort - try direct localStorage
+      if (typeof window !== "undefined") {
+        try {
+          const localData = localStorage.getItem(`curriculum_${classId}`);
+          if (localData) {
+            const parsedData = JSON.parse(localData);
+            console.log(`Found curriculum in localStorage for class ${classId}`);
+            return parsedData as Curriculum;
+          }
+        } catch (localError) {
+          console.warn(`Error fetching curriculum from localStorage for class ${classId}:`, localError);
+        }
+      }
+      
+      // No curriculum found anywhere
+      console.log(`No curriculum found in any storage for class ${classId}`);
       return null;
     } catch (error) {
-      console.error(`Error getting curriculum for class ${classId} from Firestore:`, error);
-      // Fall back to localStorage
-      return persistentStorage.getCurriculum(classId);
+      console.error(`Error in overall getCurriculum process for class ${classId}:`, error);
+      
+      // Last attempt from localStorage if all else failed
+      if (typeof window !== "undefined") {
+        try {
+          const localData = localStorage.getItem(`curriculum_${classId}`);
+          if (localData) {
+            return JSON.parse(localData) as Curriculum;
+          }
+        } catch (e) {
+          // Ignore final error
+        }
+      }
+      
+      return null;
     }
   }
 
   async saveCurriculum(classId: string, curriculum: Curriculum): Promise<boolean> {
     try {
       console.log(`Saving curriculum for class ${classId} to Firestore`);
+      
+      // Verify the class exists before saving curriculum
+      let classExists = false;
+      try {
+        // Check if class exists in Firestore
+        const classRef = doc(db, 'classes', classId);
+        const classSnapshot = await getDoc(classRef);
+        classExists = classSnapshot.exists();
+        
+        if (!classExists) {
+          // Check local cache as well
+          classExists = this.classes.some(cls => cls.id === classId);
+          
+          // Last resort - check persistent storage
+          if (!classExists) {
+            const localClass = persistentStorage.getClassById(classId);
+            classExists = !!localClass;
+          }
+        }
+        
+        if (!classExists) {
+          console.error(`Cannot save curriculum - class ${classId} does not exist`);
+          return false;
+        }
+      } catch (classCheckError) {
+        console.warn(`Error checking if class ${classId} exists:`, classCheckError);
+        // Continue anyway - we'll save the curriculum data
+      }
+      
+      // Save curriculum to Firestore
       const curriculumRef = doc(db, 'curricula', classId);
-      await setDoc(curriculumRef, {
+      const curriculumData = {
         ...curriculum,
         updatedAt: new Date().toISOString()
-      });
+      };
       
-      // Also save to persistent storage
+      await setDoc(curriculumRef, curriculumData);
+      
+      // Also save to persistent storage as fallback
       try {
-        persistentStorage.saveCurriculum(classId, curriculum);
-      } catch (e) {
-        console.log('Error saving curriculum to persistent storage:', e);
+        await persistentStorage.saveCurriculum(classId, curriculum);
+      } catch (storageError) {
+        console.log('Error saving curriculum to persistent storage:', storageError);
+      }
+      
+      // Create a direct key-value in localStorage as a last resort
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`curriculum_${classId}`, JSON.stringify(curriculum));
+        } catch (e) {
+          console.log('Error saving curriculum to localStorage:', e);
+        }
       }
       
       return true;
     } catch (error) {
       console.error(`Error saving curriculum for class ${classId} to Firestore:`, error);
-      return persistentStorage.saveCurriculum(classId, curriculum);
+      
+      // Try persistent storage as fallback
+      try {
+        return await persistentStorage.saveCurriculum(classId, curriculum);
+      } catch (persistentError) {
+        console.error('Error saving to persistent storage too:', persistentError);
+        
+        // Last resort - direct localStorage
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(`curriculum_${classId}`, JSON.stringify(curriculum));
+            return true;
+          } catch (e) {
+            console.error('All curriculum saving methods failed:', e);
+          }
+        }
+        return false;
+      }
     }
   }
 
   async updateCurriculum(classId: string, curriculum: Partial<Curriculum>): Promise<boolean> {
     try {
       console.log(`Updating curriculum for class ${classId} in Firestore`);
-      const curriculumRef = doc(db, 'curricula', classId);
-      await updateDoc(curriculumRef, {
-        ...curriculum,
-        updatedAt: new Date().toISOString()
-      });
       
-      // Also update in persistent storage
+      // Verify the class exists before updating curriculum
+      let classExists = false;
       try {
-        persistentStorage.updateCurriculum(classId, curriculum);
-      } catch (e) {
-        console.log('Error updating curriculum in persistent storage:', e);
+        // Check if class exists in Firestore
+        const classRef = doc(db, 'classes', classId);
+        const classSnapshot = await getDoc(classRef);
+        classExists = classSnapshot.exists();
+        
+        if (!classExists) {
+          // Check local cache as well
+          classExists = this.classes.some(cls => cls.id === classId);
+          
+          // Last resort - check persistent storage
+          if (!classExists) {
+            const localClass = persistentStorage.getClassById(classId);
+            classExists = !!localClass;
+          }
+        }
+        
+        if (!classExists) {
+          console.error(`Cannot update curriculum - class ${classId} does not exist`);
+          return false;
+        }
+      } catch (classCheckError) {
+        console.warn(`Error checking if class ${classId} exists:`, classCheckError);
+        // Continue anyway - we'll update the curriculum data
       }
       
-      return true;
+      // First try to get existing curriculum
+      let existingCurriculum = null;
+      try {
+        const curriculumRef = doc(db, 'curricula', classId);
+        const curriculumSnapshot = await getDoc(curriculumRef);
+        if (curriculumSnapshot.exists()) {
+          existingCurriculum = curriculumSnapshot.data();
+        }
+      } catch (getError) {
+        console.warn(`Could not retrieve existing curriculum for ${classId}:`, getError);
+      }
+      
+      // Update curriculum in Firestore
+      try {
+        const curriculumRef = doc(db, 'curricula', classId);
+        
+        // Merge with existing data if available
+        const updateData = existingCurriculum 
+          ? { ...existingCurriculum, ...curriculum, updatedAt: new Date().toISOString() }
+          : { ...curriculum, updatedAt: new Date().toISOString() };
+        
+        await setDoc(curriculumRef, updateData, { merge: true });
+        
+        // Also update in persistent storage as fallback
+        try {
+          await persistentStorage.updateCurriculum(classId, curriculum);
+        } catch (storageError) {
+          console.log('Error updating curriculum in persistent storage:', storageError);
+        }
+        
+        // Create a direct key-value in localStorage as a last resort
+        if (typeof window !== "undefined") {
+          try {
+            // First try to get existing localStorage data
+            const existingLocalData = localStorage.getItem(`curriculum_${classId}`);
+            let localData = curriculum;
+            
+            if (existingLocalData) {
+              try {
+                const parsedLocalData = JSON.parse(existingLocalData);
+                localData = { ...parsedLocalData, ...curriculum };
+              } catch (parseError) {
+                console.warn('Could not parse existing localStorage curriculum data:', parseError);
+              }
+            }
+            
+            localStorage.setItem(`curriculum_${classId}`, JSON.stringify(localData));
+          } catch (e) {
+            console.log('Error saving curriculum to localStorage:', e);
+          }
+        }
+        
+        return true;
+      } catch (updateError) {
+        console.error(`Error updating curriculum in Firestore:`, updateError);
+        throw updateError;
+      }
     } catch (error) {
-      console.error(`Error updating curriculum for class ${classId} in Firestore:`, error);
-      return persistentStorage.updateCurriculum(classId, curriculum);
+      console.error(`Error in overall curriculum update process:`, error);
+      
+      // Try persistent storage as fallback
+      try {
+        return await persistentStorage.updateCurriculum(classId, curriculum);
+      } catch (persistentError) {
+        console.error('Error updating in persistent storage too:', persistentError);
+        
+        // Last resort - direct localStorage
+        if (typeof window !== "undefined") {
+          try {
+            // Get existing data if possible
+            const existingData = localStorage.getItem(`curriculum_${classId}`);
+            let mergedData = curriculum;
+            
+            if (existingData) {
+              try {
+                const parsedData = JSON.parse(existingData);
+                mergedData = { ...parsedData, ...curriculum };
+              } catch (e) {
+                // Use curriculum as is if parsing fails
+              }
+            }
+            
+            localStorage.setItem(`curriculum_${classId}`, JSON.stringify(mergedData));
+            return true;
+          } catch (e) {
+            console.error('All curriculum update methods failed:', e);
+          }
+        }
+        return false;
+      }
     }
   }
 
