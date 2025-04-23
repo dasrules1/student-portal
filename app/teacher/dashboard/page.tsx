@@ -174,7 +174,7 @@ export default function TeacherDashboard() {
   }, [router, toast, searchParams])
 
   const handleViewClass = (classId: string) => {
-    router.push(`/teacher/class/${classId}/students`)
+    router.push(`/teacher/class/${classId}`)
   }
 
   const handleViewCurriculum = (classId: string) => {
@@ -191,6 +191,11 @@ export default function TeacherDashboard() {
     return classData && classData.enrolledStudents ? classData.enrolledStudents.length : 0
   }
 
+  // Add logic to handle profile button
+  const handleProfile = () => {
+    router.push('/teacher/profile');
+  }
+
   if (!teacherData) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>
   }
@@ -201,8 +206,32 @@ export default function TeacherDashboard() {
       <div className="hidden w-64 p-4 bg-white border-r md:block dark:bg-slate-900 dark:border-slate-800">
         <div className="flex items-center mb-8 space-x-2">
           <School className="w-6 h-6 text-primary" />
-          <span className="text-xl font-bold">Education More</span>
+          <div className="flex flex-col">
+            <span className="text-xl font-bold">Education More</span>
+            <span className="text-sm text-muted-foreground">Teacher Portal</span>
+          </div>
         </div>
+        
+        {/* Teacher info in sidebar */}
+        {teacherData && (
+          <div className="mb-6 p-3 border rounded-lg">
+            <div className="flex items-center gap-3 mb-3">
+              <Avatar className="w-10 h-10">
+                <AvatarImage src="/placeholder.svg" alt="Teacher" />
+                <AvatarFallback>{teacherData?.avatar || (teacherData?.name?.charAt(0) || "T")}</AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="font-medium">{teacherData?.name || teacherData?.displayName || "Teacher"}</p>
+                <p className="text-xs text-muted-foreground">{teacherData?.email}</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" className="w-full" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </Button>
+          </div>
+        )}
+        
         <nav className="space-y-1">
           <Button variant="ghost" className="justify-start w-full" asChild>
             <Link href="/teacher/dashboard">
@@ -228,11 +257,9 @@ export default function TeacherDashboard() {
               Calendar
             </Link>
           </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/profile">
-              <User className="w-5 h-5 mr-2" />
-              Profile
-            </Link>
+          <Button variant="ghost" className="justify-start w-full" onClick={handleProfile}>
+            <User className="w-5 h-5 mr-2" />
+            Profile
           </Button>
           <Button variant="ghost" className="justify-start w-full" asChild>
             <Link href="/teacher/settings">
@@ -253,40 +280,11 @@ export default function TeacherDashboard() {
               <Bell className="w-5 h-5" />
               <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-2">
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src="/placeholder.svg" alt="Teacher" />
-                    <AvatarFallback>{teacherData.avatar}</AvatarFallback>
-                  </Avatar>
-                  <span className="hidden md:inline-block">{teacherData.name}</span>
-                  <ChevronDown className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/teacher/profile">Profile</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/teacher/settings">Settings</Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </header>
 
         {/* Content */}
         <main className="p-4 md:p-6">
-          <h1 className="text-3xl font-bold mb-6">Teacher Dashboard</h1>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <Card>
               <CardHeader className="pb-2">
@@ -316,203 +314,202 @@ export default function TeacherDashboard() {
             </Card>
           </div>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="classes">Classes</TabsTrigger>
-              <TabsTrigger value="content">Content</TabsTrigger>
               <TabsTrigger value="students">Students</TabsTrigger>
+              <TabsTrigger value="content">Content</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="overview">
-              <div className="grid gap-6 md:grid-cols-2">
+            <TabsContent value="overview" className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card>
                   <CardHeader>
                     <CardTitle>Recent Classes</CardTitle>
-                    <CardDescription>Your assigned classes</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
-                      {classes.slice(0, 3).map((classItem) => (
-                        <div key={classItem.id} className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{classItem.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {classItem.meetingDay} {classItem.startTime}-{classItem.endTime}
-                            </p>
-                          </div>
-                          <Badge variant={classItem.status === "active" ? "default" : "secondary"}>
-                            {classItem.status === "active" ? "Active" : "Inactive"}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
+                    {classes.length === 0 ? (
+                      <p className="text-muted-foreground">No classes assigned yet.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {classes.slice(0, 5).map((cls) => (
+                          <li key={cls.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800">
+                            <span>{cls.name}</span>
+                            <Button variant="ghost" size="sm" onClick={() => handleViewClass(cls.id)}>View</Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </CardContent>
-                  {/* Update the "View All" buttons to use Link components instead of state changes: */}
-                  <CardFooter>
-                    <Button variant="outline" className="w-full" onClick={() => setActiveTab("classes")}>
-                      View All Classes
-                    </Button>
-                  </CardFooter>
                 </Card>
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Recent Content</CardTitle>
-                    <CardDescription>Recently published content</CardDescription>
+                    <CardTitle>Student Activity</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
-                      {assignments.slice(0, 3).map((assignment, index) => (
-                        <div key={index} className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{assignment.title}</p>
-                            <p className="text-sm text-muted-foreground">{assignment.className}</p>
-                          </div>
-                          <Badge>{assignment.type}</Badge>
-                        </div>
-                      ))}
-                    </div>
+                    {students.length === 0 ? (
+                      <p className="text-muted-foreground">No student activity yet.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {students.slice(0, 5).map((student) => (
+                          <li key={student.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800">
+                            <div className="flex items-center space-x-2">
+                              <Avatar className="w-8 h-8">
+                                <AvatarFallback>{student.avatar || student.name.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              <span>{student.name}</span>
+                            </div>
+                            <Badge variant="outline">{student.classes.length} Classes</Badge>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </CardContent>
-                  {/* Update the "View All" buttons to use Link components instead of state changes: */}
-                  <CardFooter>
-                    <Button variant="outline" className="w-full" onClick={() => setActiveTab("content")}>
-                      View All Content
-                    </Button>
-                  </CardFooter>
                 </Card>
               </div>
             </TabsContent>
 
-            <TabsContent value="classes">
-              <h2 className="text-2xl font-semibold mb-4">Your Classes</h2>
-              <div className="space-y-4">
-                {classes.length > 0 ? (
-                  classes.map((classItem) => (
-                    <Card key={classItem.id}>
-                      <CardContent className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between">
-                          <div className="mb-4 md:mb-0">
-                            <h3 className="text-xl font-semibold">{classItem.name}</h3>
-                            <p className="text-muted-foreground">{classItem.subject}</p>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              <Badge variant="outline">
-                                {classItem.meetingDay} {classItem.startTime}-{classItem.endTime}
-                              </Badge>
-                              <Badge variant="outline">{classItem.location}</Badge>
-                              <Badge variant={classItem.status === "active" ? "default" : "secondary"}>
-                                {classItem.status === "active" ? "Active" : "Inactive"}
-                              </Badge>
-                            </div>
-                          </div>
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <Button variant="outline" onClick={() => handleViewClass(classItem.id)}>
-                              Students ({countEnrolledStudents(classItem.id)})
-                            </Button>
-                            <Button onClick={() => handleViewCurriculum(classItem.id)}>Curriculum</Button>
+            <TabsContent value="classes" className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {classes.length === 0 ? (
+                  <Card className="col-span-full">
+                    <CardContent className="pt-6">
+                      <p className="text-center text-muted-foreground">No classes assigned yet.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  classes.map((cls) => (
+                    <Card key={cls.id}>
+                      <CardHeader>
+                        <CardTitle>{cls.name}</CardTitle>
+                        <CardDescription>
+                          {cls.subject || "No subject specified"}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {/* Show all class details */}
+                          <div className="grid grid-cols-2 text-sm gap-y-1">
+                            <span className="text-muted-foreground">Meeting Day:</span>
+                            <span>{cls.meeting_day || "Not specified"}</span>
+                            
+                            <span className="text-muted-foreground">Time:</span>
+                            <span>
+                              {cls.startTime && cls.endTime 
+                                ? `${cls.startTime} - ${cls.endTime}` 
+                                : "Not specified"}
+                            </span>
+                            
+                            <span className="text-muted-foreground">Start Date:</span>
+                            <span>{cls.startDate || "Not specified"}</span>
+                            
+                            <span className="text-muted-foreground">End Date:</span>
+                            <span>{cls.endDate || "Not specified"}</span>
+                            
+                            <span className="text-muted-foreground">Location:</span>
+                            <span>{cls.location || "Not specified"}</span>
+                            
+                            {cls.virtualLink && (
+                              <>
+                                <span className="text-muted-foreground">Virtual Link:</span>
+                                <a href={cls.virtualLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
+                                  Join Meeting
+                                </a>
+                              </>
+                            )}
+                            
+                            <span className="text-muted-foreground">Students:</span>
+                            <span>{countEnrolledStudents(cls.id)}</span>
                           </div>
                         </div>
                       </CardContent>
+                      <CardFooter className="flex justify-between">
+                        <Button variant="outline" size="sm" onClick={() => handleViewClass(cls.id)}>
+                          View Students
+                        </Button>
+                        <Button size="sm" onClick={() => handleViewCurriculum(cls.id)}>
+                          Curriculum
+                        </Button>
+                      </CardFooter>
                     </Card>
                   ))
-                ) : (
-                  <p className="text-center text-gray-500">No classes assigned yet.</p>
                 )}
               </div>
             </TabsContent>
 
-            <TabsContent value="content">
-              <h2 className="text-2xl font-semibold mb-4">Published Content</h2>
+            <TabsContent value="students" className="space-y-6">
               <div className="space-y-4">
-                {assignments.length > 0 ? (
-                  assignments.map((assignment, index) => (
-                    <Card key={`${assignment.classId}-${assignment.lessonId}-${index}`}>
-                      <CardContent className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between">
-                          <div>
-                            <h3 className="text-lg font-semibold">{assignment.title}</h3>
-                            <p className="text-muted-foreground">
-                              {assignment.className} - {assignment.lessonTitle}
-                            </p>
-                            <div className="flex gap-2 mt-2">
-                              <Badge>{assignment.type}</Badge>
-                              {assignment.isPublished && (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                                >
-                                  Published
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                          <Button
-                            variant="outline"
-                            className="mt-4 md:mt-0"
-                            onClick={() => handleViewCurriculum(assignment.classId)}
-                          >
-                            View Details
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
+                {students.length === 0 ? (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <p className="text-center text-muted-foreground">No students enrolled yet.</p>
+                    </CardContent>
+                  </Card>
                 ) : (
-                  <p className="text-center text-gray-500">No content published yet.</p>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="students">
-              <h2 className="text-2xl font-semibold mb-4">Your Students</h2>
-              <div className="space-y-4">
-                {students.length > 0 ? (
-                  students.map((student) => (
-                    <Card key={student.id}>
-                      <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <Avatar className="w-10 h-10 mr-4">
-                              <AvatarFallback>{student.avatar}</AvatarFallback>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {students.map((student) => (
+                      <Card key={student.id}>
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center space-x-2">
+                            <Avatar className="w-10 h-10">
+                              <AvatarFallback>{student.avatar || student.name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <div>
-                              <h3 className="font-semibold">{student.name}</h3>
-                              <p className="text-sm text-muted-foreground">{student.email}</p>
+                              <CardTitle className="text-lg">{student.name}</CardTitle>
+                              <CardDescription>{student.email}</CardDescription>
                             </div>
                           </div>
-                          <Badge variant={student.status === "active" ? "default" : "secondary"}>
-                            {student.status === "active" ? "Active" : "Inactive"}
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                ) : (
-                  <p className="text-center text-gray-500">No students enrolled in your classes.</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Status:</span>
+                              <Badge variant={student.status === "active" ? "default" : "secondary"}>
+                                {student.status || "Active"}
+                              </Badge>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Classes:</span>
+                              <span>{student.classes.length}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
               </div>
+            </TabsContent>
+
+            <TabsContent value="content" className="space-y-6">
+              {classes.length === 0 ? (
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-center text-muted-foreground">You have no classes assigned. Content is organized by class.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  {classes.map((cls) => (
+                    <Card key={cls.id}>
+                      <CardHeader>
+                        <CardTitle>{cls.name}</CardTitle>
+                        <CardDescription>{cls.subject || "No subject specified"}</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <Button onClick={() => handleViewCurriculum(cls.id)} className="w-full">
+                          Manage Curriculum
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </main>
-      </div>
-      
-      {/* Add teacher info footer */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t dark:bg-slate-900 dark:border-slate-800">
-        <div className="container flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Avatar className="w-8 h-8">
-              <AvatarFallback>{teacherData?.avatar || (teacherData?.name?.charAt(0) || "T")}</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{teacherData?.name || teacherData?.displayName || "Teacher"}</p>
-              <p className="text-sm text-muted-foreground">{teacherData?.email}</p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
-        </div>
       </div>
     </div>
   )

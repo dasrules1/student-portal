@@ -144,20 +144,38 @@ export default function CurriculumEditor({ params }: { params: { classId: string
 
   // Save curriculum
   const saveCurriculum = async () => {
-    if (!classData) return
+    if (!classData) {
+      console.error("Cannot save curriculum: classData is null or undefined");
+      toast({
+        title: "Save failed",
+        description: "Missing class data. Please try reloading the page.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
+      console.log("Saving curriculum for class:", classId);
+      console.log("Curriculum data structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
+      
       const updatedClass = {
         ...classData,
         curriculum,
-      }
+      };
 
-      await storage.updateClass(classId, updatedClass)
+      console.log("Attempting to update class with new curriculum...");
+      const result = await storage.updateClass(classId, updatedClass);
+      
+      if (!result) {
+        throw new Error("Class update returned no result");
+      }
+      
+      console.log("Class successfully updated with new curriculum");
 
       toast({
         title: "Curriculum saved",
         description: "The curriculum has been saved successfully",
-      })
+      });
 
       // Add activity log
       await storage.addActivityLog({
@@ -165,14 +183,21 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         details: `Curriculum for ${classData.name} has been updated`,
         timestamp: new Date().toLocaleString(),
         category: "Curriculum Management",
-      })
+      });
+      
+      // Refresh class data to ensure we have the latest
+      const refreshedClass = await storage.getClassById(classId);
+      if (refreshedClass) {
+        setClassData(refreshedClass);
+        console.log("Class data refreshed after save");
+      }
     } catch (error) {
-      console.error("Error saving curriculum:", error)
+      console.error("Error saving curriculum:", error);
       toast({
         title: "Save failed",
         description: "There was a problem saving the curriculum. Please try again.",
         variant: "destructive",
-      })
+      });
     }
   }
 
