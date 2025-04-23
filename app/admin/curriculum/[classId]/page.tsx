@@ -143,28 +143,37 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   }, [classId, router, toast])
 
   // Save curriculum
-  const saveCurriculum = () => {
+  const saveCurriculum = async () => {
     if (!classData) return
 
-    const updatedClass = {
-      ...classData,
-      curriculum,
+    try {
+      const updatedClass = {
+        ...classData,
+        curriculum,
+      }
+
+      await storage.updateClass(classId, updatedClass)
+
+      toast({
+        title: "Curriculum saved",
+        description: "The curriculum has been saved successfully",
+      })
+
+      // Add activity log
+      await storage.addActivityLog({
+        action: "Curriculum Updated",
+        details: `Curriculum for ${classData.name} has been updated`,
+        timestamp: new Date().toLocaleString(),
+        category: "Curriculum Management",
+      })
+    } catch (error) {
+      console.error("Error saving curriculum:", error)
+      toast({
+        title: "Save failed",
+        description: "There was a problem saving the curriculum. Please try again.",
+        variant: "destructive",
+      })
     }
-
-    storage.updateClass(classId, updatedClass)
-
-    toast({
-      title: "Curriculum saved",
-      description: "The curriculum has been saved successfully",
-    })
-
-    // Add activity log
-    storage.addActivityLog({
-      action: "Curriculum Updated",
-      details: `Curriculum for ${classData.name} has been updated`,
-      timestamp: new Date().toLocaleString(),
-      category: "Curriculum Management",
-    })
   }
 
   // Add a new lesson

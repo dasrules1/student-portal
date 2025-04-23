@@ -439,46 +439,61 @@ export class PersistentStorage {
   }
 
   // Update class
-  public updateClass(id: string, classData: Partial<Class>): Class | undefined {
-    this.ensureInitialized()
+  public async updateClass(id: string, classData: Partial<Class>): Promise<Class | undefined> {
+    try {
+      this.ensureInitialized()
+      console.log("PersistentStorage: Updating class:", id, classData)
 
-    const index = this.classes.findIndex((cls) => cls.id === id)
-    if (index !== -1) {
-      // Update class
-      this.classes[index] = {
-        ...this.classes[index],
-        ...classData,
-        students: classData.enrolledStudents
-          ? classData.enrolledStudents.length
-          : this.classes[index].enrolledStudents
-            ? this.classes[index].enrolledStudents.length
-            : this.classes[index].students,
-      }
-
-      // Update teacher if changed
-      if (classData.teacher && classData.teacher !== this.classes[index].teacher) {
-        // Remove class from old teacher
-        const oldTeacher = this.users.find((u) => u.name === this.classes[index].teacher)
-        if (oldTeacher) {
-          this.updateUser(oldTeacher.id, {
-            classes: oldTeacher.classes.filter((c) => c !== id),
-          })
+      const index = this.classes.findIndex((cls) => cls.id === id)
+      if (index !== -1) {
+        // Update class
+        this.classes[index] = {
+          ...this.classes[index],
+          ...classData,
+          students: classData.enrolledStudents
+            ? classData.enrolledStudents.length
+            : this.classes[index].enrolledStudents
+              ? this.classes[index].enrolledStudents.length
+              : this.classes[index].students,
         }
 
-        // Add class to new teacher
-        const newTeacher = this.users.find((u) => u.name === classData.teacher)
-        if (newTeacher) {
-          this.updateUser(newTeacher.id, {
-            classes: [...newTeacher.classes, id],
-          })
+        // Update teacher if changed
+        if (classData.teacher && classData.teacher !== this.classes[index].teacher) {
+          try {
+            // Remove class from old teacher
+            const oldTeacher = this.users.find((u) => u.name === this.classes[index].teacher)
+            if (oldTeacher) {
+              this.updateUser(oldTeacher.id, {
+                classes: oldTeacher.classes.filter((c) => c !== id),
+              })
+            }
+
+            // Add class to new teacher
+            const newTeacher = this.users.find((u) => u.name === classData.teacher)
+            if (newTeacher) {
+              this.updateUser(newTeacher.id, {
+                classes: [...newTeacher.classes, id],
+              })
+            }
+          } catch (teacherUpdateError) {
+            console.error("Error updating teacher assignments:", teacherUpdateError)
+            // Continue with class update even if teacher update fails
+          }
         }
+
+        // Save to storage
+        this.saveToStorage()
+        console.log("PersistentStorage: Class updated successfully:", this.classes[index])
+        return this.classes[index]
+      } else {
+        console.warn("PersistentStorage: Class not found for update:", id)
       }
 
-      this.saveToStorage()
-      return this.classes[index]
+      return undefined
+    } catch (error) {
+      console.error("PersistentStorage: Error updating class:", error)
+      return undefined
     }
-
-    return undefined
   }
 
   // Delete class

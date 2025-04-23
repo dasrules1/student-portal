@@ -478,33 +478,46 @@ class StorageService {
 
   async updateClass(id: string, classData: Partial<Class>): Promise<Class | undefined> {
     try {
-      // Update in Firestore
-      const classRef = doc(db, 'classes', id);
+      console.log("Updating class in storage:", id, classData);
       
-      // Add updatedAt timestamp
-      const updatedData = {
-        ...classData,
-        updatedAt: new Date().toISOString()
-      };
-      
-      await updateDoc(classRef, updatedData);
+      // First try updating in Firestore
+      try {
+        const classRef = doc(db, 'classes', id);
+        
+        // Add updatedAt timestamp
+        const updatedData = {
+          ...classData,
+          updatedAt: new Date().toISOString()
+        };
+        
+        await updateDoc(classRef, updatedData);
+        console.log("Class updated in Firestore successfully");
+      } catch (firestoreError) {
+        console.error("Error updating class in Firestore:", firestoreError);
+      }
       
       // Update local cache
       const index = this.classes.findIndex(cls => cls.id === id);
       if (index !== -1) {
-        this.classes[index] = { ...this.classes[index], ...updatedData };
+        this.classes[index] = { ...this.classes[index], ...classData };
+        console.log("Class updated in local cache");
+      } else {
+        console.warn("Class not found in local cache for update:", id);
       }
       
       // Also update in persistent storage
-      persistentStorage.updateClass(id, updatedData);
+      const updatedClass = await persistentStorage.updateClass(id, classData);
       
-      console.log('Class updated successfully:', id);
-      
-      // Get the updated class from the local cache
-      const updatedClass = this.classes.find(cls => cls.id === id);
-      return updatedClass;
+      if (updatedClass) {
+        console.log("Class updated successfully in all storage layers:", id);
+        return updatedClass;
+      } else {
+        console.warn("Class update may have been partial, returning from cache");
+        return index !== -1 ? this.classes[index] : undefined;
+      }
     } catch (error) {
-      console.error('Error updating class in Firestore:', error);
+      console.error("Error in overall updateClass process:", error);
+      // Try to update in persistent storage as a last resort
       return persistentStorage.updateClass(id, classData);
     }
   }
