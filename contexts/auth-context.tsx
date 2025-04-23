@@ -68,15 +68,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRole(session.role)
       
       // Wait for a longer delay to ensure state is properly updated
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise(resolve => setTimeout(resolve, 1500))
       
       // Then handle navigation based on role
       if (session.role === 'admin') {
-        window.location.href = '/admin/dashboard'
+        // Use window location replacement to avoid history issues
+        window.location.replace('/admin/dashboard')
       } else if (session.role === 'student') {
-        window.location.href = '/student/dashboard'
+        window.location.replace('/student/dashboard')
       } else {
-        window.location.href = '/teacher/dashboard'
+        window.location.replace('/teacher/dashboard')
       }
     } catch (error: any) {
       console.error('Sign in error:', error)
@@ -167,32 +168,45 @@ export function useRequireAuth(role?: "student" | "teacher" | "admin" | null) {
   const { user, role: userRole, loading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const [isRedirecting, setIsRedirecting] = useState(false)
 
   useEffect(() => {
-    // Only run after initial loading is complete
-    if (!loading) {
+    // Only run after initial loading is complete and not already redirecting
+    if (!loading && !isRedirecting) {
       if (!user) {
         // Not logged in, redirect to login
         console.log("Not logged in, redirecting to login")
+        setIsRedirecting(true)
         const currentRole = pathname.split("/")[1]
-        router.push(`/login?role=${currentRole}`)
+        setTimeout(() => {
+          router.push(`/login?role=${currentRole}`)
+        }, 1000) // Add delay to prevent race condition
       } else if (role && userRole) {
         // Check for role requirements
         console.log(`Checking role requirements: user role=${userRole}, required role=${role}`)
         // Only redirect if the user doesn't have the required role
         if (role === "admin" && userRole !== "admin") {
           console.log("Admin role required but user is not admin, redirecting")
-          router.push("/login?role=admin")
+          setIsRedirecting(true)
+          setTimeout(() => {
+            router.push("/login?role=admin")
+          }, 1000) // Add delay to prevent race condition
         } else if (role === "teacher" && userRole !== "teacher" && userRole !== "admin") {
           console.log("Teacher role required but user is not teacher or admin, redirecting")
-          router.push("/login?role=teacher")
+          setIsRedirecting(true)
+          setTimeout(() => {
+            router.push("/login?role=teacher")
+          }, 1000) // Add delay to prevent race condition
         } else if (role === "student" && userRole !== "student") {
           console.log("Student role required but user is not student, redirecting")
-          router.push("/login?role=student")
+          setIsRedirecting(true)
+          setTimeout(() => {
+            router.push("/login?role=student")
+          }, 1000) // Add delay to prevent race condition
         }
       }
     }
-  }, [loading, user, userRole, router, pathname, role])
+  }, [loading, user, userRole, router, pathname, role, isRedirecting])
 
   // Return whether the user is authorized along with loading state
   const isAuthorized = Boolean(
