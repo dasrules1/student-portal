@@ -9,9 +9,8 @@ import {
   StorageReference,
   FirebaseStorage
 } from 'firebase/storage';
-import { storage as firebaseStorage } from './firebase';
-import { db } from './firebase';
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { storage as firebaseStorage, db } from './firebase';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from 'firebase/firestore';
 
 // Types
 export interface User {
@@ -84,17 +83,34 @@ class StorageService {
 
   async getUsers(): Promise<User[]> {
     try {
+      console.log("Getting users from Firestore...")
       const usersRef = collection(db, 'users');
       const snapshot = await getDocs(usersRef);
-      const loadedUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      const loadedUsers = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          name: data.name || '', 
+          email: data.email || '', 
+          password: data.password || '', 
+          role: data.role || 'student',
+          status: data.status || 'active',
+          avatar: data.avatar || '',
+          classes: data.classes || []
+        } as User;
+      });
       
       // Cache the users locally
       this.users = loadedUsers;
-      console.log(`Loaded ${loadedUsers.length} users from Firestore`);
+      console.log(`Loaded ${loadedUsers.length} users from Firestore`, loadedUsers);
       return loadedUsers;
     } catch (error) {
       console.error('Error getting users:', error);
-      return [];
+      // Fallback to localStorage
+      const localUsers = persistentStorage.getAllUsers();
+      console.log('Falling back to local storage users:', localUsers);
+      this.users = localUsers;
+      return localUsers;
     }
   }
 
@@ -118,6 +134,8 @@ class StorageService {
 
   async addUser(userData: Omit<User, "id">): Promise<User> {
     try {
+      console.log("Adding user to Firestore:", userData);
+      
       // Generate avatar initials
       const avatarInitials = userData.name
         .split(" ")
@@ -140,6 +158,8 @@ class StorageService {
       const docRef = await addDoc(usersRef, enhancedUserData);
       const newUser = { id: docRef.id, ...enhancedUserData } as User;
       
+      console.log('User created in Firestore with ID:', docRef.id);
+      
       // Update local cache
       this.users.push(newUser);
       
@@ -153,8 +173,16 @@ class StorageService {
       console.log('User added successfully:', newUser);
       return newUser;
     } catch (error) {
-      console.error('Error adding user:', error);
-      throw error;
+      console.error('Error adding user to Firestore:', error);
+      // Try to add to persistent storage as fallback
+      try {
+        const localUser = persistentStorage.addUser(userData);
+        console.log('User added to local storage as fallback:', localUser);
+        return localUser;
+      } catch (e) {
+        console.error('Failed to add user to local storage too:', e);
+        throw error;
+      }
     }
   }
 
@@ -212,62 +240,44 @@ class StorageService {
   // Classes
   async getClasses(): Promise<Class[]> {
     try {
-      // Try to get classes from Supabase first
-      const { data: classes, error } = await supabase.from("classes").select("*")
-
-      if (!error && classes && classes.length > 0) {
-        console.log(`Retrieved ${classes.length} classes from Supabase`)
-
-        // Get teacher names for each class
-        const classesWithTeachers = await Promise.all(
-          classes.map(async (cls) => {
-            let teacherName = "Unknown Teacher"
-
-            if (cls.teacher_id) {
-              const { data: teacher } = await supabase.from("users").select("name").eq("id", cls.teacher_id).single()
-
-              if (teacher) {
-                teacherName = teacher.name
-              }
-            }
-
-            // Get enrollments for this class
-            const { data: enrollments } = await supabase
-              .from("class_enrollments")
-              .select("student_id")
-              .eq("class_id", cls.id)
-
-            const enrolledStudents = enrollments?.map((e) => e.student_id) || []
-
-            return {
-              id: cls.id,
-              name: cls.name,
-              teacher: teacherName,
-              teacher_id: cls.teacher_id,
-              location: cls.location || "",
-              meetingDates: cls.meeting_day || "",
-              startDate: cls.start_date || "",
-              endDate: cls.end_date || "",
-              startTime: cls.start_time || "",
-              endTime: cls.end_time || "",
-              virtualLink: cls.virtual_link || "",
-              status: cls.status || "active",
-              students: enrolledStudents.length,
-              enrolledStudents: enrolledStudents,
-              subject: cls.subject || "",
-              meeting_day: cls.meeting_day || "",
-            }
-          }),
-        )
-
-        return classesWithTeachers
+      // Load from Firestore
+      const classesRef = collection(db, 'classes');
+      const snapshot = await getDocs(classesRef);
+      
+      if (snapshot.docs.length > 0) {
+        console.log(`Retrieved ${snapshot.docs.length} classes from Firestore`);
+        
+        const classesWithData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || '',
+            teacher: data.teacher || 'Unknown Teacher',
+            location: data.location || '',
+            meetingDates: data.meetingDates || '',
+            startDate: data.startDate || '',
+            endDate: data.endDate || '',
+            startTime: data.startTime || '',
+            endTime: data.endTime || '',
+            virtualLink: data.virtualLink || '',
+            status: data.status || 'active',
+            students: data.students || 0,
+            enrolledStudents: data.enrolledStudents || [],
+            subject: data.subject || '',
+            meeting_day: data.meeting_day || ''
+          } as Class;
+        });
+        
+        return classesWithData;
       }
     } catch (err) {
-      console.error("Error fetching classes from Supabase:", err)
+      console.error("Error fetching classes from Firestore:", err);
     }
 
     // Fall back to local storage
-    return persistentStorage.getAllClasses()
+    const localClasses = persistentStorage.getAllClasses();
+    console.log('Falling back to local storage classes:', localClasses);
+    return localClasses;
   }
 
   getClassById(id: string): Class | undefined {
@@ -319,6 +329,7 @@ class StorageService {
 }
 
 export const storageService = new StorageService()
+export const storage = storageService // Export as 'storage' for backwards compatibility
 
 /**
  * Upload a file to Firebase Storage

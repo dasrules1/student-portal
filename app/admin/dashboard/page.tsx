@@ -96,15 +96,18 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setIsLoading(true)
     try {
-      // Load users from Supabase first, then fall back to local storage
+      console.log("Loading data from Firebase...")
+      
+      // Load users from Firebase
       const loadedUsers = await storage.getUsers()
+      console.log("Loaded users:", loadedUsers)
       setUsers(loadedUsers)
 
       // Set available teachers
       const teachers = loadedUsers.filter((user) => user.role === "teacher")
       setAvailableTeachers(teachers)
 
-      // Load classes from Supabase first, then fall back to local storage
+      // Load classes
       const loadedClasses = await storage.getClasses()
       setClasses(loadedClasses)
 
@@ -135,6 +138,7 @@ export default function AdminDashboard() {
         return
       }
 
+      console.log("Creating new user:", newUser)
       setIsLoading(true)
       
       // Add user (awaiting the async operation)
@@ -153,6 +157,7 @@ export default function AdminDashboard() {
       setIsAddingUser(false)
 
       // Reload data
+      console.log("Reloading data after user creation...")
       await loadData()
 
       toast({
