@@ -17,8 +17,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
+  // Don't render anything while redirecting
   if (!isAuthorized) {
-    return null // Will redirect in useRequireAuth
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <span className="ml-2">Checking authorization...</span>
+      </div>
+    )
   }
 
   return (

@@ -169,24 +169,39 @@ export function useRequireAuth(role?: "student" | "teacher" | "admin" | null) {
   const pathname = usePathname()
 
   useEffect(() => {
-    if (!loading) {  // Only proceed if not loading
+    // Only run after initial loading is complete
+    if (!loading) {
       if (!user) {
         // Not logged in, redirect to login
+        console.log("Not logged in, redirecting to login")
         const currentRole = pathname.split("/")[1]
         router.push(`/login?role=${currentRole}`)
       } else if (role && userRole) {
         // Check for role requirements
+        console.log(`Checking role requirements: user role=${userRole}, required role=${role}`)
+        // Only redirect if the user doesn't have the required role
         if (role === "admin" && userRole !== "admin") {
+          console.log("Admin role required but user is not admin, redirecting")
           router.push("/login?role=admin")
         } else if (role === "teacher" && userRole !== "teacher" && userRole !== "admin") {
+          console.log("Teacher role required but user is not teacher or admin, redirecting")
           router.push("/login?role=teacher")
         } else if (role === "student" && userRole !== "student") {
+          console.log("Student role required but user is not student, redirecting")
           router.push("/login?role=student")
         }
       }
     }
   }, [loading, user, userRole, router, pathname, role])
 
-  // Return loading state so components can show loading indicator
-  return { user, loading, isAuthorized: !loading && user && (!role || role === userRole) }
+  // Return whether the user is authorized along with loading state
+  const isAuthorized = Boolean(
+    !loading && 
+    user && 
+    (!role || (role === "admin" && userRole === "admin") ||
+    (role === "teacher" && (userRole === "teacher" || userRole === "admin")) ||
+    (role === "student" && userRole === "student"))
+  )
+
+  return { user, loading, isAuthorized }
 }
