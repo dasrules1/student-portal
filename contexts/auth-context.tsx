@@ -67,17 +67,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session.user)
       setRole(session.role)
       
+      // Store authentication data in localStorage to ensure persistence
+      if (session.user && session.role) {
+        localStorage.setItem('authUser', JSON.stringify({
+          uid: session.user.uid,
+          email: session.user.email,
+          role: session.role
+        }))
+      }
+      
       // Wait for a longer delay to ensure state is properly updated
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      await new Promise(resolve => setTimeout(resolve, 2000))
       
       // Then handle navigation based on role
       if (session.role === 'admin') {
-        // Use window location replacement to avoid history issues
-        window.location.replace('/admin/dashboard')
+        // Use direct navigation to avoid Next.js router issues
+        window.location.href = '/admin/dashboard'
       } else if (session.role === 'student') {
-        window.location.replace('/student/dashboard')
+        window.location.href = '/student/dashboard'
       } else {
-        window.location.replace('/teacher/dashboard')
+        window.location.href = '/teacher/dashboard'
       }
     } catch (error: any) {
       console.error('Sign in error:', error)
@@ -103,8 +112,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const success = await firebaseAuth.signOut()
       if (success) {
+        // Clear the user and role from state
         setUser(null)
         setRole(null)
+        
+        // Clear the localStorage auth data
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('authUser')
+        }
+        
         router.push('/')
       }
     } catch (error) {
@@ -169,11 +185,30 @@ export function useRequireAuth(role?: "student" | "teacher" | "admin" | null) {
   const router = useRouter()
   const pathname = usePathname()
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [localAuth, setLocalAuth] = useState<{uid: string, email: string, role: string} | null>(null)
+  
+  // Check localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const storedAuth = localStorage.getItem('authUser')
+        if (storedAuth) {
+          setLocalAuth(JSON.parse(storedAuth))
+        }
+      } catch (e) {
+        console.error('Error reading auth from localStorage:', e)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     // Only run after initial loading is complete and not already redirecting
     if (!loading && !isRedirecting) {
-      if (!user) {
+      // Check both Firebase auth and localStorage auth
+      const isUserAuthenticated = user || localAuth
+      const effectiveRole = userRole || (localAuth?.role as any)
+      
+      if (!isUserAuthenticated) {
         // Not logged in, redirect to login
         console.log("Not logged in, redirecting to login")
         setIsRedirecting(true)
@@ -181,23 +216,23 @@ export function useRequireAuth(role?: "student" | "teacher" | "admin" | null) {
         setTimeout(() => {
           router.push(`/login?role=${currentRole}`)
         }, 1000) // Add delay to prevent race condition
-      } else if (role && userRole) {
+      } else if (role && effectiveRole) {
         // Check for role requirements
-        console.log(`Checking role requirements: user role=${userRole}, required role=${role}`)
+        console.log(`Checking role requirements: user role=${effectiveRole}, required role=${role}`)
         // Only redirect if the user doesn't have the required role
-        if (role === "admin" && userRole !== "admin") {
+        if (role === "admin" && effectiveRole !== "admin") {
           console.log("Admin role required but user is not admin, redirecting")
           setIsRedirecting(true)
           setTimeout(() => {
             router.push("/login?role=admin")
           }, 1000) // Add delay to prevent race condition
-        } else if (role === "teacher" && userRole !== "teacher" && userRole !== "admin") {
+        } else if (role === "teacher" && effectiveRole !== "teacher" && effectiveRole !== "admin") {
           console.log("Teacher role required but user is not teacher or admin, redirecting")
           setIsRedirecting(true)
           setTimeout(() => {
             router.push("/login?role=teacher")
           }, 1000) // Add delay to prevent race condition
-        } else if (role === "student" && userRole !== "student") {
+        } else if (role === "student" && effectiveRole !== "student") {
           console.log("Student role required but user is not student, redirecting")
           setIsRedirecting(true)
           setTimeout(() => {
@@ -206,16 +241,17 @@ export function useRequireAuth(role?: "student" | "teacher" | "admin" | null) {
         }
       }
     }
-  }, [loading, user, userRole, router, pathname, role, isRedirecting])
+  }, [loading, user, userRole, router, pathname, role, isRedirecting, localAuth])
 
   // Return whether the user is authorized along with loading state
+  const effectiveRole = userRole || (localAuth?.role as any)
   const isAuthorized = Boolean(
     !loading && 
-    user && 
-    (!role || (role === "admin" && userRole === "admin") ||
-    (role === "teacher" && (userRole === "teacher" || userRole === "admin")) ||
-    (role === "student" && userRole === "student"))
+    (user || localAuth) && 
+    (!role || (role === "admin" && effectiveRole === "admin") ||
+    (role === "teacher" && (effectiveRole === "teacher" || effectiveRole === "admin")) ||
+    (role === "student" && effectiveRole === "student"))
   )
 
-  return { user, loading, isAuthorized }
+  return { user: user || (localAuth as any), loading, isAuthorized }
 }
