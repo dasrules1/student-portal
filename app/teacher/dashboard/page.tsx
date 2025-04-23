@@ -62,7 +62,8 @@ export default function TeacherDashboard() {
       return
     }
 
-    setTeacherData(currentUser)
+    // Properly set teacher data with user object from currentUser
+    setTeacherData(currentUser.user || currentUser);
 
     // Safely load teacher's classes using our new safe method
     const loadData = async () => {
@@ -71,30 +72,57 @@ export default function TeacherDashboard() {
         const allClasses = await storage.getSafeClasses();
         console.log("Loaded classes:", allClasses);
         
-        // Filter teacher's classes
+        // Get user info for better matching
+        const teacherEmail = currentUser.user?.email || currentUser.email;
+        const teacherName = currentUser.user?.displayName || currentUser.name;
+        const teacherId = currentUser.user?.uid || currentUser.id;
+        
+        console.log("Teacher info for filtering:", { teacherEmail, teacherName, teacherId });
+        
+        // Filter teacher's classes - fix property names and add more matching options
         const teacherClasses = Array.isArray(allClasses) 
-          ? allClasses.filter(classItem => 
-              classItem.teacher === currentUser.name || 
-              classItem.teacherId === currentUser.id)
+          ? allClasses.filter(classItem => {
+              // Match on multiple potential teacher identifiers 
+              return (
+                (classItem.teacher && classItem.teacher.toLowerCase() === teacherName?.toLowerCase()) ||
+                (classItem.teacher_id && classItem.teacher_id === teacherId) ||
+                (classItem.teacherId && classItem.teacherId === teacherId) ||
+                (classItem.teacher_email && classItem.teacher_email === teacherEmail)
+              );
+            })
           : [];
         
+        console.log("Filtered teacher classes:", teacherClasses);
         setClasses(teacherClasses);
 
         // Get all students
         try {
           const allUsers = await storage.getUsers();
+          console.log("Loaded users:", allUsers);
           
           if (Array.isArray(allUsers) && Array.isArray(teacherClasses)) {
-            const classStudents = allUsers.filter((user) => {
-              return (
-                user.role === "student" &&
-                teacherClasses.some(
-                  (cls) => 
-                    (user.classes && Array.isArray(user.classes) && user.classes.includes(cls.id)) || 
-                    (cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && cls.enrolledStudents.includes(user.id))
-                )
-              );
+            // Fix student filtering to properly find enrolled students
+            const classStudents = allUsers.filter(user => {
+              // Only include students
+              if (user.role !== "student") return false;
+              
+              // Check if student is in any of teacher's classes
+              return teacherClasses.some(cls => {
+                // Check if student is in class.enrolledStudents
+                if (cls.enrolledStudents && Array.isArray(cls.enrolledStudents)) {
+                  if (cls.enrolledStudents.includes(user.id)) return true;
+                }
+                
+                // Check if class.id is in student.classes
+                if (user.classes && Array.isArray(user.classes)) {
+                  if (user.classes.includes(cls.id)) return true;
+                }
+                
+                return false;
+              });
             });
+            
+            console.log("Filtered students:", classStudents);
             setStudents(classStudents);
           } else {
             setStudents([]);
@@ -466,6 +494,25 @@ export default function TeacherDashboard() {
             </TabsContent>
           </Tabs>
         </main>
+      </div>
+      
+      {/* Add teacher info footer */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t dark:bg-slate-900 dark:border-slate-800">
+        <div className="container flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Avatar className="w-8 h-8">
+              <AvatarFallback>{teacherData?.avatar || (teacherData?.name?.charAt(0) || "T")}</AvatarFallback>
+            </Avatar>
+            <div>
+              <p className="font-medium">{teacherData?.name || teacherData?.displayName || "Teacher"}</p>
+              <p className="text-sm text-muted-foreground">{teacherData?.email}</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
+        </div>
       </div>
     </div>
   )
