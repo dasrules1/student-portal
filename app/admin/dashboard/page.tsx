@@ -123,7 +123,7 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     try {
       // Validate input
       if (!newUser.name || !newUser.email || !newUser.password) {
@@ -135,8 +135,11 @@ export default function AdminDashboard() {
         return
       }
 
-      // Add user
-      storage.addUser(newUser)
+      setIsLoading(true)
+      
+      // Add user (awaiting the async operation)
+      const createdUser = await storage.addUser(newUser)
+      console.log("User created:", createdUser)
 
       // Reset form
       setNewUser({
@@ -150,7 +153,7 @@ export default function AdminDashboard() {
       setIsAddingUser(false)
 
       // Reload data
-      loadData()
+      await loadData()
 
       toast({
         title: "User added",
@@ -165,11 +168,14 @@ export default function AdminDashboard() {
         category: "User Management",
       })
     } catch (error) {
+      console.error("Error adding user:", error)
       toast({
         title: "Error adding user",
-        description: error.message,
+        description: error.message || "Failed to add user",
         variant: "destructive",
       })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -236,20 +242,62 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleDeleteUser = () => {
-    if (!userToDelete) return
-
+  const handleEditUser = async () => {
     try {
-      // Delete user
-      storage.deleteUser(userToDelete.id)
+      if (!userToEdit) return;
+      
+      setIsLoading(true);
+
+      // Update user
+      await storage.updateUser(userToEdit.id, userToEdit);
 
       // Reload data
-      loadData()
+      await loadData();
+
+      toast({
+        title: "User updated",
+        description: `${userToEdit.name} has been updated`,
+      });
+
+      // Add activity log
+      storage.addActivityLog({
+        action: "User Updated",
+        details: `${userToEdit.name} (${userToEdit.role})`,
+        timestamp: new Date().toLocaleString(),
+        category: "User Management",
+      });
+
+      // Close dialog
+      setIsEditingUser(false);
+      setUserToEdit(null);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      toast({
+        title: "Error updating user",
+        description: error.message || "Failed to update user",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      setIsLoading(true);
+      
+      // Delete user
+      await storage.deleteUser(userToDelete.id);
+
+      // Reload data
+      await loadData();
 
       toast({
         title: "User deleted",
         description: `${userToDelete.name} has been deleted`,
-      })
+      });
 
       // Add activity log
       storage.addActivityLog({
@@ -257,19 +305,22 @@ export default function AdminDashboard() {
         details: `${userToDelete.name} (${userToDelete.role})`,
         timestamp: new Date().toLocaleString(),
         category: "User Management",
-      })
+      });
 
       // Close dialog
-      setDeleteUserDialogOpen(false)
-      setUserToDelete(null)
+      setDeleteUserDialogOpen(false);
+      setUserToDelete(null);
     } catch (error) {
+      console.error("Error deleting user:", error);
       toast({
         title: "Error deleting user",
-        description: error.message,
+        description: error.message || "Failed to delete user",
         variant: "destructive",
-      })
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleDeleteClass = () => {
     if (!classToDelete) return
@@ -300,41 +351,6 @@ export default function AdminDashboard() {
     } catch (error) {
       toast({
         title: "Error deleting class",
-        description: error.message,
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleEditUser = () => {
-    if (!userToEdit) return
-
-    try {
-      // Update user
-      storage.updateUser(userToEdit.id, userToEdit)
-
-      // Reload data
-      loadData()
-
-      toast({
-        title: "User updated",
-        description: `${userToEdit.name} has been updated`,
-      })
-
-      // Add activity log
-      storage.addActivityLog({
-        action: "User Updated",
-        details: `${userToEdit.name} (${userToEdit.role})`,
-        timestamp: new Date().toLocaleString(),
-        category: "User Management",
-      })
-
-      // Close dialog
-      setIsEditingUser(false)
-      setUserToEdit(null)
-    } catch (error) {
-      toast({
-        title: "Error updating user",
         description: error.message,
         variant: "destructive",
       })

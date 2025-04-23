@@ -86,7 +86,12 @@ class StorageService {
     try {
       const usersRef = collection(db, 'users');
       const snapshot = await getDocs(usersRef);
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      const loadedUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      
+      // Cache the users locally
+      this.users = loadedUsers;
+      console.log(`Loaded ${loadedUsers.length} users from Firestore`);
+      return loadedUsers;
     } catch (error) {
       console.error('Error getting users:', error);
       return [];
@@ -94,30 +99,114 @@ class StorageService {
   }
 
   getUserById(id: string): User | undefined {
-    return this.users.find(user => user.id === id);
+    // Try to find in the local cache first
+    const localUser = this.users.find(user => user.id === id);
+    if (localUser) return localUser;
+    
+    // If not found in cache, return from persistent storage
+    return persistentStorage.getUserById(id);
   }
 
   getUserByEmail(email: string): User | undefined {
-    return this.users.find(user => user.email === email);
+    // Try to find in the local cache first
+    const localUser = this.users.find(user => user.email === email);
+    if (localUser) return localUser;
+    
+    // If not found in cache, return from persistent storage
+    return persistentStorage.getUserByEmail(email);
   }
 
   async addUser(userData: Omit<User, "id">): Promise<User> {
     try {
+      // Generate avatar initials
+      const avatarInitials = userData.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase();
+        
+      // Add status and avatar if not provided
+      const enhancedUserData = {
+        ...userData,
+        status: userData.status || 'active',
+        avatar: userData.avatar || avatarInitials,
+        classes: userData.classes || [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Add to Firestore
       const usersRef = collection(db, 'users');
-      const docRef = await addDoc(usersRef, userData);
-      return { id: docRef.id, ...userData };
+      const docRef = await addDoc(usersRef, enhancedUserData);
+      const newUser = { id: docRef.id, ...enhancedUserData } as User;
+      
+      // Update local cache
+      this.users.push(newUser);
+      
+      // Also add to persistent storage as backup
+      try {
+        persistentStorage.addUser(enhancedUserData);
+      } catch (e) {
+        console.log('User already exists in persistent storage or other error:', e);
+      }
+      
+      console.log('User added successfully:', newUser);
+      return newUser;
     } catch (error) {
       console.error('Error adding user:', error);
       throw error;
     }
   }
 
-  updateUser(id: string, userData: Partial<User>): User | undefined {
-    return persistentStorage.updateUser(id, userData)
+  async updateUser(id: string, userData: Partial<User>): Promise<User | undefined> {
+    try {
+      // Update in Firestore
+      const userRef = doc(db, 'users', id);
+      
+      // Add updatedAt timestamp
+      const updatedData = {
+        ...userData,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await updateDoc(userRef, updatedData);
+      
+      // Update local cache
+      const index = this.users.findIndex(user => user.id === id);
+      if (index !== -1) {
+        this.users[index] = { ...this.users[index], ...updatedData };
+      }
+      
+      // Also update in persistent storage
+      persistentStorage.updateUser(id, updatedData);
+      
+      console.log('User updated successfully:', id);
+      return this.users[index];
+    } catch (error) {
+      console.error('Error updating user:', error);
+      return persistentStorage.updateUser(id, userData);
+    }
   }
 
-  deleteUser(id: string): boolean {
-    return persistentStorage.deleteUser(id)
+  async deleteUser(id: string): Promise<boolean> {
+    try {
+      // Delete from Firestore
+      const userRef = doc(db, 'users', id);
+      await deleteDoc(userRef);
+      
+      // Update local cache
+      const initialLength = this.users.length;
+      this.users = this.users.filter(user => user.id !== id);
+      
+      // Also delete from persistent storage
+      persistentStorage.deleteUser(id);
+      
+      console.log('User deleted successfully:', id);
+      return this.users.length < initialLength;
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      return persistentStorage.deleteUser(id);
+    }
   }
 
   // Classes
