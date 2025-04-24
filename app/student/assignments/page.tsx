@@ -107,6 +107,16 @@ export default function StudentAssignments() {
         
         // Load all classes
         const allClasses = await storage.getClasses()
+        console.log("Loaded classes:", allClasses?.length || 0)
+        
+        // Additional null check and validation for classes
+        if (!allClasses || !Array.isArray(allClasses)) {
+          console.error("No classes found or invalid classes data")
+          setStudentClasses([])
+          setAssignments([])
+          setLoading(false)
+          return
+        }
         
         // Filter classes to only include those the student is enrolled in
         const enrolledClasses = allClasses.filter((cls: Class) => 
