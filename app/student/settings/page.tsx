@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { sessionManager } from "@/lib/session"
-import { Sidebar } from "@/components/ui/sidebar"
+import { Sidebar } from "@/components/sidebar"
 
 export default function StudentSettings() {
   const router = useRouter()
