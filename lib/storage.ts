@@ -1169,11 +1169,9 @@ class StorageService {
       };
       
       // Update class in Firestore
-      const classRef = doc(db, 'classes', classId);
       await updateDoc(classRef, updatedClassData);
       
       // Update student in Firestore
-      const studentRef = doc(db, 'users', studentId);
       await updateDoc(studentRef, {
         classes: [...studentClasses, classId]
       });
@@ -1232,3 +1230,7 @@ class StorageService {
 
   // ... rest of the file - files, etc. ...
 }
+
+// Export the class instance for use throughout the application
+export const storageService = new StorageService()
+export const storage = storageService // Export as 'storage' for backwards compatibility
