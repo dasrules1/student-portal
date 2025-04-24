@@ -131,38 +131,42 @@ export default function StudentDashboard() {
         const pendingTemp: any[] = []
         
         for (const cls of enrolledClasses) {
-          if (cls.curriculum) {
-            // Try to load full curriculum data
-            const curriculum = await storage.getCurriculum(cls.id)
-            const curriculumData = curriculum || cls.curriculum
-            
-            if (curriculumData && curriculumData.lessons) {
-              // Find all published assignments across lessons
-              const classAssignments = curriculumData.lessons.flatMap(lesson => {
-                if (!lesson.contents) return []
+          if (cls && cls.curriculum) {
+            try {
+              // Try to load full curriculum data
+              const curriculum = await storage.getCurriculum(cls.id)
+              const curriculumData = curriculum || cls.curriculum
+              
+              if (curriculumData && curriculumData.lessons && Array.isArray(curriculumData.lessons)) {
+                // Find all published assignments across lessons
+                const classAssignments = curriculumData.lessons.flatMap(lesson => {
+                  if (!lesson || !lesson.contents || !Array.isArray(lesson.contents)) return []
+                  
+                  return lesson.contents
+                    .filter(content => 
+                      content && content.isPublished && 
+                      (content.type === 'assignment' || content.type === 'quiz')
+                    )
+                    .map(content => ({
+                      ...content,
+                      lessonTitle: lesson.title || 'Unnamed Lesson',
+                      lessonId: lesson.id,
+                      classId: cls.id,
+                      className: cls.name || 'Unnamed Class',
+                      teacher: cls.teacher || 'Unnamed Teacher'
+                    }))
+                })
                 
-                return lesson.contents
-                  .filter(content => 
-                    content.isPublished && 
-                    (content.type === 'assignment' || content.type === 'quiz')
-                  )
-                  .map(content => ({
-                    ...content,
-                    lessonTitle: lesson.title,
-                    lessonId: lesson.id,
-                    classId: cls.id,
-                    className: cls.name,
-                    teacher: cls.teacher
-                  }))
-              })
-              
-              assignmentsTemp[cls.id] = classAssignments
-              
-              // Add assignments without completed status to pending list
-              const pending = classAssignments.filter(
-                assignment => !assignment.completed && new Date(assignment.dueDate) > new Date()
-              )
-              pendingTemp.push(...pending)
+                assignmentsTemp[cls.id] = classAssignments
+                
+                // Add assignments without completed status to pending list
+                const pending = classAssignments.filter(
+                  assignment => !assignment.completed && assignment.dueDate && new Date(assignment.dueDate) > new Date()
+                )
+                pendingTemp.push(...pending)
+              }
+            } catch (error) {
+              console.error(`Error loading curriculum for class ${cls.id}:`, error)
             }
           }
         }
