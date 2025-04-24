@@ -144,12 +144,6 @@ export default function StudentCalendar() {
       current: false,
     },
     {
-      title: "Students",
-      href: "/student/students",
-      icon: Users,
-      current: false,
-    },
-    {
       title: "Settings",
       href: "/student/settings",
       icon: Cog,
@@ -217,12 +211,16 @@ export default function StudentCalendar() {
   return (
     <div className="flex min-h-screen">
       <Sidebar navigation={navigation} user={currentUser} />
-      <div className="flex-1 p-8 pt-6 overflow-auto">
+      <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
         <div className="flex items-center justify-between mb-6">
           <div>
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/logo.png" alt="Education More" className="h-8" />
+              <h2 className="text-lg font-semibold">Education More</h2>
+            </div>
             <h1 className="text-3xl font-bold">Calendar</h1>
             <p className="text-muted-foreground">
-              View your class schedule and assignments
+              View your class schedule and assignment due dates
             </p>
           </div>
         </div>

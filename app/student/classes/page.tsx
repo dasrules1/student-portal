@@ -165,12 +165,6 @@ export default function StudentClasses() {
       current: false,
     },
     {
-      title: "Students",
-      href: "/student/students",
-      icon: Users,
-      current: false,
-    },
-    {
       title: "Settings",
       href: "/student/settings",
       icon: Cog,
@@ -238,9 +232,13 @@ export default function StudentClasses() {
   return (
     <div className="flex min-h-screen">
       <Sidebar navigation={navigation} user={currentUser} />
-      <div className="flex-1 p-8 pt-6 overflow-auto">
+      <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
         <div className="flex items-center justify-between mb-6">
           <div>
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/logo.png" alt="Education More" className="h-8" />
+              <h2 className="text-lg font-semibold">Education More</h2>
+            </div>
             <h1 className="text-3xl font-bold">My Classes</h1>
             <p className="text-muted-foreground">
               View and access your enrolled classes
@@ -249,37 +247,99 @@ export default function StudentClasses() {
         </div>
 
         {/* Class List */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6">
           {studentClasses.length > 0 ? (
             studentClasses.map((cls) => (
-              <Card key={cls.id}>
+              <Card key={cls.id} className="overflow-hidden">
                 <CardHeader>
                   <CardTitle>{cls.name}</CardTitle>
                   <CardDescription>Teacher: {cls.teacher}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Progress</span>
-                      <span className="text-muted-foreground">70%</span>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Class Details</h3>
+                      <dl className="space-y-2">
+                        <div className="flex justify-between">
+                          <dt className="text-muted-foreground">Meeting Days:</dt>
+                          <dd>{cls.meeting_day || cls.meetingDates || "Not specified"}</dd>
+                        </div>
+                        {cls.startTime && cls.endTime && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Meeting Time:</dt>
+                            <dd>{cls.startTime} - {cls.endTime}</dd>
+                          </div>
+                        )}
+                        {cls.location && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Location:</dt>
+                            <dd>{cls.location}</dd>
+                          </div>
+                        )}
+                        {cls.room && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Room:</dt>
+                            <dd>{cls.room}</dd>
+                          </div>
+                        )}
+                        {cls.term && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Term:</dt>
+                            <dd>{cls.term}</dd>
+                          </div>
+                        )}
+                        {cls.credits && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Credits:</dt>
+                            <dd>{cls.credits}</dd>
+                          </div>
+                        )}
+                      </dl>
                     </div>
-                    <Progress value={70} className="h-2" />
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Description</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {cls.description || "No description available for this class."}
+                      </p>
+                      {cls.requirements && (
+                        <>
+                          <h3 className="text-lg font-medium mt-4 mb-2">Requirements</h3>
+                          <p className="text-sm text-muted-foreground">{cls.requirements}</p>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
-                <CardFooter>
-                  <Button asChild className="w-full">
-                    <Link href={`/student/curriculum/${cls.id}`}>
-                      View Class
+                <CardFooter className="flex flex-wrap gap-2">
+                  <Button variant="outline" asChild>
+                    <Link href={`/student/assignments?classId=${cls.id}`}>
+                      View Assignments
                     </Link>
                   </Button>
+                  {cls.virtualLink && (
+                    <Button variant="default" asChild>
+                      <a href={cls.virtualLink} target="_blank" rel="noopener noreferrer">
+                        Join Virtual Class
+                      </a>
+                    </Button>
+                  )}
+                  {cls.syllabus && (
+                    <Button variant="outline" asChild>
+                      <a href={cls.syllabus} target="_blank" rel="noopener noreferrer">
+                        View Syllabus
+                      </a>
+                    </Button>
+                  )}
                 </CardFooter>
               </Card>
             ))
           ) : (
-            <Card className="col-span-full">
+            <Card>
               <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                 <Book className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                <p className="text-muted-foreground">You are not enrolled in any classes</p>
+                <p className="text-muted-foreground">
+                  You are not enrolled in any classes
+                </p>
               </CardContent>
             </Card>
           )}

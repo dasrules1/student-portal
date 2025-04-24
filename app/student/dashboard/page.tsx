@@ -228,12 +228,6 @@ export default function StudentDashboard() {
       current: false,
     },
     {
-      title: "Students",
-      href: "/student/students",
-      icon: Users,
-      current: false,
-    },
-    {
       title: "Settings",
       href: "/student/settings",
       icon: Cog,
@@ -301,9 +295,13 @@ export default function StudentDashboard() {
   return (
     <div className="flex min-h-screen">
       <Sidebar navigation={navigation} user={currentUser} />
-      <div className="flex-1 p-8 pt-6 overflow-auto">
+      <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
         <div className="flex items-center justify-between mb-6">
           <div>
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/logo.png" alt="Education More" className="h-8" />
+              <h2 className="text-lg font-semibold">Education More</h2>
+            </div>
             <h1 className="text-3xl font-bold">Student Dashboard</h1>
             <p className="text-muted-foreground">
               Welcome back, {currentUser.name}!
@@ -343,8 +341,8 @@ export default function StudentDashboard() {
                       asChild 
                       className="w-full"
                     >
-                      <Link href={`/student/curriculum/${assignment.classId || ""}?lesson=${assignment.lessonId || ""}&content=${assignment.id || ""}`}>
-                        Start Assignment
+                      <Link href={`/student/assignments?classId=${assignment.classId || ""}`}>
+                        View Assignment
                       </Link>
                     </Button>
                   </CardFooter>
@@ -366,6 +364,9 @@ export default function StudentDashboard() {
         <section className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">Your Classes</h2>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/student/classes">View All</Link>
+            </Button>
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {studentClasses && Array.isArray(studentClasses) && studentClasses.length > 0 ? (
@@ -398,8 +399,8 @@ export default function StudentDashboard() {
                   </CardContent>
                   <CardFooter className="flex justify-between">
                     <Button variant="outline" asChild>
-                      <Link href={`/student/curriculum/${cls.id || ""}`}>
-                        View Curriculum
+                      <Link href={`/student/classes?view=${cls.id || ""}`}>
+                        View Details
                       </Link>
                     </Button>
                     {cls.virtualLink && (
@@ -425,15 +426,11 @@ export default function StudentDashboard() {
         </section>
 
         {/* Recent Activity */}
-        <section className="mb-8">
+        <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">Recent Activity</h2>
           </div>
-          <Card>
-            <CardContent className="p-6">
-              <Activity studentId={currentUser.id} />
-            </CardContent>
-          </Card>
+          <Activity studentId={currentUser.id} />
         </section>
       </div>
     </div>
