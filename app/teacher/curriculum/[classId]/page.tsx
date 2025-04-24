@@ -756,10 +756,10 @@ export default function TeacherCurriculum() {
             <ul className="space-y-1">
               {problem.options.map((option, optIndex) => (
                 <li key={optIndex} className="flex items-center">
-                  {option === problem.correctAnswer && (
+                  {optIndex === parseInt(problem.correctAnswer) && (
                     <Check className="w-4 h-4 text-green-500 mr-1" />
                   )}
-                  <span className={option === problem.correctAnswer ? "font-medium text-green-600" : ""}>
+                  <span className={optIndex === parseInt(problem.correctAnswer) ? "font-medium text-green-600" : ""}>
                     {option}
                   </span>
                 </li>
@@ -771,7 +771,23 @@ export default function TeacherCurriculum() {
         {(problemType === 'short-answer' || problemType === 'essay' || problemType === 'open-ended' || problemType === 'math-expression') && (
           <div className="mb-2">
             <div className="font-medium text-sm text-gray-500 mb-1">Correct Answer:</div>
-            <div className="p-2 bg-gray-50 rounded">{problem.correctAnswer || 'No answer provided'}</div>
+            <div className="p-2 bg-gray-50 rounded">
+              {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  {problem.correctAnswers.map((answer, i) => (
+                    <div key={i}>{answer}</div>
+                  ))}
+                </div>
+              ) : problem.correctAnswer ? (
+                problemType === 'math-expression' ? (
+                  <span className="font-mono">{problem.correctAnswer}</span>
+                ) : (
+                  problem.correctAnswer
+                )
+              ) : (
+                'No answer provided'
+              )}
+            </div>
           </div>
         )}
       </div>

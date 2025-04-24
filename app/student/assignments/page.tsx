@@ -70,24 +70,64 @@ export default function StudentAssignments() {
     // Load current user and check authorization
     const checkAuth = async () => {
       try {
-        const user = await persistentStorage.getCurrentUser();
+        // Try to get user from localStorage directly first
+        let user;
+        
+        // Check localStorage for user data
+        if (typeof window !== 'undefined') {
+          const storedUser = localStorage.getItem('currentUser');
+          if (storedUser) {
+            try {
+              user = JSON.parse(storedUser);
+              console.log("Found user in localStorage:", user);
+            } catch (e) {
+              console.error("Error parsing user from localStorage:", e);
+            }
+          } else {
+            console.log("No user found in localStorage");
+          }
+          
+          // If we still don't have a user, try persistentStorage
+          if (!user) {
+            user = await persistentStorage.getCurrentUser();
+            console.log("Found user from persistentStorage:", user);
+          }
+        }
+        
         if (!user) {
+          console.error('No authenticated user found');
           setAuthError('You must be logged in to view this page');
           setLoading(false);
           return;
         }
         
-        if (user.role !== 'student') {
+        // Handle different user data structures
+        const role = user.role || (user.user && user.user.role);
+        if (role !== 'student') {
+          console.error('User is not a student');
           setAuthError('Only students can access this page');
           setLoading(false);
           return;
         }
         
-        setCurrentUser(user as User);
+        // Normalize user data format
+        const normalizedUser: User = {
+          id: user.id || (user.user && user.user.id) || '',
+          name: user.name || (user.user && user.user.name) || 'Student',
+          email: user.email || (user.user && user.user.email) || '',
+          password: user.password || '',
+          role: role,
+          status: user.status || 'active',
+          avatar: user.avatar || '',
+          classes: user.classes || [],
+        };
+        
+        console.log("Using normalized user:", normalizedUser);
+        setCurrentUser(normalizedUser);
         setLoading(false);
         
-        // Load assignments for the authenticated user
-        loadAssignments(user.id);
+        // Load assignments using the normalized user ID
+        loadAssignments(normalizedUser.id);
       } catch (error) {
         console.error('Authentication error:', error);
         setAuthError('Authentication error');
@@ -98,19 +138,47 @@ export default function StudentAssignments() {
     checkAuth();
   }, []);
 
+  const getClassesForStudent = async (studentId: string) => {
+    try {
+      // Try specialized method if available
+      if (typeof persistentStorage.getClassesByStudentId === 'function') {
+        return await persistentStorage.getClassesByStudentId(studentId);
+      }
+      
+      // Fallback to getting all classes and filtering
+      const allClasses = await persistentStorage.getAllClasses();
+      return allClasses.filter(cls => 
+        cls.enrolledStudents && 
+        Array.isArray(cls.enrolledStudents) && 
+        cls.enrolledStudents.includes(studentId)
+      );
+    } catch (error) {
+      console.error("Error getting classes for student:", error);
+      
+      // Last resort: try storage directly
+      const allClasses = await storage.getClasses();
+      return allClasses.filter(cls => 
+        cls.enrolledStudents && 
+        Array.isArray(cls.enrolledStudents) && 
+        cls.enrolledStudents.includes(studentId)
+      );
+    }
+  };
+
   const loadAssignments = async (studentId: string) => {
     if (!studentId) return;
     
     setLoading(true);
     try {
       // Get all classes the student is enrolled in
-      const enrolledClasses = await persistentStorage.getClassesByStudentId(studentId);
+      const enrolledClasses = await getClassesForStudent(studentId);
       if (!enrolledClasses || enrolledClasses.length === 0) {
         console.log('Student is not enrolled in any classes');
         setLoading(false);
         return;
       }
 
+      console.log(`Found ${enrolledClasses.length} enrolled classes for student ${studentId}`);
       const allAssignments: EnrichedAssignment[] = [];
       const dueAssignments: EnrichedAssignment[] = [];
 
@@ -121,13 +189,19 @@ export default function StudentAssignments() {
           const curriculum = await storage.getCurriculum(classItem.id);
           
           if (curriculum) {
+            console.log("Loaded curriculum structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
+            
+            // Handle different curriculum structures
+            const assignments = curriculum.content?.assignments || curriculum.assignments;
+            const lessons = curriculum.content?.lessons || curriculum.lessons;
+            
             // Process assignments from curriculum
-            if (curriculum.content && curriculum.content.assignments) {
+            if (assignments && Array.isArray(assignments)) {
               // Make sure to log what we're finding to debug
-              console.log(`Found ${curriculum.content.assignments.length} assignments in class ${classItem.name}`);
+              console.log(`Found ${assignments.length} assignments in class ${classItem.name}`);
               
               // Filter for published assignments only and add class details
-              const classAssignments = curriculum.content.assignments
+              const classAssignments = assignments
                 .filter((item: Content) => {
                   // Explicit check for isPublished being true
                   const isPublished = item.isPublished === true;
@@ -158,40 +232,41 @@ export default function StudentAssignments() {
             }
             
             // Process quizzes and assignments from lessons
-            if (curriculum.content && curriculum.content.lessons) {
-              for (const lesson of curriculum.content.lessons) {
+            if (lessons && Array.isArray(lessons)) {
+              for (const lesson of lessons) {
                 // Extract published content from each lesson
-                const publishedContent = lesson.content
-                  ? lesson.content
-                      .filter((content: Content) => 
-                        content && content.isPublished === true && 
-                        (content.type === 'assignment' || content.type === 'quiz')
-                      )
-                      .map((content: Content) => ({
-                        ...content,
-                        classId: classItem.id,
-                        className: classItem.name,
-                        lessonId: lesson.id,
-                        lessonTitle: lesson.title
-                      }))
-                  : [];
-                
-                if (publishedContent.length > 0) {
-                  allAssignments.push(...publishedContent);
+                const lessonContent = lesson.content || lesson.contents;
+                if (lessonContent && Array.isArray(lessonContent)) {
+                  const publishedContent = lessonContent
+                    .filter((content: Content) => 
+                      content && content.isPublished === true && 
+                      (content.type === 'assignment' || content.type === 'quiz')
+                    )
+                    .map((content: Content) => ({
+                      ...content,
+                      classId: classItem.id,
+                      className: classItem.name,
+                      lessonId: lesson.id,
+                      lessonTitle: lesson.title
+                    }));
                   
-                  // Check for lesson content due soon
-                  const now = new Date();
-                  const oneWeekFromNow = new Date();
-                  oneWeekFromNow.setDate(now.getDate() + 7);
-                  
-                  const pendingContent = publishedContent.filter((content: EnrichedAssignment) => {
-                    if (!content.dueDate) return false;
+                  if (publishedContent.length > 0) {
+                    allAssignments.push(...publishedContent);
                     
-                    const dueDate = new Date(content.dueDate);
-                    return dueDate > now && dueDate <= oneWeekFromNow;
-                  });
-                  
-                  dueAssignments.push(...pendingContent);
+                    // Check for lesson content due soon
+                    const now = new Date();
+                    const oneWeekFromNow = new Date();
+                    oneWeekFromNow.setDate(now.getDate() + 7);
+                    
+                    const pendingContent = publishedContent.filter((content: EnrichedAssignment) => {
+                      if (!content.dueDate) return false;
+                      
+                      const dueDate = new Date(content.dueDate);
+                      return dueDate > now && dueDate <= oneWeekFromNow;
+                    });
+                    
+                    dueAssignments.push(...pendingContent);
+                  }
                 }
               }
             }
