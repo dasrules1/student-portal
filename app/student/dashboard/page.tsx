@@ -325,13 +325,14 @@ export default function StudentDashboard() {
             </Button>
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {pendingAssignments.length > 0 ? (
-              pendingAssignments.slice(0, 3).map((assignment) => (
-                <Card key={assignment.id}>
+            {pendingAssignments && Array.isArray(pendingAssignments) && pendingAssignments.length > 0 ? (
+              pendingAssignments.slice(0, 3).map((assignment) => 
+                assignment ? (
+                <Card key={assignment.id || "unknown"}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                    <CardTitle className="text-lg">{assignment.title || "Untitled Assignment"}</CardTitle>
                     <CardDescription>
-                      {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                      {assignment.className || "Unknown Class"} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -342,13 +343,14 @@ export default function StudentDashboard() {
                       asChild 
                       className="w-full"
                     >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                      <Link href={`/student/curriculum/${assignment.classId || ""}?lesson=${assignment.lessonId || ""}&content=${assignment.id || ""}`}>
                         Start Assignment
                       </Link>
                     </Button>
                   </CardFooter>
                 </Card>
-              ))
+                ) : null
+              )
             ) : (
               <Card className="col-span-full">
                 <CardContent className="flex flex-col items-center justify-center py-8 text-center">
@@ -366,13 +368,14 @@ export default function StudentDashboard() {
             <h2 className="text-xl font-semibold">Your Classes</h2>
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {studentClasses.length > 0 ? (
-              studentClasses.map((cls) => (
-                <Card key={cls.id} className="overflow-hidden">
+            {studentClasses && Array.isArray(studentClasses) && studentClasses.length > 0 ? (
+              studentClasses.map((cls) => 
+                cls ? (
+                <Card key={cls.id || "unknown"} className="overflow-hidden">
                   <CardHeader className="pb-2">
-                    <CardTitle>{cls.name}</CardTitle>
+                    <CardTitle>{cls.name || "Unnamed Class"}</CardTitle>
                     <CardDescription>
-                      Teacher: {cls.teacher}
+                      Teacher: {cls.teacher || "Unknown Teacher"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -389,13 +392,13 @@ export default function StudentDashboard() {
                       )}
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Assignments:</span>
-                        <span>{assignmentsByClass[cls.id]?.length || 0} total</span>
+                        <span>{assignmentsByClass && assignmentsByClass[cls.id] && Array.isArray(assignmentsByClass[cls.id]) ? assignmentsByClass[cls.id].length : 0} total</span>
                       </div>
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-between">
                     <Button variant="outline" asChild>
-                      <Link href={`/student/curriculum/${cls.id}`}>
+                      <Link href={`/student/curriculum/${cls.id || ""}`}>
                         View Curriculum
                       </Link>
                     </Button>
@@ -408,7 +411,8 @@ export default function StudentDashboard() {
                     )}
                   </CardFooter>
                 </Card>
-              ))
+                ) : null
+              )
             ) : (
               <Card className="col-span-full">
                 <CardContent className="flex flex-col items-center justify-center py-8 text-center">
