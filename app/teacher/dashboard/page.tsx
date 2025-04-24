@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Bell, ChevronDown, LogOut, User, Settings, FileText, Users, School, Calendar } from "lucide-react"
+import { Bell, ChevronDown, LogOut, User, Settings, FileText, Users, School, Calendar, BookOpen } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -174,10 +174,12 @@ export default function TeacherDashboard() {
   }, [router, toast, searchParams])
 
   const handleViewClass = (classId: string) => {
+    console.log("Navigating to class view for students:", classId)
     router.push(`/teacher/class/${classId}`)
   }
 
   const handleViewCurriculum = (classId: string) => {
+    console.log("Navigating to curriculum for class:", classId)
     router.push(`/teacher/curriculum/${classId}`)
   }
 
@@ -357,9 +359,11 @@ export default function TeacherDashboard() {
                     </CardContent>
                     <CardFooter className="flex justify-between">
                       <Button variant="outline" size="sm" onClick={() => handleViewClass(cls.id)}>
+                        <Users className="w-4 h-4 mr-2" />
                         View Students
                       </Button>
                       <Button size="sm" onClick={() => handleViewCurriculum(cls.id)}>
+                        <BookOpen className="w-4 h-4 mr-2" />
                         Curriculum
                       </Button>
                     </CardFooter>

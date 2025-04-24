@@ -96,59 +96,102 @@ export default function TeacherCurriculum() {
       return
     }
 
-    // Get class data
-    const foundClass = storage.getClassById(classId)
-    if (foundClass) {
-      // Check if this teacher is assigned to this class
-      if (foundClass.teacher !== user.name && foundClass.teacherId !== user.id) {
+    const loadData = async () => {
+      try {
+        // Get class data
+        const foundClass = await storage.getClassById(classId)
+        if (!foundClass) {
+          toast({
+            title: "Class not found",
+            description: "The requested class could not be found.",
+            variant: "destructive",
+          })
+          router.push("/teacher/dashboard")
+          return
+        }
+
+        setCurrentClass(foundClass)
+
+        // Check if this teacher is assigned to this class
+        const teacherName = user.user?.displayName || user.user?.name || user.name
+        const teacherId = user.user?.uid || user.user?.id || user.id
+        
+        if (foundClass.teacher !== teacherName && foundClass.teacher_id !== teacherId) {
+          toast({
+            title: "Access denied",
+            description: "You are not assigned to this class",
+            variant: "destructive",
+          })
+          router.push("/teacher/dashboard")
+          return
+        }
+
+        // First, try to load curriculum directly using dedicated API
+        try {
+          console.log("Attempting to load curriculum for class:", classId)
+          const curriculumData = await storage.getCurriculum(classId)
+          if (curriculumData) {
+            console.log("Loaded curriculum data:", curriculumData)
+            // Handle both formats - content field or direct structure
+            const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
+            setCurriculum(formattedCurriculum)
+            
+            if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
+              setActiveLesson(formattedCurriculum.lessons[0].id)
+              if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
+                setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
+              }
+            }
+            return
+          }
+        } catch (curriculumError) {
+          console.error("Error loading curriculum directly:", curriculumError)
+        }
+
+        // Fall back to curriculum on class object
+        if (foundClass.curriculum) {
+          console.log("Using curriculum from class object")
+          setCurriculum(foundClass.curriculum)
+          
+          if (foundClass.curriculum.lessons && foundClass.curriculum.lessons.length > 0) {
+            setActiveLesson(foundClass.curriculum.lessons[0].id)
+            if (foundClass.curriculum.lessons[0].contents && foundClass.curriculum.lessons[0].contents.length > 0) {
+              setActiveContent(foundClass.curriculum.lessons[0].contents[0].id)
+            }
+          }
+          return
+        }
+
+        // If no curriculum exists, create empty one
+        console.log("No curriculum found, creating empty structure")
+        setCurriculum({ lessons: [] })
+
+        // Get students enrolled in this class
+        try {
+          const allUsers = await storage.getUsers()
+          const classStudents = Array.isArray(allUsers) ? allUsers.filter(
+            (user) =>
+              user.role === "student" &&
+              (user.classes.includes(classId) ||
+                (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id)))
+          ) : []
+          setStudents(classStudents)
+        } catch (usersError) {
+          console.error("Error loading users:", usersError)
+          setStudents([])
+        }
+      } catch (error) {
+        console.error("Error in curriculum loading:", error)
         toast({
-          title: "Access denied",
-          description: "You are not assigned to this class",
+          title: "Error loading data",
+          description: "There was a problem loading the curriculum data",
           variant: "destructive",
         })
         router.push("/teacher/dashboard")
-        return
       }
-
-      setCurrentClass(foundClass)
-
-      // Get curriculum
-      if (foundClass.curriculum) {
-        setCurriculum(foundClass.curriculum)
-      } else {
-        // If no curriculum exists, check if there's one created by an admin
-        const adminClass = storage.getClassById(classId)
-        if (adminClass && adminClass.curriculum) {
-          setCurriculum(adminClass.curriculum)
-
-          // Update the class with the admin curriculum
-          storage.updateClass(classId, {
-            ...foundClass,
-            curriculum: adminClass.curriculum,
-          })
-        } else {
-          // Create empty curriculum
-          setCurriculum({ lessons: [] })
-        }
-      }
-
-      // Get students enrolled in this class
-      const allUsers = storage.getUsers()
-      const classStudents = allUsers.filter(
-        (user) =>
-          user.role === "student" &&
-          (user.classes.includes(classId) ||
-            (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id))),
-      )
-      setStudents(classStudents)
-    } else {
-      toast({
-        title: "Class not found",
-        description: "The requested class could not be found.",
-        variant: "destructive",
-      })
-      router.push("/teacher/dashboard")
     }
+
+    loadData()
   }, [classId, router, toast])
 
   // Add real-time listener for student submissions
