@@ -309,10 +309,25 @@ export default function TeacherCurriculum() {
     const newPublishedStatus = !content.isPublished
     updatedCurriculum.lessons[lessonIndex].contents[contentIndex].isPublished = newPublishedStatus
 
+    // Ensure we're explicitly preserving problem data with correct answers
+    if (updatedCurriculum.lessons[lessonIndex].contents[contentIndex].problems) {
+      // Make sure we keep a deep copy of problems with correctAnswer fields intact
+      const problems = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].problems;
+      if (Array.isArray(problems)) {
+        updatedCurriculum.lessons[lessonIndex].contents[contentIndex].problems = problems.map(problem => {
+          // Ensure we preserve the correctAnswer field
+          const preservedProblem = { ...problem };
+          console.log(`Preserving problem with ${preservedProblem.correctAnswer ? 'correct answer' : 'no correct answer'}`);
+          return preservedProblem;
+        });
+      }
+    }
+
     // 1. Save to Firebase/Firestore directly using the curriculum API
     try {
       console.log(`Saving curriculum with ${newPublishedStatus ? "published" : "unpublished"} assignment to storage...`);
       // Save the entire curriculum to ensure it's properly stored
+      console.log("Curriculum data being saved:", JSON.stringify(updatedCurriculum).substring(0, 200) + "...");
       const saveCurriculumResult = await storage.saveCurriculum(classId, updatedCurriculum);
       
       if (!saveCurriculumResult) {
@@ -335,7 +350,7 @@ export default function TeacherCurriculum() {
         // Save the complete curriculum
         localStorage.setItem(`curriculum_${classId}`, JSON.stringify(updatedCurriculum));
         
-        // Also save the published curriculum separately
+        // Also save the published curriculum separately - this is a special format used by student views
         const publishedCurriculumKey = `published-curriculum-${classId}`;
         let publishedCurriculum = {};
 
@@ -354,8 +369,13 @@ export default function TeacherCurriculum() {
         }
 
         if (newPublishedStatus) {
-          // If publishing, add the content
+          // If publishing, add the content - ensure we preserve all fields including problems and correct answers
           publishedCurriculum[lessonIndex][contentIndex] = content;
+          
+          // Double-check that content is properly copied with correct answers
+          if (content.problems && Array.isArray(content.problems)) {
+            publishedCurriculum[lessonIndex][contentIndex].problems = content.problems.map(p => ({...p}));
+          }
         } else {
           // If unpublishing, remove the content
           delete publishedCurriculum[lessonIndex][contentIndex];
@@ -363,6 +383,7 @@ export default function TeacherCurriculum() {
 
         // Save back to localStorage
         localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum));
+        console.log(`Saved published curriculum to localStorage for class ${classId}`);
       } catch (error) {
         console.error("Error saving published curriculum to localStorage:", error);
       }
@@ -711,6 +732,63 @@ export default function TeacherCurriculum() {
     return Math.round(totalScore / completedSubmissions.length)
   }
 
+  // Add this function near the other rendering functions if it doesn't exist
+  const renderProblemWithAnswer = (problem, index) => {
+    return (
+      <div key={index} className="p-4 mb-4 border rounded-md">
+        <div className="flex justify-between items-center mb-2">
+          <h4 className="font-medium">Question {index + 1}</h4>
+          <Badge variant={problem.type === 'multiple-choice' ? 'secondary' : 'outline'}>
+            {problem.type === 'multiple-choice' ? 'Multiple Choice' : problem.type === 'short-answer' ? 'Short Answer' : 'Essay'}
+          </Badge>
+        </div>
+        
+        <div className="mb-4">{renderLatex(problem.question)}</div>
+        
+        {problem.type === 'multiple-choice' && problem.choices && (
+          <div className="space-y-2 mb-4">
+            {problem.choices.map((choice, choiceIndex) => (
+              <div 
+                key={choiceIndex} 
+                className={`p-2 rounded-md border ${
+                  problem.correctAnswer === choice || 
+                  (Array.isArray(problem.correctAnswer) && problem.correctAnswer.includes(choice)) ?
+                  "border-green-500 bg-green-50 dark:bg-green-900/20" : ""}
+                `}
+              >
+                <div className="flex items-center">
+                  <span className="w-6 h-6 flex items-center justify-center rounded-full border mr-2">
+                    {String.fromCharCode(65 + choiceIndex)}
+                  </span>
+                  <span>{choice}</span>
+                  {(problem.correctAnswer === choice || 
+                    (Array.isArray(problem.correctAnswer) && problem.correctAnswer.includes(choice))) && (
+                    <CheckCircle2 className="ml-auto w-5 h-5 text-green-500" />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {(problem.type === 'short-answer' || problem.type === 'essay') && (
+          <div className="mb-4">
+            <div className="font-medium text-sm mb-1">Correct Answer:</div>
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+              {problem.correctAnswer ? renderLatex(problem.correctAnswer) : "No answer provided"}
+            </div>
+          </div>
+        )}
+        
+        {problem.points && (
+          <div className="text-sm text-muted-foreground">
+            Points: {problem.points}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (!currentClass || !curriculum) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -963,109 +1041,9 @@ export default function TeacherCurriculum() {
 
                     <TabsContent value="content" className="space-y-6">
                       {activeContent.problems && activeContent.problems.length > 0 ? (
-                        <div className="space-y-8">
-                          {activeContent.problems.map((problem, problemIndex) => (
-                            <div key={problemIndex} className="p-4 border rounded-lg">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center mb-2">
-                                    <p className="font-medium">Problem {problemIndex + 1}</p>
-                                    <Badge variant="outline" className="ml-2">
-                                      {problem.type === "multiple-choice"
-                                        ? "Multiple Choice"
-                                        : problem.type === "open-ended"
-                                          ? "Open Ended"
-                                          : "Math Expression"}
-                                    </Badge>
-                                    <Badge variant="secondary" className="ml-2">
-                                      {problem.points} {problem.points === 1 ? "point" : "points"}
-                                    </Badge>
-                                  </div>
-
-                                  <p className="mt-2 mb-4">{renderLatex(problem.question)}</p>
-
-                                  {problem.type === "multiple-choice" && (
-                                    <div className="space-y-3">
-                                      {problem.options.map((option, optionIndex) => (
-                                        <div
-                                          key={optionIndex}
-                                          className={`flex items-center space-x-2 p-2 rounded-md ${
-                                            optionIndex === problem.correctAnswer
-                                              ? "bg-green-50 dark:bg-green-900/20"
-                                              : ""
-                                          }`}
-                                        >
-                                          <div
-                                            className={`w-4 h-4 rounded-full flex items-center justify-center border ${
-                                              optionIndex === problem.correctAnswer
-                                                ? "bg-green-100 border-green-500 dark:bg-green-900 dark:border-green-400"
-                                                : "border-gray-300 dark:border-gray-600"
-                                            }`}
-                                          >
-                                            {optionIndex === problem.correctAnswer && (
-                                              <CheckCircle2 className="w-3 h-3 text-green-500 dark:text-green-400" />
-                                            )}
-                                          </div>
-                                          <span>{renderLatex(option)}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {problem.type === "open-ended" && (
-                                    <div className="space-y-3">
-                                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                        <p className="font-medium text-sm">Correct Answer:</p>
-                                        <p>{problem.correctAnswer}</p>
-                                      </div>
-
-                                      {problem.keywords && problem.keywords.length > 0 && (
-                                        <div>
-                                          <p className="font-medium text-sm">Keywords for auto-grading:</p>
-                                          <div className="flex flex-wrap gap-1 mt-1">
-                                            {problem.keywords.map((keyword, keywordIndex) => (
-                                              <Badge key={keywordIndex} variant="outline">
-                                                {keyword}
-                                              </Badge>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      <div className="flex items-center text-sm text-muted-foreground">
-                                        <span className="mr-2">Partial credit:</span>
-                                        {problem.allowPartialCredit ? (
-                                          <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                        ) : (
-                                          <X className="w-4 h-4 text-red-500" />
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {problem.type === "math-expression" && (
-                                    <div className="space-y-3">
-                                      <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                        <p className="font-medium text-sm">Correct Answer:</p>
-                                        <p>{renderLatex(`$$${problem.correctAnswer}$$`)}</p>
-                                      </div>
-
-                                      <div className="text-sm text-muted-foreground">
-                                        Numerical tolerance: ±{problem.tolerance}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {problem.explanation && (
-                                    <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                      <p className="font-medium text-sm">Explanation:</p>
-                                      <p className="text-sm">{renderLatex(problem.explanation)}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-medium">Problems</h3>
+                          {activeContent.problems.map((problem, index) => renderProblemWithAnswer(problem, index))}
                         </div>
                       ) : (
                         <div className="p-4 border rounded-lg">
