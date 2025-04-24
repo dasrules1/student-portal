@@ -120,54 +120,115 @@ export default function StudentAssignments() {
         
         // Filter classes to only include those the student is enrolled in
         const enrolledClasses = allClasses.filter((cls: Class) => 
-          cls && cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && cls.enrolledStudents.includes(userData.id)
+          cls && cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && 
+          cls.enrolledStudents.includes(userData.id)
         )
+        console.log("Enrolled classes found:", enrolledClasses.length)
         
         setStudentClasses(enrolledClasses)
         
-        // Load assignments for each class
-        const allAssignments: any[] = []
+        // Find all assignments for the enrolled classes
+        let allAssignments = []
         
         for (const cls of enrolledClasses) {
-          if (cls && cls.curriculum) {
-            try {
-              // Try to load full curriculum data
-              const curriculum = await storage.getCurriculum(cls.id)
-              const curriculumData = curriculum || cls.curriculum
-              
-              if (curriculumData && curriculumData.lessons && Array.isArray(curriculumData.lessons)) {
-                // Find all published assignments across lessons
-                const classAssignments = curriculumData.lessons.flatMap(lesson => {
-                  if (!lesson || !lesson.contents || !Array.isArray(lesson.contents)) return []
-                  
-                  return lesson.contents
-                    .filter(content => 
-                      content && content.isPublished && 
-                      (content.type === 'assignment' || content.type === 'quiz')
-                    )
-                    .map(content => ({
-                      ...content,
-                      lessonTitle: lesson.title || 'Unnamed Lesson',
-                      lessonId: lesson.id,
-                      classId: cls.id,
-                      className: cls.name || 'Unnamed Class',
-                      teacher: cls.teacher || 'Unnamed Teacher'
-                    }))
-                })
+          if (!cls || !cls.id) continue;
+          
+          console.log(`Loading assignments for class: ${cls.name} (${cls.id})`)
+          
+          try {
+            // 1. First try to load curriculum directly using dedicated API
+            const curriculum = await storage.getCurriculum(cls.id)
+            console.log(`Curriculum loaded for class ${cls.id}:`, curriculum ? "Success" : "Not found")
+            
+            // 2. If API-loaded curriculum is not available, try class.curriculum
+            const curriculumData = curriculum || (cls.curriculum || null)
+            
+            if (curriculumData && curriculumData.lessons && Array.isArray(curriculumData.lessons)) {
+              // Find all published assignments across lessons
+              const classAssignments = curriculumData.lessons.flatMap(lesson => {
+                if (!lesson || !lesson.contents || !Array.isArray(lesson.contents)) return []
                 
-                allAssignments.push(...classAssignments)
-              }
-            } catch (error) {
-              console.error(`Error loading curriculum for class ${cls.id}:`, error)
+                return lesson.contents
+                  .filter(content => 
+                    content && content.isPublished === true && 
+                    (content.type === 'assignment' || content.type === 'quiz')
+                  )
+                  .map(content => ({
+                    ...content,
+                    lessonTitle: lesson.title || 'Unnamed Lesson',
+                    lessonId: lesson.id,
+                    classId: cls.id,
+                    className: cls.name || 'Unnamed Class',
+                    teacher: cls.teacher || 'Unnamed Teacher'
+                  }))
+              })
+              
+              console.log(`Found ${classAssignments.length} published assignments in class ${cls.name}`)
+              allAssignments.push(...classAssignments)
+            } else {
+              console.log(`No curriculum or lessons found for class ${cls.name}`)
             }
+            
+            // 3. Last resort: Check in localStorage for published curriculum specifically
+            if (typeof window !== "undefined") {
+              try {
+                const publishedCurriculumKey = `published-curriculum-${cls.id}`
+                const publishedData = localStorage.getItem(publishedCurriculumKey)
+                
+                if (publishedData) {
+                  console.log(`Found published curriculum data in localStorage for class ${cls.id}`)
+                  const publishedCurriculum = JSON.parse(publishedData)
+                  
+                  // Extract assignments from the published curriculum object
+                  if (publishedCurriculum && typeof publishedCurriculum === 'object') {
+                    Object.entries(publishedCurriculum).forEach(([lessonIndex, lessonContents]) => {
+                      if (lessonContents && typeof lessonContents === 'object') {
+                        Object.values(lessonContents).forEach((content: any) => {
+                          if (content && content.isPublished && 
+                              (content.type === 'assignment' || content.type === 'quiz')) {
+                            
+                            // Check if this assignment is already in the list
+                            const exists = allAssignments.some(a => 
+                              a.id === content.id && 
+                              a.classId === cls.id
+                            )
+                            
+                            if (!exists) {
+                              const lessonTitle = curriculumData && 
+                                curriculumData.lessons && 
+                                curriculumData.lessons[parseInt(lessonIndex)]?.title || 'Unnamed Lesson'
+                              
+                              allAssignments.push({
+                                ...content,
+                                lessonTitle,
+                                lessonId: content.lessonId || `lesson-${lessonIndex}`,
+                                classId: cls.id,
+                                className: cls.name || 'Unnamed Class',
+                                teacher: cls.teacher || 'Unnamed Teacher'
+                              })
+                            }
+                          }
+                        })
+                      }
+                    })
+                  }
+                }
+              } catch (localStorageError) {
+                console.error(`Error checking localStorage for published curriculum:`, localStorageError)
+              }
+            }
+            
+          } catch (error) {
+            console.error(`Error loading curriculum for class ${cls.id}:`, error)
           }
         }
-        
+
         // Sort assignments by due date
         const sortedAssignments = allAssignments.sort((a, b) => 
-          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+          new Date(a.dueDate || Date.now()).getTime() - new Date(b.dueDate || Date.now()).getTime()
         )
         
+        console.log(`Total assignments found: ${sortedAssignments.length}`)
         setAssignments(sortedAssignments)
       } catch (error) {
         console.error("Error loading student assignments:", error)

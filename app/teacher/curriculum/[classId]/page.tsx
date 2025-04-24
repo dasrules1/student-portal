@@ -299,7 +299,7 @@ export default function TeacherCurriculum() {
   }
 
   // Confirm publishing content
-  const confirmPublish = () => {
+  const confirmPublish = async () => {
     if (!contentToPublish) return
 
     const { content, lessonIndex, contentIndex } = contentToPublish
@@ -309,48 +309,80 @@ export default function TeacherCurriculum() {
     const newPublishedStatus = !content.isPublished
     updatedCurriculum.lessons[lessonIndex].contents[contentIndex].isPublished = newPublishedStatus
 
-    // Save the updated curriculum to localStorage for students to access
+    // 1. Save to Firebase/Firestore directly using the curriculum API
+    try {
+      console.log(`Saving curriculum with ${newPublishedStatus ? "published" : "unpublished"} assignment to storage...`);
+      // Save the entire curriculum to ensure it's properly stored
+      const saveCurriculumResult = await storage.saveCurriculum(classId, updatedCurriculum);
+      
+      if (!saveCurriculumResult) {
+        console.error("Failed to save curriculum to primary storage");
+        toast({
+          title: "Save Error", 
+          description: "There was a problem saving the curriculum changes. Please try again.",
+          variant: "destructive"
+        });
+        setPublishDialogOpen(false);
+        return;
+      }
+    } catch (saveError) {
+      console.error("Error saving curriculum:", saveError);
+    }
+
+    // 2. Save to localStorage as backup
     if (typeof window !== "undefined") {
       try {
-        // Get the existing published curriculum or create a new one
-        const publishedCurriculumKey = `published-curriculum-${classId}`
-        let publishedCurriculum = {}
+        // Save the complete curriculum
+        localStorage.setItem(`curriculum_${classId}`, JSON.stringify(updatedCurriculum));
+        
+        // Also save the published curriculum separately
+        const publishedCurriculumKey = `published-curriculum-${classId}`;
+        let publishedCurriculum = {};
 
-        const existingData = localStorage.getItem(publishedCurriculumKey)
+        const existingData = localStorage.getItem(publishedCurriculumKey);
         if (existingData) {
-          publishedCurriculum = JSON.parse(existingData)
+          try {
+            publishedCurriculum = JSON.parse(existingData);
+          } catch (e) {
+            console.warn("Error parsing existing published curriculum, creating new one");
+          }
         }
 
         // Update the specific content's published status
         if (!publishedCurriculum[lessonIndex]) {
-          publishedCurriculum[lessonIndex] = {}
+          publishedCurriculum[lessonIndex] = {};
         }
 
         if (newPublishedStatus) {
           // If publishing, add the content
-          publishedCurriculum[lessonIndex][contentIndex] = content
+          publishedCurriculum[lessonIndex][contentIndex] = content;
         } else {
           // If unpublishing, remove the content
-          delete publishedCurriculum[lessonIndex][contentIndex]
+          delete publishedCurriculum[lessonIndex][contentIndex];
         }
 
         // Save back to localStorage
-        localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum))
+        localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum));
       } catch (error) {
-        console.error("Error saving published curriculum:", error)
+        console.error("Error saving published curriculum to localStorage:", error);
       }
     }
 
-    setCurriculum(updatedCurriculum)
-    setPublishDialogOpen(false)
+    // 3. Update the curriculum in the component state
+    setCurriculum(updatedCurriculum);
+    setPublishDialogOpen(false);
 
-    // Update the class in storage
+    // 4. Update the class in storage to maintain consistency
     if (currentClass) {
-      const updatedClass = {
-        ...currentClass,
-        curriculum: updatedCurriculum,
+      try {
+        const updatedClass = {
+          ...currentClass,
+          curriculum: updatedCurriculum,
+        };
+        await storage.updateClass(classId, updatedClass);
+      } catch (updateError) {
+        console.error("Error updating class with curriculum:", updateError);
       }
-      storage.updateClass(classId, updatedClass)
     }
 
     toast({
@@ -358,7 +390,7 @@ export default function TeacherCurriculum() {
       description: newPublishedStatus
         ? `${content.title} is now visible to students.`
         : `${content.title} is now hidden from students.`,
-    })
+    });
 
     // Add activity log
     storage.addActivityLog({
@@ -366,7 +398,9 @@ export default function TeacherCurriculum() {
       details: `${content.title} for ${currentClass?.name}`,
       timestamp: new Date().toLocaleString(),
       category: "Class Management",
-    })
+      userId: currentClass?.teacher_id, // Add teacher ID to help with filtering
+      classId: classId, // Add class ID to help with filtering
+    });
   }
 
   // Handle grade override
