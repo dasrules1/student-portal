@@ -562,30 +562,38 @@ export class PersistentStorage {
     const student = this.getUserById(studentId)
 
     if (classIndex === -1 || !student || student.role !== "student") {
+      console.error(`PersistentStorage: Cannot enroll student - Class ${classId} not found or student ${studentId} is not valid`)
       return false
     }
 
     // Add student to class
     const enrolledStudents = this.classes[classIndex].enrolledStudents || []
     if (!enrolledStudents.includes(studentId)) {
+      // Update the class with the new enrolled student
       this.classes[classIndex] = {
         ...this.classes[classIndex],
         enrolledStudents: [...enrolledStudents, studentId],
-        students: enrolledStudents.length + 1,
+        students: enrolledStudents.length + 1, // Update the count
       }
 
       // Add class to student
       if (!student.classes.includes(classId)) {
-        this.updateUser(studentId, {
+        const updatedStudent = {
+          ...student,
           classes: [...student.classes, classId],
-        })
+        }
+        // Use the proper update method to ensure consistency
+        this.updateUser(studentId, updatedStudent)
       }
 
+      // Save everything to storage
       this.saveToStorage()
+      console.log(`PersistentStorage: Successfully enrolled student ${studentId} in class ${classId}`)
       return true
     }
 
-    return false
+    console.log(`PersistentStorage: Student ${studentId} is already enrolled in class ${classId}`)
+    return true // Already enrolled is considered a success
   }
 
   // Enroll student in class (alias for enrollStudent)
@@ -601,28 +609,39 @@ export class PersistentStorage {
     const student = this.getUserById(studentId)
 
     if (classIndex === -1 || !student) {
+      console.error(`PersistentStorage: Cannot unenroll student - Class ${classId} not found or student ${studentId} is not valid`)
       return false
     }
 
     // Remove student from class
     const enrolledStudents = this.classes[classIndex].enrolledStudents || []
     if (enrolledStudents.includes(studentId)) {
+      // Update the class by removing the student
+      const updatedEnrolledStudents = enrolledStudents.filter((id) => id !== studentId)
       this.classes[classIndex] = {
         ...this.classes[classIndex],
-        enrolledStudents: enrolledStudents.filter((id) => id !== studentId),
-        students: enrolledStudents.filter((id) => id !== studentId).length,
+        enrolledStudents: updatedEnrolledStudents,
+        students: updatedEnrolledStudents.length, // Update the count
       }
 
-      // Remove class from student
-      this.updateUser(studentId, {
-        classes: student.classes.filter((c) => c !== classId),
-      })
+      // Remove class from student if it exists in their classes array
+      if (student.classes.includes(classId)) {
+        const updatedStudent = {
+          ...student,
+          classes: student.classes.filter((c) => c !== classId),
+        }
+        // Use the proper update method to ensure consistency
+        this.updateUser(studentId, updatedStudent)
+      }
 
+      // Save everything to storage
       this.saveToStorage()
+      console.log(`PersistentStorage: Successfully unenrolled student ${studentId} from class ${classId}`)
       return true
     }
 
-    return false
+    console.log(`PersistentStorage: Student ${studentId} is not enrolled in class ${classId}`)
+    return true // Not being enrolled is considered a success for unenrollment
   }
 
   // Get activity logs - completely safe, always returns an immutable array

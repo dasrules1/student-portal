@@ -121,25 +121,68 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setClassData(loadedClass)
 
     // Load curriculum data
-    const loadedCurriculum = loadedClass.curriculum || { lessons: [] }
-    setCurriculum(loadedCurriculum)
-
-    if (loadedCurriculum.lessons && loadedCurriculum.lessons.length > 0) {
-      setActiveLesson(loadedCurriculum.lessons[0].id)
-
-      if (loadedCurriculum.lessons[0].contents && loadedCurriculum.lessons[0].contents.length > 0) {
-        setActiveContent(loadedCurriculum.lessons[0].contents[0].id)
-
-        if (
-          loadedCurriculum.lessons[0].contents[0].problems &&
-          loadedCurriculum.lessons[0].contents[0].problems.length > 0
-        ) {
-          setActiveProblem(loadedCurriculum.lessons[0].contents[0].problems[0].id)
+    const loadCurriculum = async () => {
+      try {
+        // First, try to load curriculum directly using dedicated API
+        console.log("Attempting to load curriculum for class:", classId)
+        const curriculumData = await storage.getCurriculum(classId)
+        if (curriculumData) {
+          console.log("Loaded curriculum data:", curriculumData)
+          // Handle both formats - content field or direct structure
+          const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
+          setCurriculum(formattedCurriculum)
+          
+          if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
+            setActiveLesson(formattedCurriculum.lessons[0].id)
+  
+            if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
+              setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
+  
+              if (
+                formattedCurriculum.lessons[0].contents[0].problems &&
+                formattedCurriculum.lessons[0].contents[0].problems.length > 0
+              ) {
+                setActiveProblem(formattedCurriculum.lessons[0].contents[0].problems[0].id)
+              }
+            }
+          }
+          setIsLoading(false)
+          return
         }
+      } catch (curriculumError) {
+        console.error("Error loading curriculum directly:", curriculumError)
       }
+      
+      // Fall back to curriculum on class object
+      if (loadedClass.curriculum) {
+        console.log("Using curriculum from class object")
+        setCurriculum(loadedClass.curriculum)
+        
+        if (loadedClass.curriculum.lessons && loadedClass.curriculum.lessons.length > 0) {
+          setActiveLesson(loadedClass.curriculum.lessons[0].id)
+
+          if (loadedClass.curriculum.lessons[0].contents && loadedClass.curriculum.lessons[0].contents.length > 0) {
+            setActiveContent(loadedClass.curriculum.lessons[0].contents[0].id)
+
+            if (
+              loadedClass.curriculum.lessons[0].contents[0].problems &&
+              loadedClass.curriculum.lessons[0].contents[0].problems.length > 0
+            ) {
+              setActiveProblem(loadedClass.curriculum.lessons[0].contents[0].problems[0].id)
+            }
+          }
+        }
+        setIsLoading(false)
+        return
+      }
+
+      // If no curriculum exists, create empty one
+      console.log("No curriculum found, creating empty structure")
+      setCurriculum({ lessons: [] })
+      setIsLoading(false)
     }
 
-    setIsLoading(false)
+    loadCurriculum()
   }, [classId, router, toast])
 
   // Save curriculum
@@ -180,33 +223,34 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         console.log("Attempting to save curriculum with dedicated API...");
         result = await storage.saveCurriculum(classId, curriculumData);
         console.log("Save curriculum result:", result);
-      } catch (saveError) {
-        console.error("Error with saveCurriculum:", saveError);
-        try {
+        
+        if (!result) {
           console.log("Trying updateCurriculum instead...");
           result = await storage.updateCurriculum(classId, curriculumData);
           console.log("Update curriculum result:", result);
-        } catch (updateError) {
-          console.error("Error with updateCurriculum:", updateError);
         }
+      } catch (apiError) {
+        console.error("Error with curriculum API methods:", apiError);
       }
       
-      // Fallback - update the class directly to hold curriculum
-      if (!result) {
-        try {
-          console.log("API methods failed, falling back to class update");
-          const updatedClass = {
-            ...classData,
-            curriculum: curriculum
-          };
-          
-          await storage.updateClass(classId, updatedClass);
-          console.log("Curriculum saved via class update");
-          result = true;
-        } catch (classUpdateError) {
-          console.error("Error updating class:", classUpdateError);
-          // We already saved to localStorage, so we can still count this as a success
-          result = true;
+      // ALWAYS update the class directly to hold curriculum as well
+      // This ensures both storage methods have the curriculum
+      try {
+        console.log("Also updating the class object with curriculum");
+        const updatedClass = {
+          ...classData,
+          curriculum: curriculum,
+          updatedAt: new Date().toISOString()
+        };
+        
+        await storage.updateClass(classId, updatedClass);
+        console.log("Curriculum saved via class update");
+        result = true;
+      } catch (classUpdateError) {
+        console.error("Error updating class:", classUpdateError);
+        // We already tried storage.saveCurriculum, so we can still count this as a partial success
+        if (result) {
+          console.log("Class update failed but curriculum was saved via API");
         }
       }
       

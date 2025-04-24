@@ -31,7 +31,8 @@ import {
   DocumentData,
   setDoc,
   QueryDocumentSnapshot,
-  DocumentReference
+  DocumentReference,
+  writeBatch
 } from 'firebase/firestore';
 // Import Firebase Auth functionality
 import { firebaseAuth } from './firebase-auth';
@@ -1145,31 +1146,77 @@ class StorageService {
   // Enrollment
   async enrollStudent(classId: string, studentId: string): Promise<boolean> {
     try {
-      // Get the class from Firestore
+      console.log(`Attempting to enroll student ${studentId} in class ${classId}`);
+      
+      // First, verify both class and student exist
       const classRef = doc(db, 'classes', classId);
-      const classSnap = await getDoc(classRef);
+      const studentRef = doc(db, 'users', studentId);
+      
+      const [classSnap, studentSnap] = await Promise.all([
+        getDoc(classRef),
+        getDoc(studentRef)
+      ]);
       
       if (!classSnap.exists()) {
-        throw new Error(`Class ${classId} not found`);
+        console.error(`Class ${classId} not found`);
+        // Fall back to persistent storage
+        return persistentStorage.enrollStudent(classId, studentId);
+      }
+      
+      if (!studentSnap.exists()) {
+        console.error(`Student ${studentId} not found`);
+        // Fall back to persistent storage
+        return persistentStorage.enrollStudent(classId, studentId);
       }
       
       const classData = classSnap.data();
+      const studentData = studentSnap.data();
+      
+      // Validate student role
+      if (studentData.role !== 'student') {
+        console.error(`User ${studentId} is not a student`);
+        return false;
+      }
+      
       const enrolledStudents = classData.enrolledStudents || [];
+      const studentClasses = studentData.classes || [];
       
       // Check if student is already enrolled
       if (enrolledStudents.includes(studentId)) {
+        console.log(`Student ${studentId} is already enrolled in class ${classId}`);
+        
+        // Make sure the student has the class in their classes array
+        if (!studentClasses.includes(classId)) {
+          await updateDoc(studentRef, {
+            classes: [...studentClasses, classId],
+            updatedAt: new Date().toISOString()
+          });
+        }
+        
         return true;
       }
       
-      // Add student to enrolledStudents array
-      enrolledStudents.push(studentId);
+      // Begin a batch update to ensure consistency
+      const batch = writeBatch(db);
       
-      // Update class in Firestore
-      await updateDoc(classRef, {
-        enrolledStudents,
-        students: enrolledStudents.length,
+      // Update class with new student
+      batch.update(classRef, {
+        enrolledStudents: [...enrolledStudents, studentId],
+        students: enrolledStudents.length + 1,
         updatedAt: new Date().toISOString()
       });
+      
+      // Update student with new class
+      if (!studentClasses.includes(classId)) {
+        batch.update(studentRef, {
+          classes: [...studentClasses, classId],
+          updatedAt: new Date().toISOString()
+        });
+      }
+      
+      // Commit the batch
+      await batch.commit();
+      console.log(`Successfully enrolled student ${studentId} in class ${classId}`);
       
       // Also update in localStorage
       try {
@@ -1181,37 +1228,79 @@ class StorageService {
       return true;
     } catch (error) {
       console.error(`Error enrolling student ${studentId} in class ${classId}:`, error);
+      // Fall back to persistentStorage if Firestore fails
       return persistentStorage.enrollStudent(classId, studentId);
     }
   }
 
   async unenrollStudent(classId: string, studentId: string): Promise<boolean> {
     try {
-      // Get the class from Firestore
+      console.log(`Attempting to unenroll student ${studentId} from class ${classId}`);
+      
+      // First, verify both class and student exist
       const classRef = doc(db, 'classes', classId);
-      const classSnap = await getDoc(classRef);
+      const studentRef = doc(db, 'users', studentId);
+      
+      const [classSnap, studentSnap] = await Promise.all([
+        getDoc(classRef),
+        getDoc(studentRef)
+      ]);
       
       if (!classSnap.exists()) {
-        throw new Error(`Class ${classId} not found`);
+        console.error(`Class ${classId} not found`);
+        // Fall back to persistent storage
+        return persistentStorage.unenrollStudent(classId, studentId);
+      }
+      
+      if (!studentSnap.exists()) {
+        console.error(`Student ${studentId} not found`);
+        // Fall back to persistent storage
+        return persistentStorage.unenrollStudent(classId, studentId);
       }
       
       const classData = classSnap.data();
-      let enrolledStudents = classData.enrolledStudents || [];
+      const studentData = studentSnap.data();
       
-      // Check if student is enrolled
+      const enrolledStudents = classData.enrolledStudents || [];
+      const studentClasses = studentData.classes || [];
+      
+      // Check if student is not enrolled
       if (!enrolledStudents.includes(studentId)) {
+        console.log(`Student ${studentId} is not enrolled in class ${classId}`);
+        
+        // Make sure the student doesn't have the class in their classes array
+        if (studentClasses.includes(classId)) {
+          await updateDoc(studentRef, {
+            classes: studentClasses.filter(id => id !== classId),
+            updatedAt: new Date().toISOString()
+          });
+        }
+        
         return true;
       }
       
-      // Remove student from enrolledStudents array
-      enrolledStudents = enrolledStudents.filter(id => id !== studentId);
+      // Begin a batch update to ensure consistency
+      const batch = writeBatch(db);
       
-      // Update class in Firestore
-      await updateDoc(classRef, {
-        enrolledStudents,
-        students: enrolledStudents.length,
+      // Update class by removing student
+      const updatedEnrolledStudents = enrolledStudents.filter(id => id !== studentId);
+      batch.update(classRef, {
+        enrolledStudents: updatedEnrolledStudents,
+        students: updatedEnrolledStudents.length,
         updatedAt: new Date().toISOString()
       });
+      
+      // Update student by removing class
+      if (studentClasses.includes(classId)) {
+        batch.update(studentRef, {
+          classes: studentClasses.filter(id => id !== classId),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      
+      // Commit the batch
+      await batch.commit();
+      console.log(`Successfully unenrolled student ${studentId} from class ${classId}`);
       
       // Also update in localStorage
       try {
@@ -1223,6 +1312,7 @@ class StorageService {
       return true;
     } catch (error) {
       console.error(`Error unenrolling student ${studentId} from class ${classId}:`, error);
+      // Fall back to persistentStorage if Firestore fails
       return persistentStorage.unenrollStudent(classId, studentId);
     }
   }

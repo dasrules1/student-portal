@@ -15,6 +15,7 @@ import {
   Clock,
   AlertCircle,
   Send,
+  Video,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -693,7 +694,50 @@ export default function StudentCurriculum() {
             <h1 className="text-2xl font-bold md:text-3xl">{currentClass.name}</h1>
             <p className="text-muted-foreground">Teacher: {currentClass.teacher}</p>
           </div>
+          {currentClass.virtualLink && (
+            <Button asChild className="mt-2 md:mt-0">
+              <a href={currentClass.virtualLink} target="_blank" rel="noopener noreferrer">
+                <Video className="w-4 h-4 mr-2" />
+                Join Class Meeting
+              </a>
+            </Button>
+          )}
         </div>
+
+        {/* Class information panel */}
+        <Card className="mb-6">
+          <CardContent className="p-4 pt-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Schedule</p>
+                <p>{currentClass.meeting_day || currentClass.meetingDates || "No schedule set"}</p>
+                {currentClass.startTime && currentClass.endTime && (
+                  <p>{currentClass.startTime} - {currentClass.endTime}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Location</p>
+                <p>{currentClass.location || "No location set"}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Duration</p>
+                <p>
+                  {currentClass.startDate && currentClass.endDate 
+                    ? `${currentClass.startDate} to ${currentClass.endDate}` 
+                    : "Dates not specified"}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Status</p>
+                <div className="flex items-center">
+                  <Badge variant={currentClass.status === "active" ? "default" : "secondary"}>
+                    {currentClass.status || "Active"}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Main content */}
         <div className="grid gap-6 md:grid-cols-12">
@@ -705,32 +749,39 @@ export default function StudentCurriculum() {
                 <CardDescription>Available lessons and materials</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-1">
-                  {lessonsWithContent.map((lesson, index) => {
-                    const publishedContents = lesson.contents ? lesson.contents.filter((c) => c.isPublished) : []
-                    if (publishedContents.length === 0) return null
+                {lessonsWithContent.length > 0 ? (
+                  <div className="space-y-1">
+                    {lessonsWithContent.map((lesson, index) => {
+                      const publishedContents = lesson.contents ? lesson.contents.filter((c) => c.isPublished) : []
+                      if (publishedContents.length === 0) return null
 
-                    return (
-                      <Button
-                        key={lesson.id}
-                        variant={activeLesson === index + 1 ? "default" : "ghost"}
-                        className="justify-start w-full"
-                        onClick={() => {
-                          setActiveLesson(index + 1)
-                          setActiveContent(null)
-                        }}
-                      >
-                        <span className="mr-2">{index + 1}.</span>
-                        {lesson.title}
-                        {publishedContents.length > 0 && (
-                          <Badge variant="secondary" className="ml-auto">
-                            {publishedContents.length}
-                          </Badge>
-                        )}
-                      </Button>
-                    )
-                  })}
-                </div>
+                      return (
+                        <Button
+                          key={lesson.id}
+                          variant={activeLesson === index + 1 ? "default" : "ghost"}
+                          className="justify-start w-full"
+                          onClick={() => {
+                            setActiveLesson(index + 1)
+                            setActiveContent(null)
+                          }}
+                        >
+                          <span className="mr-2">{index + 1}.</span>
+                          {lesson.title}
+                          {publishedContents.length > 0 && (
+                            <Badge variant="secondary" className="ml-auto">
+                              {publishedContents.length}
+                            </Badge>
+                          )}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <BookOpen className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">No published content available yet</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -738,42 +789,55 @@ export default function StudentCurriculum() {
           {/* Content area */}
           <div className="md:col-span-9">
             {!activeContent ? (
-              // Lesson overview
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    Lesson {activeLesson}: {curriculum.lessons[activeLesson - 1].title}
-                  </CardTitle>
-                  <CardDescription>
-                    {renderLatex(curriculum.lessons[activeLesson - 1].description) || "No description provided"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {curriculum.lessons[activeLesson - 1].contents
-                      .filter((content) => content.isPublished)
-                      .map((content) => (
-                        <Card key={content.id} className="overflow-hidden">
-                          <div
-                            className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
-                            onClick={() => handleSelectContent(content)}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                {renderContentTypeIcon(content.type)}
-                                <div>
-                                  <CardTitle className="text-base">{content.title}</CardTitle>
-                                  <p className="text-sm text-muted-foreground">{renderLatex(content.description)}</p>
+              lessonsWithContent.length > 0 ? (
+                // Lesson overview
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      Lesson {activeLesson}: {curriculum.lessons[activeLesson - 1].title}
+                    </CardTitle>
+                    <CardDescription>
+                      {renderLatex(curriculum.lessons[activeLesson - 1].description) || "No description provided"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {curriculum.lessons[activeLesson - 1].contents
+                        .filter((content) => content.isPublished)
+                        .map((content) => (
+                          <Card key={content.id} className="overflow-hidden">
+                            <div
+                              className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+                              onClick={() => handleSelectContent(content)}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  {renderContentTypeIcon(content.type)}
+                                  <div>
+                                    <CardTitle className="text-base">{content.title}</CardTitle>
+                                    <p className="text-sm text-muted-foreground">{renderLatex(content.description)}</p>
+                                  </div>
                                 </div>
+                                <div className="flex items-center">{getStatusBadge(content)}</div>
                               </div>
-                              <div className="flex items-center">{getStatusBadge(content)}</div>
                             </div>
-                          </div>
-                        </Card>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
+                          </Card>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                // No content view
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                    <BookOpen className="w-16 h-16 mb-4 text-muted-foreground opacity-50" />
+                    <h3 className="text-xl font-medium mb-2">No Content Available Yet</h3>
+                    <p className="text-muted-foreground max-w-md">
+                      Your teacher hasn't published any content for this class yet. Check back later.
+                    </p>
+                  </CardContent>
+                </Card>
+              )
             ) : (
               // Content detail view
               <Card>

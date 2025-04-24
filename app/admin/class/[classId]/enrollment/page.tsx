@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { persistentStorage } from "@/lib/persistentStorage" // Use persistentStorage instead of storage
+import { storage } from "@/lib/storage" // Add storage import
 
 export default function ClassEnrollment() {
   const params = useParams()
@@ -65,33 +66,29 @@ export default function ClassEnrollment() {
     }
   }, [classId])
 
-  const handleEnrollStudent = (studentId: string) => {
+  const handleEnrollStudent = async (studentId: string) => {
     try {
-      // Update student data
-      const student = persistentStorage.getUserById(studentId)
-      if (student) {
-        const updatedStudent = {
-          ...student,
-          classes: [...student.classes, classId],
-        }
-        persistentStorage.updateUser(studentId, updatedStudent)
+      // Use the dedicated enrollment method instead of manual updates
+      const success = await storage.enrollStudent(classId, studentId);
+      
+      if (!success) {
+        throw new Error("Enrollment failed");
       }
-
-      // Update class data
-      if (classData) {
-        const updatedClass = {
-          ...classData,
-          enrolledStudents: [...(classData.enrolledStudents || []), studentId],
-        }
-        persistentStorage.updateClass(classId, updatedClass)
-        setClassData(updatedClass)
-      }
-
+      
       // Update UI
-      const studentToEnroll = unenrolledStudents.find((s) => s.id === studentId)
+      const studentToEnroll = unenrolledStudents.find((s) => s.id === studentId);
       if (studentToEnroll) {
-        setEnrolledStudents([...enrolledStudents, studentToEnroll])
-        setUnenrolledStudents(unenrolledStudents.filter((s) => s.id !== studentId))
+        setEnrolledStudents([...enrolledStudents, studentToEnroll]);
+        setUnenrolledStudents(unenrolledStudents.filter((s) => s.id !== studentId));
+      }
+      
+      // Update local class data
+      if (classData) {
+        // Fetch updated class data to ensure it's in sync
+        const updatedClass = persistentStorage.getClassById(classId);
+        if (updatedClass) {
+          setClassData(updatedClass);
+        }
       }
     } catch (err) {
       console.error("Error enrolling student:", err)
@@ -99,33 +96,29 @@ export default function ClassEnrollment() {
     }
   }
 
-  const handleUnenrollStudent = (studentId: string) => {
+  const handleUnenrollStudent = async (studentId: string) => {
     try {
-      // Update student data
-      const student = persistentStorage.getUserById(studentId)
-      if (student) {
-        const updatedStudent = {
-          ...student,
-          classes: student.classes.filter((id: string) => id !== classId),
-        }
-        persistentStorage.updateUser(studentId, updatedStudent)
+      // Use the dedicated unenrollment method instead of manual updates
+      const success = await storage.unenrollStudent(classId, studentId);
+      
+      if (!success) {
+        throw new Error("Unenrollment failed");
       }
-
-      // Update class data
-      if (classData) {
-        const updatedClass = {
-          ...classData,
-          enrolledStudents: (classData.enrolledStudents || []).filter((id: string) => id !== studentId),
-        }
-        persistentStorage.updateClass(classId, updatedClass)
-        setClassData(updatedClass)
-      }
-
+      
       // Update UI
-      const studentToUnenroll = enrolledStudents.find((s) => s.id === studentId)
+      const studentToUnenroll = enrolledStudents.find((s) => s.id === studentId);
       if (studentToUnenroll) {
-        setUnenrolledStudents([...unenrolledStudents, studentToUnenroll])
-        setEnrolledStudents(enrolledStudents.filter((s) => s.id !== studentId))
+        setUnenrolledStudents([...unenrolledStudents, studentToUnenroll]);
+        setEnrolledStudents(enrolledStudents.filter((s) => s.id !== studentId));
+      }
+      
+      // Update local class data
+      if (classData) {
+        // Fetch updated class data to ensure it's in sync
+        const updatedClass = persistentStorage.getClassById(classId);
+        if (updatedClass) {
+          setClassData(updatedClass);
+        }
       }
     } catch (err) {
       console.error("Error unenrolling student:", err)

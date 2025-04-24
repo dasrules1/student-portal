@@ -3,477 +3,328 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Bell, GraduationCap, Calendar, ChevronDown, FileText, Home, LogOut, User, Book } from "lucide-react"
+import {
+  Book,
+  Calendar,
+  CheckSquare,
+  Cog,
+  File,
+  LayoutDashboard,
+  Users,
+} from "lucide-react"
+import { Sidebar } from "@/components/sidebar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
-import { useToast } from "@/hooks/use-toast"
+import { Activity } from "@/components/activity"
+import { User, Class } from "@/lib/storage"
 
 export default function StudentDashboard() {
   const router = useRouter()
-  const { toast } = useToast()
-  const [activeTab, setActiveTab] = useState("overview")
-  const [currentUser, setCurrentUser] = useState(null)
-  const [studentClasses, setStudentClasses] = useState([])
-  const [pendingAssignments, setPendingAssignments] = useState(0)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [studentClasses, setStudentClasses] = useState<Class[]>([])
+  const [assignmentsByClass, setAssignmentsByClass] = useState<Record<string, any[]>>({})
+  const [pendingAssignments, setPendingAssignments] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // Load user data on component mount
   useEffect(() => {
-    const user = sessionManager.getCurrentUser()
-    if (!user || user.role !== "student") {
-      toast({
-        title: "Access denied",
-        description: "You must be logged in as a student to view this page",
-        variant: "destructive",
-      })
-      router.push("/student-portal")
-      return
+    async function loadData() {
+      try {
+        setLoading(true)
+        const userData = storage.getUserById(storage.getCurrentUserId())
+        
+        if (!userData) {
+          console.error("No user data found")
+          return
+        }
+        
+        setCurrentUser(userData)
+        
+        // Check if the current user is a student
+        if (userData.role !== "student") {
+          console.error("User is not a student")
+          return
+        }
+        
+        // Load all classes
+        const allClasses = await storage.getClasses()
+        
+        // Filter classes to only include those the student is enrolled in
+        const enrolledClasses = allClasses.filter((cls: Class) => 
+          cls.enrolledStudents && cls.enrolledStudents.includes(userData.id)
+        )
+        
+        setStudentClasses(enrolledClasses)
+        
+        // Load assignments for each class
+        const assignmentsTemp: Record<string, any[]> = {}
+        const pendingTemp: any[] = []
+        
+        for (const cls of enrolledClasses) {
+          if (cls.curriculum) {
+            // Try to load full curriculum data
+            const curriculum = await storage.getCurriculum(cls.id)
+            const curriculumData = curriculum || cls.curriculum
+            
+            if (curriculumData && curriculumData.lessons) {
+              // Find all published assignments across lessons
+              const classAssignments = curriculumData.lessons.flatMap(lesson => {
+                if (!lesson.contents) return []
+                
+                return lesson.contents
+                  .filter(content => 
+                    content.isPublished && 
+                    (content.type === 'assignment' || content.type === 'quiz')
+                  )
+                  .map(content => ({
+                    ...content,
+                    lessonTitle: lesson.title,
+                    lessonId: lesson.id,
+                    classId: cls.id,
+                    className: cls.name,
+                    teacher: cls.teacher
+                  }))
+              })
+              
+              assignmentsTemp[cls.id] = classAssignments
+              
+              // Add assignments without completed status to pending list
+              const pending = classAssignments.filter(
+                assignment => !assignment.completed && new Date(assignment.dueDate) > new Date()
+              )
+              pendingTemp.push(...pending)
+            }
+          }
+        }
+        
+        setAssignmentsByClass(assignmentsTemp)
+        setPendingAssignments(pendingTemp.sort((a, b) => 
+          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+        ))
+      } catch (error) {
+        console.error("Error loading student data:", error)
+      } finally {
+        setLoading(false)
+      }
     }
 
-    setCurrentUser(user)
+    loadData()
+  }, [])
 
-    // Get student's classes
-    const allClasses = storage.getClasses()
-    const userDetails = storage.getUserById(user.id)
+  const navigation = [
+    {
+      title: "Dashboard",
+      href: "/student/dashboard",
+      icon: LayoutDashboard,
+      current: true,
+    },
+    {
+      title: "Classes",
+      href: "/student/classes",
+      icon: Book,
+      current: false,
+    },
+    {
+      title: "Assignments",
+      href: "/student/assignments",
+      icon: CheckSquare,
+      current: false,
+    },
+    {
+      title: "Calendar",
+      href: "/student/calendar",
+      icon: Calendar,
+      current: false,
+    },
+    {
+      title: "Grades",
+      href: "/student/grades",
+      icon: File,
+      current: false,
+    },
+    {
+      title: "Students",
+      href: "/student/students",
+      icon: Users,
+      current: false,
+    },
+    {
+      title: "Settings",
+      href: "/student/settings",
+      icon: Cog,
+      current: false,
+    },
+  ]
 
-    if (userDetails && userDetails.classes) {
-      const classes = allClasses.filter((cls) => userDetails.classes.includes(cls.id))
-      setStudentClasses(classes)
-    }
-
-    // For demo purposes, set a random number of pending assignments
-    setPendingAssignments(Math.floor(Math.random() * 5) + 1)
-  }, [router, toast])
-
-  const handleLogout = () => {
-    sessionManager.clearCurrentUser()
-    router.push("/")
+  if (loading) {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar navigation={navigation} user={currentUser || undefined} />
+        <div className="flex items-center justify-center flex-1">
+          <p>Loading dashboard...</p>
+        </div>
+      </div>
+    )
   }
 
-  if (!currentUser) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
+  if (!currentUser || currentUser.role !== "student") {
+    return (
+      <div className="flex min-h-screen">
+        <Sidebar navigation={navigation} user={currentUser || undefined} />
+        <div className="flex items-center justify-center flex-1">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Access Denied</CardTitle>
+              <CardDescription>
+                This dashboard is only available to student accounts.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Button onClick={() => router.push("/")}>
+                Return to Home
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      {/* Sidebar */}
-      <div className="hidden w-64 p-4 bg-white border-r md:block dark:bg-slate-900 dark:border-slate-800">
-        <div className="flex items-center mb-8 space-x-2">
-          <GraduationCap className="w-6 h-6 text-primary" />
-          <span className="text-xl font-bold">Education More</span>
-        </div>
-        <nav className="space-y-1">
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/student/dashboard">
-              <Home className="w-5 h-5 mr-2" />
-              Dashboard
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/student/assignments">
-              <FileText className="w-5 h-5 mr-2" />
-              Assignments
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/student/calendar">
-              <Calendar className="w-5 h-5 mr-2" />
-              Calendar
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/student/profile">
-              <User className="w-5 h-5 mr-2" />
-              Profile
-            </Link>
-          </Button>
-        </nav>
-      </div>
-
-      {/* Main content */}
-      <div className="flex-1">
-        {/* Header */}
-        <header className="flex items-center justify-between p-4 bg-white border-b dark:bg-slate-900 dark:border-slate-800">
-          <h1 className="text-xl font-bold md:text-2xl">Student Dashboard</h1>
-          <div className="flex items-center space-x-4">
-            <Button variant="outline" size="icon" className="relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-2">
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src="/placeholder.svg" alt="Student" />
-                    <AvatarFallback>{currentUser.avatar}</AvatarFallback>
-                  </Avatar>
-                  <span className="hidden md:inline-block">{currentUser.name}</span>
-                  <ChevronDown className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/student/profile">Profile</Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/student/settings">Settings</Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+    <div className="flex min-h-screen">
+      <Sidebar navigation={navigation} user={currentUser} />
+      <div className="flex-1 p-8 pt-6 overflow-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold">Student Dashboard</h1>
+            <p className="text-muted-foreground">
+              Welcome back, {currentUser.name}!
+            </p>
           </div>
-        </header>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" asChild>
+              <Link href="/student/settings">View Profile</Link>
+            </Button>
+          </div>
+        </div>
 
-        {/* Content */}
-        <main className="p-4 md:p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="assignments">Assignments</TabsTrigger>
-              <TabsTrigger value="grades">Grades</TabsTrigger>
-            </TabsList>
+        {/* Pending Assignments */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Pending Assignments</h2>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/student/assignments">View All</Link>
+            </Button>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {pendingAssignments.length > 0 ? (
+              pendingAssignments.slice(0, 3).map((assignment) => (
+                <Card key={assignment.id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                    <CardDescription>
+                      {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
+                  </CardContent>
+                  <CardFooter>
+                    <Button 
+                      asChild 
+                      className="w-full"
+                    >
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                        Start Assignment
+                      </Link>
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))
+            ) : (
+              <Card className="col-span-full">
+                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">No pending assignments</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </section>
 
-            <TabsContent value="overview" className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                    <CardTitle className="text-sm font-medium">Pending Assignments</CardTitle>
-                    <FileText className="w-4 h-4 text-muted-foreground" />
+        {/* Enrolled Classes */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Your Classes</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {studentClasses.length > 0 ? (
+              studentClasses.map((cls) => (
+                <Card key={cls.id} className="overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <CardTitle>{cls.name}</CardTitle>
+                    <CardDescription>
+                      Teacher: {cls.teacher}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{pendingAssignments}</div>
-                    <p className="text-xs text-muted-foreground">{Math.ceil(pendingAssignments / 2)} due this week</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                    <CardTitle className="text-sm font-medium">Current GPA</CardTitle>
-                    <Book className="w-4 h-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">3.8</div>
-                    <p className="text-xs text-muted-foreground">+0.2 from last semester</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                    <CardTitle className="text-sm font-medium">Course Progress</CardTitle>
-                    <Calendar className="w-4 h-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">68%</div>
-                    <Progress value={68} className="mt-2" />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                    <CardTitle className="text-sm font-medium">Upcoming Tests</CardTitle>
-                    <FileText className="w-4 h-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">2</div>
-                    <p className="text-xs text-muted-foreground">Next: Math (Friday)</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <Card className="col-span-1">
-                  <CardHeader>
-                    <CardTitle>Recent Assignments</CardTitle>
-                    <CardDescription>Your most recent assignments and their status</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">Math Problem Set 12</p>
-                          <p className="text-sm text-muted-foreground">Due in 2 days</p>
-                        </div>
-                        <Badge>Pending</Badge>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Schedule:</span>
+                        <span>{cls.meeting_day || cls.meetingDates || "Not specified"}</span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">History Essay</p>
-                          <p className="text-sm text-muted-foreground">Due tomorrow</p>
+                      {cls.startTime && cls.endTime && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Time:</span>
+                          <span>{cls.startTime} - {cls.endTime}</span>
                         </div>
-                        <Badge variant="secondary">In Progress</Badge>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">Science Lab Report</p>
-                          <p className="text-sm text-muted-foreground">Submitted 3 days ago</p>
-                        </div>
-                        <Badge variant="outline">Graded: A</Badge>
+                      )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Assignments:</span>
+                        <span>{assignmentsByClass[cls.id]?.length || 0} total</span>
                       </div>
                     </div>
                   </CardContent>
-                  <CardFooter className="flex flex-col space-y-2">
-                    <Button variant="outline" className="w-full" asChild>
-                      <Link href="/student/assignments">View All Assignments</Link>
+                  <CardFooter className="flex justify-between">
+                    <Button variant="outline" asChild>
+                      <Link href={`/student/curriculum/${cls.id}`}>
+                        View Curriculum
+                      </Link>
                     </Button>
-                    {studentClasses.length > 0 && (
-                      <Button variant="outline" className="w-full" asChild>
-                        <Link href={`/student/curriculum/${studentClasses[0].id}`}>View Class Curriculum</Link>
+                    {cls.virtualLink && (
+                      <Button variant="default" asChild>
+                        <a href={cls.virtualLink} target="_blank" rel="noopener noreferrer">
+                          Join Class
+                        </a>
                       </Button>
                     )}
                   </CardFooter>
                 </Card>
-
-                <Card className="col-span-1">
-                  <CardHeader>
-                    <CardTitle>Your Classes</CardTitle>
-                    <CardDescription>Classes you are enrolled in</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {studentClasses.length > 0 ? (
-                        studentClasses.map((cls) => (
-                          <div key={cls.id} className="p-3 border rounded-lg">
-                            <div className="flex justify-between">
-                              <div>
-                                <p className="font-medium">{cls.name}</p>
-                                <p className="text-sm text-muted-foreground">Teacher: {cls.teacher}</p>
-                                <p className="text-sm text-muted-foreground">{cls.location}</p>
-                              </div>
-                              <Badge variant={cls.status === "active" ? "default" : "secondary"}>
-                                {cls.status === "active" ? "Active" : "Inactive"}
-                              </Badge>
-                            </div>
-                            <div className="mt-2 flex justify-between items-center">
-                              <p className="text-sm text-muted-foreground">{cls.meetingDates}</p>
-                              <Button size="sm" variant="outline" asChild>
-                                <Link href={`/student/curriculum/${cls.id}`}>
-                                  <Book className="w-4 h-4 mr-2" />
-                                  Curriculum
-                                </Link>
-                              </Button>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-center text-muted-foreground">You are not enrolled in any classes yet</p>
-                      )}
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button variant="outline" className="w-full" asChild>
-                      <Link href="/student/calendar">View Full Calendar</Link>
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="assignments" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Current Assignments</CardTitle>
-                  <CardDescription>All your pending and upcoming assignments</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    <div className="space-y-4">
-                      <h3 className="font-semibold">Due This Week</h3>
-                      <div className="space-y-4">
-                        <div className="p-4 border rounded-lg">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="font-medium">Math Problem Set 12</h4>
-                              <p className="text-sm text-muted-foreground">Due: Friday, 5:00 PM</p>
-                              <p className="mt-2 text-sm">Complete problems 1-20 in Chapter 8</p>
-                            </div>
-                            <Badge>Pending</Badge>
-                          </div>
-                          <div className="flex justify-end mt-4 space-x-2">
-                            <Button variant="outline" size="sm">
-                              View Details
-                            </Button>
-                            <Button size="sm">Submit Work</Button>
-                          </div>
-                        </div>
-                        <div className="p-4 border rounded-lg">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="font-medium">History Essay</h4>
-                              <p className="text-sm text-muted-foreground">Due: Tomorrow, 11:59 PM</p>
-                              <p className="mt-2 text-sm">1500-word essay on the Industrial Revolution</p>
-                            </div>
-                            <Badge variant="secondary">In Progress</Badge>
-                          </div>
-                          <div className="flex justify-end mt-4 space-x-2">
-                            <Button variant="outline" size="sm">
-                              View Details
-                            </Button>
-                            <Button size="sm">Continue Working</Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <h3 className="font-semibold">Upcoming</h3>
-                      <div className="space-y-4">
-                        <div className="p-4 border rounded-lg">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="font-medium">Physics Lab Report</h4>
-                              <p className="text-sm text-muted-foreground">Due: Next Monday, 9:00 AM</p>
-                              <p className="mt-2 text-sm">Report on the pendulum experiment</p>
-                            </div>
-                            <Badge variant="outline">Not Started</Badge>
-                          </div>
-                          <div className="flex justify-end mt-4 space-x-2">
-                            <Button variant="outline" size="sm">
-                              View Details
-                            </Button>
-                            <Button size="sm">Start Assignment</Button>
-                          </div>
-                        </div>
-                        <div className="p-4 border rounded-lg">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="font-medium">English Literature Analysis</h4>
-                              <p className="text-sm text-muted-foreground">Due: Next Wednesday, 11:59 PM</p>
-                              <p className="mt-2 text-sm">Character analysis of Hamlet</p>
-                            </div>
-                            <Badge variant="outline">Not Started</Badge>
-                          </div>
-                          <div className="flex justify-end mt-4 space-x-2">
-                            <Button variant="outline" size="sm">
-                              View Details
-                            </Button>
-                            <Button size="sm">Start Assignment</Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+              ))
+            ) : (
+              <Card className="col-span-full">
+                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                  <Book className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">You are not enrolled in any classes</p>
                 </CardContent>
               </Card>
-            </TabsContent>
+            )}
+          </div>
+        </section>
 
-            <TabsContent value="grades" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Current Grades</CardTitle>
-                  <CardDescription>Your academic performance across all subjects</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">Mathematics</h3>
-                        <Badge className="ml-2">A</Badge>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Homework</span>
-                          <span>95%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Quizzes</span>
-                          <span>92%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Midterm Exam</span>
-                          <span>88%</span>
-                        </div>
-                        <Progress value={92} className="h-2" />
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">Science</h3>
-                        <Badge className="ml-2">A-</Badge>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Lab Reports</span>
-                          <span>90%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Quizzes</span>
-                          <span>87%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Midterm Exam</span>
-                          <span>89%</span>
-                        </div>
-                        <Progress value={89} className="h-2" />
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">History</h3>
-                        <Badge className="ml-2">B+</Badge>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Essays</span>
-                          <span>85%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Participation</span>
-                          <span>90%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Midterm Exam</span>
-                          <span>82%</span>
-                        </div>
-                        <Progress value={85} className="h-2" />
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">English Literature</h3>
-                        <Badge className="ml-2">A</Badge>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Essays</span>
-                          <span>94%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Participation</span>
-                          <span>95%</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm">
-                          <span>Midterm Exam</span>
-                          <span>91%</span>
-                        </div>
-                        <Progress value={93} className="h-2" />
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-                <CardFooter>
-                  <Button variant="outline" className="w-full">
-                    Download Grade Report
-                  </Button>
-                </CardFooter>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </main>
+        {/* Recent Activity */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">Recent Activity</h2>
+          </div>
+          <Card>
+            <CardContent className="p-6">
+              <Activity studentId={currentUser.id} />
+            </CardContent>
+          </Card>
+        </section>
       </div>
     </div>
   )
