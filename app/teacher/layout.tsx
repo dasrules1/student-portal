@@ -1,50 +1,47 @@
 "use client"
 
-import type React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { School, FileText, Users, Calendar, User, Settings, Loader2 } from "lucide-react"
-import { useRequireAuth } from "@/contexts/auth-context"
+import { School, FileText, Users, Calendar, User, Settings, LogOut } from "lucide-react"
+import { sessionManager } from "@/lib/session"
 import { useEffect, useState } from "react"
+import { useToast } from "@/hooks/use-toast"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-export default function TeacherLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, isAuthorized } = useRequireAuth("teacher")
-  const [isVerified, setIsVerified] = useState(false)
-  
-  // Extra check for auth from localStorage
+export default function TeacherLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const { toast } = useToast()
+  const [userData, setUserData] = useState<any>(null)
+
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const storedAuth = localStorage.getItem('authUser')
-        if (storedAuth) {
-          const authData = JSON.parse(storedAuth)
-          if (authData.role === 'teacher') {
-            setIsVerified(true)
-          }
-        }
-      } catch (e) {
-        console.error('Error reading auth from localStorage:', e)
-      }
+    // Check if user is logged in as a teacher
+    const currentUser = sessionManager.getCurrentUser()
+    if (!currentUser || currentUser.role !== "teacher") {
+      toast({
+        title: "Access denied",
+        description: "You must be logged in as a teacher to view this page",
+        variant: "destructive",
+      })
+      router.push("/staff-portal")
+      return
     }
-  }, [])
+    
+    // Set teacher data
+    setUserData(currentUser.user || currentUser)
+  }, [router, toast])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin" />
-        <span className="ml-2">Loading...</span>
-      </div>
-    )
+  const handleLogout = async () => {
+    await sessionManager.logout()
+    router.push("/staff-portal")
   }
 
-  // Don't render anything while redirecting
-  if (!isAuthorized && !isVerified) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin" />
-        <span className="ml-2">Checking authorization...</span>
-      </div>
-    )
+  if (!userData) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
   }
 
   return (
@@ -98,12 +95,24 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
           </Button>
         </nav>
 
-        <div className="pt-4 mt-4 border-t dark:border-slate-800">
-          <Button variant="outline" className="justify-start w-full" asChild>
-            <Link href="/staff-portal">
+        {/* Teacher info in sidebar - at the bottom */}
+        <div className="pt-4 mt-auto">
+          <div className="p-3 border rounded-lg">
+            <div className="flex items-center gap-3 mb-3">
+              <Avatar className="w-10 h-10">
+                <AvatarImage src="/placeholder.svg" alt="Teacher" />
+                <AvatarFallback>{userData?.avatar || (userData?.name?.charAt(0) || "T")}</AvatarFallback>
+              </Avatar>
+              <div>
+                <p className="font-medium">{userData?.name || userData?.displayName || "Teacher"}</p>
+                <p className="text-xs text-muted-foreground">{userData?.email}</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" className="w-full" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
               Logout
-            </Link>
-          </Button>
+            </Button>
+          </div>
         </div>
       </div>
 

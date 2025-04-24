@@ -201,316 +201,245 @@ export default function TeacherDashboard() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      {/* Sidebar */}
-      <div className="hidden w-64 p-4 bg-white border-r md:block dark:bg-slate-900 dark:border-slate-800">
-        <div className="flex items-center mb-8 space-x-2">
-          <School className="w-6 h-6 text-primary" />
-          <div className="flex flex-col">
-            <span className="text-xl font-bold">Education More</span>
-            <span className="text-sm text-muted-foreground">Teacher Portal</span>
-          </div>
+    <div className="flex-1">
+      {/* Header */}
+      <header className="flex items-center justify-between p-4 bg-white border-b dark:bg-slate-900 dark:border-slate-800">
+        <h1 className="text-xl font-bold md:text-2xl">Teacher Dashboard</h1>
+        <div className="flex items-center space-x-4">
+          <Button variant="outline" size="icon" className="relative">
+            <Bell className="w-5 h-5" />
+            <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+          </Button>
         </div>
-        
-        {/* Teacher info in sidebar */}
-        {teacherData && (
-          <div className="mb-6 p-3 border rounded-lg">
-            <div className="flex items-center gap-3 mb-3">
-              <Avatar className="w-10 h-10">
-                <AvatarImage src="/placeholder.svg" alt="Teacher" />
-                <AvatarFallback>{teacherData?.avatar || (teacherData?.name?.charAt(0) || "T")}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium">{teacherData?.name || teacherData?.displayName || "Teacher"}</p>
-                <p className="text-xs text-muted-foreground">{teacherData?.email}</p>
-              </div>
-            </div>
-            <Button variant="outline" size="sm" className="w-full" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        )}
-        
-        <nav className="space-y-1">
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/dashboard">
-              <FileText className="w-5 h-5 mr-2" />
-              Dashboard
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/classes">
-              <School className="w-5 h-5 mr-2" />
-              Classes
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/students">
-              <Users className="w-5 h-5 mr-2" />
-              Students
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/calendar">
-              <Calendar className="w-5 h-5 mr-2" />
-              Calendar
-            </Link>
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" onClick={handleProfile}>
-            <User className="w-5 h-5 mr-2" />
-            Profile
-          </Button>
-          <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/settings">
-              <Settings className="w-5 h-5 mr-2" />
-              Settings
-            </Link>
-          </Button>
-        </nav>
-      </div>
+      </header>
 
-      {/* Main content */}
-      <div className="flex-1">
-        {/* Header */}
-        <header className="flex items-center justify-between p-4 bg-white border-b dark:bg-slate-900 dark:border-slate-800">
-          <h1 className="text-xl font-bold md:text-2xl">Teacher Dashboard</h1>
-          <div className="flex items-center space-x-4">
-            <Button variant="outline" size="icon" className="relative">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-            </Button>
-          </div>
-        </header>
+      {/* Content */}
+      <main className="p-4 md:p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Classes</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-4xl font-bold">{classes.length}</p>
+            </CardContent>
+          </Card>
 
-        {/* Content */}
-        <main className="p-4 md:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Classes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-4xl font-bold">{classes.length}</p>
-              </CardContent>
-            </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Students</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-4xl font-bold">{students.length}</p>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Students</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-4xl font-bold">{students.length}</p>
-              </CardContent>
-            </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Published Content</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-4xl font-bold">{assignments.length}</p>
+            </CardContent>
+          </Card>
+        </div>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle>Published Content</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-4xl font-bold">{assignments.length}</p>
-              </CardContent>
-            </Card>
-          </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="classes">Classes</TabsTrigger>
+            <TabsTrigger value="students">Students</TabsTrigger>
+            <TabsTrigger value="content">Content</TabsTrigger>
+          </TabsList>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="classes">Classes</TabsTrigger>
-              <TabsTrigger value="students">Students</TabsTrigger>
-              <TabsTrigger value="content">Content</TabsTrigger>
-            </TabsList>
+          <TabsContent value="overview" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Classes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {classes.length === 0 ? (
+                    <p className="text-muted-foreground">No classes assigned yet.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {classes.slice(0, 5).map((cls) => (
+                        <li key={cls.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800">
+                          <span>{cls.name}</span>
+                          <Button variant="ghost" size="sm" onClick={() => handleViewClass(cls.id)}>View</Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
 
-            <TabsContent value="overview" className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Recent Classes</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {classes.length === 0 ? (
-                      <p className="text-muted-foreground">No classes assigned yet.</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {classes.slice(0, 5).map((cls) => (
-                          <li key={cls.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800">
-                            <span>{cls.name}</span>
-                            <Button variant="ghost" size="sm" onClick={() => handleViewClass(cls.id)}>View</Button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Student Activity</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {students.length === 0 ? (
-                      <p className="text-muted-foreground">No student activity yet.</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {students.slice(0, 5).map((student) => (
-                          <li key={student.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800">
-                            <div className="flex items-center space-x-2">
-                              <Avatar className="w-8 h-8">
-                                <AvatarFallback>{student.avatar || student.name.charAt(0)}</AvatarFallback>
-                              </Avatar>
-                              <span>{student.name}</span>
-                            </div>
-                            <Badge variant="outline">{student.classes.length} Classes</Badge>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="classes" className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {classes.length === 0 ? (
-                  <Card className="col-span-full">
-                    <CardContent className="pt-6">
-                      <p className="text-center text-muted-foreground">No classes assigned yet.</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  classes.map((cls) => (
-                    <Card key={cls.id}>
-                      <CardHeader>
-                        <CardTitle>{cls.name}</CardTitle>
-                        <CardDescription>
-                          {cls.subject || "No subject specified"}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {/* Show all class details */}
-                          <div className="grid grid-cols-2 text-sm gap-y-1">
-                            <span className="text-muted-foreground">Meeting Day:</span>
-                            <span>{cls.meeting_day || "Not specified"}</span>
-                            
-                            <span className="text-muted-foreground">Time:</span>
-                            <span>
-                              {cls.startTime && cls.endTime 
-                                ? `${cls.startTime} - ${cls.endTime}` 
-                                : "Not specified"}
-                            </span>
-                            
-                            <span className="text-muted-foreground">Start Date:</span>
-                            <span>{cls.startDate || "Not specified"}</span>
-                            
-                            <span className="text-muted-foreground">End Date:</span>
-                            <span>{cls.endDate || "Not specified"}</span>
-                            
-                            <span className="text-muted-foreground">Location:</span>
-                            <span>{cls.location || "Not specified"}</span>
-                            
-                            {cls.virtualLink && (
-                              <>
-                                <span className="text-muted-foreground">Virtual Link:</span>
-                                <a href={cls.virtualLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
-                                  Join Meeting
-                                </a>
-                              </>
-                            )}
-                            
-                            <span className="text-muted-foreground">Students:</span>
-                            <span>{countEnrolledStudents(cls.id)}</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                      <CardFooter className="flex justify-between">
-                        <Button variant="outline" size="sm" onClick={() => handleViewClass(cls.id)}>
-                          View Students
-                        </Button>
-                        <Button size="sm" onClick={() => handleViewCurriculum(cls.id)}>
-                          Curriculum
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="students" className="space-y-6">
-              <div className="space-y-4">
-                {students.length === 0 ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <p className="text-center text-muted-foreground">No students enrolled yet.</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {students.map((student) => (
-                      <Card key={student.id}>
-                        <CardHeader className="pb-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Student Activity</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {students.length === 0 ? (
+                    <p className="text-muted-foreground">No student activity yet.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {students.slice(0, 5).map((student) => (
+                        <li key={student.id} className="flex items-center justify-between p-2 border rounded hover:bg-slate-50 dark:hover:bg-slate-800">
                           <div className="flex items-center space-x-2">
-                            <Avatar className="w-10 h-10">
+                            <Avatar className="w-8 h-8">
                               <AvatarFallback>{student.avatar || student.name.charAt(0)}</AvatarFallback>
                             </Avatar>
-                            <div>
-                              <CardTitle className="text-lg">{student.name}</CardTitle>
-                              <CardDescription>{student.email}</CardDescription>
-                            </div>
+                            <span>{student.name}</span>
                           </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Status:</span>
-                              <Badge variant={student.status === "active" ? "default" : "secondary"}>
-                                {student.status || "Active"}
-                              </Badge>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Classes:</span>
-                              <span>{student.classes.length}</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </TabsContent>
+                          <Badge variant="outline">{student.classes.length} Classes</Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
-            <TabsContent value="content" className="space-y-6">
+          <TabsContent value="classes" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {classes.length === 0 ? (
-                <Card>
+                <Card className="col-span-full">
                   <CardContent className="pt-6">
-                    <p className="text-center text-muted-foreground">You have no classes assigned. Content is organized by class.</p>
+                    <p className="text-center text-muted-foreground">No classes assigned yet.</p>
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-6">
-                  {classes.map((cls) => (
-                    <Card key={cls.id}>
-                      <CardHeader>
-                        <CardTitle>{cls.name}</CardTitle>
-                        <CardDescription>{cls.subject || "No subject specified"}</CardDescription>
+                classes.map((cls) => (
+                  <Card key={cls.id}>
+                    <CardHeader>
+                      <CardTitle>{cls.name}</CardTitle>
+                      <CardDescription>
+                        {cls.subject || "No subject specified"}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {/* Show all class details */}
+                        <div className="grid grid-cols-2 text-sm gap-y-1">
+                          <span className="text-muted-foreground">Meeting Day:</span>
+                          <span>{cls.meeting_day || "Not specified"}</span>
+                          
+                          <span className="text-muted-foreground">Time:</span>
+                          <span>
+                            {cls.startTime && cls.endTime 
+                              ? `${cls.startTime} - ${cls.endTime}` 
+                              : "Not specified"}
+                          </span>
+                          
+                          <span className="text-muted-foreground">Start Date:</span>
+                          <span>{cls.startDate || "Not specified"}</span>
+                          
+                          <span className="text-muted-foreground">End Date:</span>
+                          <span>{cls.endDate || "Not specified"}</span>
+                          
+                          <span className="text-muted-foreground">Location:</span>
+                          <span>{cls.location || "Not specified"}</span>
+                          
+                          {cls.virtualLink && (
+                            <>
+                              <span className="text-muted-foreground">Virtual Link:</span>
+                              <a href={cls.virtualLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
+                                Join Meeting
+                              </a>
+                            </>
+                          )}
+                          
+                          <span className="text-muted-foreground">Students:</span>
+                          <span>{countEnrolledStudents(cls.id)}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-between">
+                      <Button variant="outline" size="sm" onClick={() => handleViewClass(cls.id)}>
+                        View Students
+                      </Button>
+                      <Button size="sm" onClick={() => handleViewCurriculum(cls.id)}>
+                        Curriculum
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="students" className="space-y-6">
+            <div className="space-y-4">
+              {students.length === 0 ? (
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-center text-muted-foreground">No students enrolled yet.</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {students.map((student) => (
+                    <Card key={student.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="w-10 h-10">
+                            <AvatarFallback>{student.avatar || student.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <CardTitle className="text-lg">{student.name}</CardTitle>
+                            <CardDescription>{student.email}</CardDescription>
+                          </div>
+                        </div>
                       </CardHeader>
                       <CardContent>
-                        <Button onClick={() => handleViewCurriculum(cls.id)} className="w-full">
-                          Manage Curriculum
-                        </Button>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Status:</span>
+                            <Badge variant={student.status === "active" ? "default" : "secondary"}>
+                              {student.status || "Active"}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Classes:</span>
+                            <span>{student.classes.length}</span>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
-        </main>
-      </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="content" className="space-y-6">
+            {classes.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-center text-muted-foreground">You have no classes assigned. Content is organized by class.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-6">
+                {classes.map((cls) => (
+                  <Card key={cls.id}>
+                    <CardHeader>
+                      <CardTitle>{cls.name}</CardTitle>
+                      <CardDescription>{cls.subject || "No subject specified"}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button onClick={() => handleViewCurriculum(cls.id)} className="w-full">
+                        Manage Curriculum
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </main>
     </div>
   )
 }

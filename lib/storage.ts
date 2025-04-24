@@ -138,6 +138,15 @@ class StorageService {
       console.log("Getting users from Firestore...")
       const usersRef = collection(db, 'users');
       const snapshot = await getDocs(usersRef);
+      
+      if (!snapshot || !snapshot.docs) {
+        console.warn("No snapshot or docs found in Firestore");
+        // Return from localStorage
+        const localUsers = persistentStorage.getAllUsers();
+        this.users = Array.isArray(localUsers) ? localUsers : [];
+        return this.users;
+      }
+      
       const loadedUsers = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
         const data = doc.data();
         return { 
@@ -152,17 +161,26 @@ class StorageService {
         } as User;
       });
       
-      // Cache the users locally
-      this.users = loadedUsers;
-      console.log(`Loaded ${loadedUsers.length} users from Firestore`, loadedUsers);
-      return loadedUsers;
+      // Cache the users locally (ensure it's an array)
+      this.users = Array.isArray(loadedUsers) ? loadedUsers : [];
+      console.log(`Loaded ${this.users.length} users from Firestore`, this.users);
+      return this.users;
     } catch (error) {
       console.error('Error getting users:', error);
       // Fallback to localStorage
-      const localUsers = persistentStorage.getAllUsers();
-      console.log('Falling back to local storage users:', localUsers);
-      this.users = localUsers;
-      return localUsers;
+      try {
+        const localUsers = persistentStorage.getAllUsers();
+        // Make sure we always return an array
+        const safeUsers = Array.isArray(localUsers) ? localUsers : [];
+        console.log('Falling back to local storage users:', safeUsers);
+        this.users = safeUsers;
+        return safeUsers;
+      } catch (backupError) {
+        console.error('Critical error getting users from all sources:', backupError);
+        // Ultimate fallback - empty array
+        this.users = [];
+        return [];
+      }
     }
   }
 
@@ -777,7 +795,23 @@ class StorageService {
         if (snapshot.exists()) {
           const curriculumData = snapshot.data();
           console.log(`Found curriculum in Firestore for class ${classId}`);
-          return curriculumData as Curriculum;
+          
+          // Handle both new and old data formats
+          if (curriculumData.content) {
+            // New format
+            return {
+              classId: classId,
+              content: curriculumData.content,
+              lastUpdated: curriculumData.lastUpdated || curriculumData.updatedAt || new Date().toISOString()
+            };
+          } else {
+            // The data itself may be the curriculum
+            return {
+              classId: classId,
+              content: curriculumData,
+              lastUpdated: curriculumData.lastUpdated || curriculumData.updatedAt || new Date().toISOString()
+            };
+          }
         } else {
           console.log(`No curriculum found in Firestore for class ${classId}`);
         }
@@ -790,7 +824,23 @@ class StorageService {
         const localCurriculum = await persistentStorage.getCurriculum(classId);
         if (localCurriculum) {
           console.log(`Found curriculum in persistent storage for class ${classId}`);
-          return localCurriculum as Curriculum;
+          
+          // Handle both new and old data formats
+          if (localCurriculum.content) {
+            // New format
+            return {
+              classId: classId,
+              content: localCurriculum.content,
+              lastUpdated: localCurriculum.lastUpdated || localCurriculum.updatedAt || new Date().toISOString()
+            };
+          } else {
+            // The data itself may be the curriculum
+            return {
+              classId: classId,
+              content: localCurriculum,
+              lastUpdated: localCurriculum.lastUpdated || localCurriculum.updatedAt || new Date().toISOString()
+            };
+          }
         } else {
           console.log(`No curriculum found in persistent storage for class ${classId}`);
         }
@@ -801,15 +851,52 @@ class StorageService {
       // Last resort - try direct localStorage
       if (typeof window !== "undefined") {
         try {
-          const localData = localStorage.getItem(`curriculum_${classId}`);
+          // Try both key patterns
+          let localData = localStorage.getItem(`curriculum_${classId}`);
+          if (!localData) {
+            localData = localStorage.getItem(`${classId}_curriculum`);
+          }
+          
           if (localData) {
             const parsedData = JSON.parse(localData);
             console.log(`Found curriculum in localStorage for class ${classId}`);
-            return parsedData as Curriculum;
+            
+            // Handle both new and old data formats
+            if (parsedData.content) {
+              // New format
+              return {
+                classId: classId,
+                content: parsedData.content,
+                lastUpdated: parsedData.lastUpdated || parsedData.updatedAt || new Date().toISOString()
+              };
+            } else {
+              // The data itself may be the curriculum
+              return {
+                classId: classId,
+                content: parsedData,
+                lastUpdated: parsedData.lastUpdated || parsedData.updatedAt || new Date().toISOString()
+              };
+            }
           }
         } catch (localError) {
           console.warn(`Error fetching curriculum from localStorage for class ${classId}:`, localError);
         }
+      }
+      
+      // Check if class has embedded curriculum
+      try {
+        const classData = await this.getClassById(classId);
+        if (classData && classData.curriculum) {
+          console.log(`Found curriculum embedded in class data for class ${classId}`);
+          
+          return {
+            classId: classId,
+            content: classData.curriculum,
+            lastUpdated: new Date().toISOString()
+          };
+        }
+      } catch (classError) {
+        console.warn(`Error checking for embedded curriculum in class ${classId}:`, classError);
       }
       
       // No curriculum found anywhere
@@ -823,7 +910,22 @@ class StorageService {
         try {
           const localData = localStorage.getItem(`curriculum_${classId}`);
           if (localData) {
-            return JSON.parse(localData) as Curriculum;
+            const parsedData = JSON.parse(localData);
+            
+            // Handle both new and old data formats
+            if (parsedData.content) {
+              return {
+                classId: classId,
+                content: parsedData.content,
+                lastUpdated: parsedData.lastUpdated || new Date().toISOString()
+              };
+            } else {
+              return {
+                classId: classId,
+                content: parsedData,
+                lastUpdated: new Date().toISOString()
+              };
+            }
           }
         } catch (e) {
           // Ignore final error

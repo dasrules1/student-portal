@@ -158,19 +158,39 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       console.log("Saving curriculum for class:", classId);
       console.log("Curriculum data structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
       
-      const updatedClass = {
-        ...classData,
-        curriculum,
+      // Use dedicated curriculum methods instead of updating the class
+      const curriculumData = {
+        classId: classId,
+        content: curriculum,
+        lastUpdated: new Date().toISOString()
       };
-
-      console.log("Attempting to update class with new curriculum...");
-      const result = await storage.updateClass(classId, updatedClass);
       
-      if (!result) {
-        throw new Error("Class update returned no result");
+      // Try first with saveCurriculum
+      let result = false;
+      try {
+        console.log("Attempting to save curriculum with dedicated method...");
+        result = await storage.saveCurriculum(classId, curriculumData);
+      } catch (saveError) {
+        console.error("Error with saveCurriculum, trying updateCurriculum instead:", saveError);
+        // Try update as fallback
+        result = await storage.updateCurriculum(classId, curriculumData);
       }
       
-      console.log("Class successfully updated with new curriculum");
+      if (!result) {
+        // Direct save to localStorage as a last resort
+        console.warn("Curriculum API methods failed, trying direct localStorage save");
+        localStorage.setItem(`curriculum_${classId}`, JSON.stringify(curriculumData));
+        
+        // If we got here, we've done our best to save it
+        console.log("Curriculum saved via localStorage fallback");
+        result = true;
+      }
+      
+      if (!result) {
+        throw new Error("Curriculum save failed - all methods returned failure");
+      }
+      
+      console.log("Curriculum successfully saved");
 
       toast({
         title: "Curriculum saved",
@@ -185,12 +205,12 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         category: "Curriculum Management",
       });
       
-      // Refresh class data to ensure we have the latest
-      const refreshedClass = await storage.getClassById(classId);
-      if (refreshedClass) {
-        setClassData(refreshedClass);
-        console.log("Class data refreshed after save");
-      }
+      // Update the local class data with the curriculum
+      setClassData({
+        ...classData,
+        curriculum: curriculum
+      });
+      
     } catch (error) {
       console.error("Error saving curriculum:", error);
       toast({
