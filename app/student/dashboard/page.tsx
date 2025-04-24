@@ -120,7 +120,7 @@ export default function StudentDashboard() {
         
         // Filter classes to only include those the student is enrolled in
         const enrolledClasses = allClasses.filter((cls: Class) => 
-          cls.enrolledStudents && cls.enrolledStudents.includes(userData.id)
+          cls && cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && cls.enrolledStudents.includes(userData.id)
         )
         console.log("Enrolled classes:", enrolledClasses.length)
         

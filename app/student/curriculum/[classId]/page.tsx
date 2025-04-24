@@ -106,93 +106,104 @@ export default function StudentCurriculum() {
 
     // Try to get class from storage
     const classes = storage.getClasses()
-    const foundClass = classes.find((c) => c.id === classId)
+    const foundClass = classes.find((c) => c && c.id === classId)
 
     if (foundClass) {
-      setCurrentClass(foundClass)
+      // Check if student is enrolled in this class
+      if (foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) && 
+          foundClass.enrolledStudents.includes(user.id)) {
+        setCurrentClass(foundClass)
 
-      // Try to load published curriculum data
-      if (typeof window !== "undefined") {
-        const publishedCurriculumKey = `published-curriculum-${classId}`
-        const publishedData = localStorage.getItem(publishedCurriculumKey)
+        // Try to load published curriculum data
+        if (typeof window !== "undefined") {
+          const publishedCurriculumKey = `published-curriculum-${classId}`
+          const publishedData = localStorage.getItem(publishedCurriculumKey)
 
-        if (publishedData) {
-          try {
-            const publishedCurriculum = JSON.parse(publishedData)
+          if (publishedData) {
+            try {
+              const publishedCurriculum = JSON.parse(publishedData)
 
-            // Get the full curriculum from the class
-            const fullCurriculum = foundClass.curriculum || { lessons: [] }
+              // Get the full curriculum from the class
+              const fullCurriculum = foundClass.curriculum || { lessons: [] }
 
-            // Create a new curriculum with only published content
-            const studentCurriculum = { lessons: [...fullCurriculum.lessons] }
+              // Create a new curriculum with only published content
+              const studentCurriculum = { lessons: [...fullCurriculum.lessons] }
 
-            // For each lesson with published content
-            Object.keys(publishedCurriculum).forEach((lessonIndex) => {
-              const lessonContents = publishedCurriculum[lessonIndex]
+              // For each lesson with published content
+              Object.keys(publishedCurriculum).forEach((lessonIndex) => {
+                const lessonContents = publishedCurriculum[lessonIndex]
 
-              // Make sure this lesson exists in our curriculum
-              if (studentCurriculum.lessons[lessonIndex]) {
-                // Initialize contents array if it doesn't exist
-                if (!studentCurriculum.lessons[lessonIndex].contents) {
-                  studentCurriculum.lessons[lessonIndex].contents = []
-                }
-
-                // For each published content in this lesson
-                Object.keys(lessonContents).forEach((contentIndex) => {
-                  const publishedContent = lessonContents[contentIndex]
-
-                  // Add the published content
-                  studentCurriculum.lessons[lessonIndex].contents[contentIndex] = {
-                    ...publishedContent,
-                    isPublished: true,
+                // Make sure this lesson exists in our curriculum
+                if (studentCurriculum.lessons[lessonIndex]) {
+                  // Initialize contents array if it doesn't exist
+                  if (!studentCurriculum.lessons[lessonIndex].contents) {
+                    studentCurriculum.lessons[lessonIndex].contents = []
                   }
-                })
 
-                // Filter out any unpublished content
-                studentCurriculum.lessons[lessonIndex].contents = studentCurriculum.lessons[
-                  lessonIndex
-                ].contents.filter((content) => content && content.isPublished)
+                  // For each published content in this lesson
+                  Object.keys(lessonContents).forEach((contentIndex) => {
+                    const publishedContent = lessonContents[contentIndex]
+
+                    // Add the published content
+                    studentCurriculum.lessons[lessonIndex].contents[contentIndex] = {
+                      ...publishedContent,
+                      isPublished: true,
+                    }
+                  })
+
+                  // Filter out any unpublished content
+                  studentCurriculum.lessons[lessonIndex].contents = studentCurriculum.lessons[
+                    lessonIndex
+                  ].contents.filter((content) => content && content.isPublished)
+                }
+              })
+
+              setCurriculum(studentCurriculum)
+            } catch (error) {
+              console.error("Error loading published curriculum:", error)
+              setCurriculum({ lessons: [] })
+            }
+          } else {
+            // If no published curriculum, check if there's one in the class
+            if (foundClass.curriculum) {
+              // Filter to only include published content
+              const studentCurriculum = {
+                lessons: foundClass.curriculum.lessons
+                  .map((lesson) => ({
+                    ...lesson,
+                    contents: (lesson.contents || []).filter((content) => content.isPublished),
+                  }))
+                  .filter((lesson) => lesson.contents.length > 0),
               }
-            })
+              setCurriculum(studentCurriculum)
+            } else {
+              setCurriculum({ lessons: [] })
+            }
+          }
 
-            setCurriculum(studentCurriculum)
-          } catch (error) {
-            console.error("Error loading published curriculum:", error)
-            setCurriculum({ lessons: [] })
+          // Load any previously graded content
+          if (user) {
+            // Load attempt counts
+            const attemptCountsKey = `attempt-counts-${classId}-${user.id}`
+            const attemptCountsData = localStorage.getItem(attemptCountsKey)
+            if (attemptCountsData) {
+              try {
+                setAttemptCounts(JSON.parse(attemptCountsData))
+              } catch (error) {
+                console.error("Error loading attempt counts:", error)
+              }
+            }
           }
         } else {
-          // If no published curriculum, check if there's one in the class
-          if (foundClass.curriculum) {
-            // Filter to only include published content
-            const studentCurriculum = {
-              lessons: foundClass.curriculum.lessons
-                .map((lesson) => ({
-                  ...lesson,
-                  contents: (lesson.contents || []).filter((content) => content.isPublished),
-                }))
-                .filter((lesson) => lesson.contents.length > 0),
-            }
-            setCurriculum(studentCurriculum)
-          } else {
-            setCurriculum({ lessons: [] })
-          }
-        }
-
-        // Load any previously graded content
-        if (user) {
-          // Load attempt counts
-          const attemptCountsKey = `attempt-counts-${classId}-${user.id}`
-          const attemptCountsData = localStorage.getItem(attemptCountsKey)
-          if (attemptCountsData) {
-            try {
-              setAttemptCounts(JSON.parse(attemptCountsData))
-            } catch (error) {
-              console.error("Error loading attempt counts:", error)
-            }
-          }
+          setCurriculum({ lessons: [] })
         }
       } else {
-        setCurriculum({ lessons: [] })
+        toast({
+          title: "Access denied",
+          description: "You are not enrolled in this class",
+          variant: "destructive",
+        })
+        router.push("/student/dashboard")
       }
     } else {
       toast({
