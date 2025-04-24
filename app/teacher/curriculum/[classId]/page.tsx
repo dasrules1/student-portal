@@ -696,7 +696,7 @@ export default function TeacherCurriculum() {
       case "completed":
         return (
           <Badge variant="success" className="bg-green-500">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
+            <Check className="w-3 h-3 mr-1" />
             {score !== undefined ? `${score}%` : "Completed"}
           </Badge>
         )
@@ -734,60 +734,49 @@ export default function TeacherCurriculum() {
 
   // Add this function near the other rendering functions if it doesn't exist
   const renderProblemWithAnswer = (problem, index) => {
+    // Normalize the problem type for consistent checking
+    const problemType = problem.type?.toLowerCase();
+    
     return (
       <div key={index} className="p-4 mb-4 border rounded-md">
         <div className="flex justify-between items-center mb-2">
           <h4 className="font-medium">Question {index + 1}</h4>
-          <Badge variant={problem.type === 'multiple-choice' ? 'secondary' : 'outline'}>
-            {problem.type === 'multiple-choice' ? 'Multiple Choice' : problem.type === 'short-answer' ? 'Short Answer' : 'Essay'}
+          <Badge variant={problemType === 'multiple-choice' ? 'secondary' : 'outline'}>
+            {problemType === 'multiple-choice' ? 'Multiple Choice' : 
+             problemType === 'short-answer' ? 'Short Answer' : 
+             problemType === 'open-ended' ? 'Open Ended' :
+             problemType === 'math-expression' ? 'Math Expression' : 'Essay'}
           </Badge>
         </div>
+        <p className="mb-2">{problem.question}</p>
         
-        <div className="mb-4">{renderLatex(problem.question)}</div>
-        
-        {problem.type === 'multiple-choice' && problem.choices && (
-          <div className="space-y-2 mb-4">
-            {problem.choices.map((choice, choiceIndex) => (
-              <div 
-                key={choiceIndex} 
-                className={`p-2 rounded-md border ${
-                  problem.correctAnswer === choice || 
-                  (Array.isArray(problem.correctAnswer) && problem.correctAnswer.includes(choice)) ?
-                  "border-green-500 bg-green-50 dark:bg-green-900/20" : ""}
-                `}
-              >
-                <div className="flex items-center">
-                  <span className="w-6 h-6 flex items-center justify-center rounded-full border mr-2">
-                    {String.fromCharCode(65 + choiceIndex)}
-                  </span>
-                  <span>{choice}</span>
-                  {(problem.correctAnswer === choice || 
-                    (Array.isArray(problem.correctAnswer) && problem.correctAnswer.includes(choice))) && (
-                    <CheckCircle2 className="ml-auto w-5 h-5 text-green-500" />
+        {problemType === 'multiple-choice' && problem.options && (
+          <div className="mb-2">
+            <div className="font-medium text-sm text-gray-500 mb-1">Options:</div>
+            <ul className="space-y-1">
+              {problem.options.map((option, optIndex) => (
+                <li key={optIndex} className="flex items-center">
+                  {option === problem.correctAnswer && (
+                    <Check className="w-4 h-4 text-green-500 mr-1" />
                   )}
-                </div>
-              </div>
-            ))}
+                  <span className={option === problem.correctAnswer ? "font-medium text-green-600" : ""}>
+                    {option}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         
-        {(problem.type === 'short-answer' || problem.type === 'essay') && (
-          <div className="mb-4">
-            <div className="font-medium text-sm mb-1">Correct Answer:</div>
-            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
-              {problem.correctAnswer ? renderLatex(problem.correctAnswer) : "No answer provided"}
-            </div>
-          </div>
-        )}
-        
-        {problem.points && (
-          <div className="text-sm text-muted-foreground">
-            Points: {problem.points}
+        {(problemType === 'short-answer' || problemType === 'essay' || problemType === 'open-ended' || problemType === 'math-expression') && (
+          <div className="mb-2">
+            <div className="font-medium text-sm text-gray-500 mb-1">Correct Answer:</div>
+            <div className="p-2 bg-gray-50 rounded">{problem.correctAnswer || 'No answer provided'}</div>
           </div>
         )}
       </div>
-    )
-  }
+    );
+  };
 
   if (!currentClass || !curriculum) {
     return (

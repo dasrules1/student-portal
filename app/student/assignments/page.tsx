@@ -10,266 +10,213 @@ import {
   Cog,
   File,
   LayoutDashboard,
-  Users,
 } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { storage } from "@/lib/storage"
-import { User, Class } from "@/lib/storage"
-import { sessionManager } from "@/lib/session"
-import { useAuth } from "@/contexts/auth-context"
 import { Badge } from "@/components/ui/badge"
+import { persistentStorage } from '@/lib/persistentStorage'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+
+// Define interfaces for data structures
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: "student" | "teacher" | "admin";
+  status?: "active" | "inactive";
+  avatar?: string;
+  classes: string[];
+}
+
+interface Class {
+  id: string;
+  name: string;
+  description?: string;
+  teacher?: string;
+  enrolledStudents?: string[];
+}
+
+interface Content {
+  id?: string;
+  title?: string;
+  type?: string;
+  description?: string;
+  isPublished?: boolean;
+  dueDate?: string;
+  completed?: boolean;
+  completedAt?: string;
+}
+
+// Define interfaces for assignment data
+interface EnrichedAssignment extends Content {
+  classId: string;
+  className: string;
+  lessonId?: string;
+  lessonTitle?: string;
+}
 
 export default function StudentAssignments() {
   const router = useRouter()
-  const { user: authUser, role: authRole } = useAuth()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [studentClasses, setStudentClasses] = useState<Class[]>([])
-  const [assignments, setAssignments] = useState<any[]>([])
+  const [assignments, setAssignments] = useState<EnrichedAssignment[]>([])
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [pendingAssignments, setPendingAssignments] = useState<EnrichedAssignment[]>([])
 
   useEffect(() => {
-    async function loadData() {
+    // Load current user and check authorization
+    const checkAuth = async () => {
       try {
-        setLoading(true)
+        const user = await persistentStorage.getCurrentUser();
+        if (!user) {
+          setAuthError('You must be logged in to view this page');
+          setLoading(false);
+          return;
+        }
         
-        // Try to get user from multiple sources
-        const sessionUser = sessionManager.getCurrentUser()
+        if (user.role !== 'student') {
+          setAuthError('Only students can access this page');
+          setLoading(false);
+          return;
+        }
         
-        // Try local storage as a fallback
-        let authData = null
+        setCurrentUser(user as User);
+        setLoading(false);
+        
+        // Load assignments for the authenticated user
+        loadAssignments(user.id);
+      } catch (error) {
+        console.error('Authentication error:', error);
+        setAuthError('Authentication error');
+        setLoading(false);
+      }
+    };
+    
+    checkAuth();
+  }, []);
+
+  const loadAssignments = async (studentId: string) => {
+    if (!studentId) return;
+    
+    setLoading(true);
+    try {
+      // Get all classes the student is enrolled in
+      const enrolledClasses = await persistentStorage.getClassesByStudentId(studentId);
+      if (!enrolledClasses || enrolledClasses.length === 0) {
+        console.log('Student is not enrolled in any classes');
+        setLoading(false);
+        return;
+      }
+
+      const allAssignments: EnrichedAssignment[] = [];
+      const dueAssignments: EnrichedAssignment[] = [];
+
+      // For each class, load the curriculum and extract assignments
+      for (const classItem of enrolledClasses) {
         try {
-          const storedAuth = localStorage.getItem('authUser')
-          if (storedAuth) {
-            authData = JSON.parse(storedAuth)
-          }
-        } catch (e) {
-          console.error('Error reading auth from localStorage:', e)
-        }
-        
-        // Get user ID from available sources
-        const userId = authUser?.uid || sessionUser?.user?.uid || authData?.uid
-        
-        if (!userId) {
-          console.error("No user ID found")
-          setAuthError("You need to log in to access this page")
-          return
-        }
-        
-        // Get user data
-        let userData = null
-        
-        // Try storage first
-        try {
-          userData = storage.getUserById(userId)
-        } catch (storageErr) {
-          console.error("Error getting user from storage:", storageErr)
-        }
-        
-        // If no user data, try using auth data directly
-        if (!userData && authUser) {
-          userData = {
-            id: authUser.uid,
-            name: authUser.displayName || "Student",
-            email: authUser.email,
-            role: authRole || "student"
-          }
-        }
-        
-        // Last attempt using local storage data
-        if (!userData && authData) {
-          userData = {
-            id: authData.uid,
-            email: authData.email,
-            role: authData.role,
-            name: "Student"
-          }
-        }
-        
-        if (!userData) {
-          console.error("No user data found")
-          setAuthError("Unable to retrieve your user information")
-          setLoading(false)
-          return
-        }
-        
-        setCurrentUser(userData)
-        
-        // Check if the current user is a student
-        if (userData.role !== "student") {
-          console.error("User is not a student")
-          setAuthError("This page is only available to student accounts")
-          setLoading(false)
-          return
-        }
-        
-        // Load all classes
-        const allClasses = await storage.getClasses()
-        console.log("Loaded classes:", allClasses?.length || 0)
-        
-        // Additional null check and validation for classes
-        if (!allClasses || !Array.isArray(allClasses)) {
-          console.error("No classes found or invalid classes data")
-          setStudentClasses([])
-          setAssignments([])
-          setLoading(false)
-          return
-        }
-        
-        // Filter classes to only include those the student is enrolled in
-        const enrolledClasses = allClasses.filter((cls: Class) => 
-          cls && cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && 
-          cls.enrolledStudents.includes(userData.id)
-        )
-        console.log("Enrolled classes found:", enrolledClasses.length)
-        
-        setStudentClasses(enrolledClasses)
-        
-        // Find all assignments for the enrolled classes
-        let allAssignments = []
-        
-        for (const cls of enrolledClasses) {
-          if (!cls || !cls.id) continue;
+          console.log(`Loading curriculum for class: ${classItem.id}`);
+          const curriculum = await storage.getCurriculum(classItem.id);
           
-          console.log(`Loading assignments for class: ${cls.name} (${cls.id})`)
-          
-          try {
-            // 1. First try to load curriculum directly using dedicated API
-            console.log(`Attempting to load curriculum for class ${cls.id} via direct API`);
-            const curriculum = await storage.getCurriculum(cls.id);
-            console.log(`Curriculum API result for class ${cls.id}:`, curriculum ? "Success" : "Not found");
-            
-            // 2. If API-loaded curriculum is not available, try class.curriculum
-            const curriculumData = curriculum || (cls.curriculum || null);
-            
-            if (curriculumData && curriculumData.lessons && Array.isArray(curriculumData.lessons)) {
-              // Find all published assignments across lessons
-              console.log(`Processing ${curriculumData.lessons.length} lessons for class ${cls.name}`);
+          if (curriculum) {
+            // Process assignments from curriculum
+            if (curriculum.content && curriculum.content.assignments) {
+              // Make sure to log what we're finding to debug
+              console.log(`Found ${curriculum.content.assignments.length} assignments in class ${classItem.name}`);
               
-              const classAssignments = curriculumData.lessons.flatMap(lesson => {
-                if (!lesson || !lesson.contents || !Array.isArray(lesson.contents)) {
-                  console.log(`No contents found in lesson ${lesson?.id || 'unknown'}`);
-                  return [];
-                }
+              // Filter for published assignments only and add class details
+              const classAssignments = curriculum.content.assignments
+                .filter((item: Content) => {
+                  // Explicit check for isPublished being true
+                  const isPublished = item.isPublished === true;
+                  console.log(`Assignment ${item.title}: isPublished=${isPublished}`);
+                  return isPublished;
+                })
+                .map((assignment: Content) => ({
+                  ...assignment,
+                  className: classItem.name,
+                  classId: classItem.id
+                }));
+              
+              allAssignments.push(...classAssignments);
+              
+              // Check for assignments due soon or overdue
+              const now = new Date();
+              const oneWeekFromNow = new Date();
+              oneWeekFromNow.setDate(now.getDate() + 7);
+              
+              const pendingAssignments = classAssignments.filter((assignment: EnrichedAssignment) => {
+                if (!assignment.dueDate) return false;
                 
-                // Log the contents that should be published
-                const publishedContents = lesson.contents.filter(content => 
-                  content && content.isPublished === true && 
-                  (content.type === 'assignment' || content.type === 'quiz')
-                );
-                
-                console.log(`Found ${publishedContents.length} published contents in lesson ${lesson.title || 'Unnamed'}`);
-                
-                // Make sure we're getting all published content
-                return lesson.contents
-                  .filter(content => {
-                    // Explicitly check for isPublished being true (not just truthy)
-                    const isActuallyPublished = content && content.isPublished === true;
-                    const isAssignmentType = content && (content.type === 'assignment' || content.type === 'quiz');
-                    
-                    if (content && isAssignmentType && !isActuallyPublished) {
-                      console.log(`Found unpublished ${content.type} "${content.title}" in lesson ${lesson.title}`);
-                    }
-                    
-                    return isActuallyPublished && isAssignmentType;
-                  })
-                  .map(content => {
-                    console.log(`Processing published ${content.type}: ${content.title}`);
-                    return {
-                      ...content,
-                      lessonTitle: lesson.title || 'Unnamed Lesson',
-                      lessonId: lesson.id,
-                      classId: cls.id,
-                      className: cls.name || 'Unnamed Class',
-                      teacher: cls.teacher || 'Unnamed Teacher'
-                    };
-                  });
+                const dueDate = new Date(assignment.dueDate);
+                return dueDate > now && dueDate <= oneWeekFromNow;
               });
               
-              console.log(`Total of ${classAssignments.length} published assignments found in class ${cls.name}`);
-              allAssignments.push(...classAssignments);
-            } else {
-              console.log(`No curriculum or lessons found for class ${cls.name}`);
+              dueAssignments.push(...pendingAssignments);
             }
             
-            // 3. Last resort: Check in localStorage for published curriculum specifically
-            if (typeof window !== "undefined") {
-              try {
-                const publishedCurriculumKey = `published-curriculum-${cls.id}`;
-                const publishedData = localStorage.getItem(publishedCurriculumKey);
+            // Process quizzes and assignments from lessons
+            if (curriculum.content && curriculum.content.lessons) {
+              for (const lesson of curriculum.content.lessons) {
+                // Extract published content from each lesson
+                const publishedContent = lesson.content
+                  ? lesson.content
+                      .filter((content: Content) => 
+                        content && content.isPublished === true && 
+                        (content.type === 'assignment' || content.type === 'quiz')
+                      )
+                      .map((content: Content) => ({
+                        ...content,
+                        classId: classItem.id,
+                        className: classItem.name,
+                        lessonId: lesson.id,
+                        lessonTitle: lesson.title
+                      }))
+                  : [];
                 
-                if (publishedData) {
-                  console.log(`Found published curriculum data in localStorage for class ${cls.id}`);
-                  const publishedCurriculum = JSON.parse(publishedData);
+                if (publishedContent.length > 0) {
+                  allAssignments.push(...publishedContent);
                   
-                  // Extract assignments from the published curriculum object
-                  if (publishedCurriculum && typeof publishedCurriculum === 'object') {
-                    let localStorageAssignments = [];
+                  // Check for lesson content due soon
+                  const now = new Date();
+                  const oneWeekFromNow = new Date();
+                  oneWeekFromNow.setDate(now.getDate() + 7);
+                  
+                  const pendingContent = publishedContent.filter((content: EnrichedAssignment) => {
+                    if (!content.dueDate) return false;
                     
-                    Object.entries(publishedCurriculum).forEach(([lessonIndex, lessonContents]) => {
-                      if (lessonContents && typeof lessonContents === 'object') {
-                        Object.values(lessonContents).forEach((content: any) => {
-                          if (content && content.isPublished === true && 
-                              (content.type === 'assignment' || content.type === 'quiz')) {
-                            
-                            // Check if this assignment is already in the list
-                            const exists = allAssignments.some(a => 
-                              a.id === content.id && 
-                              a.classId === cls.id
-                            );
-                            
-                            if (!exists) {
-                              const lessonTitle = curriculumData && 
-                                curriculumData.lessons && 
-                                curriculumData.lessons[parseInt(lessonIndex)]?.title || 'Unnamed Lesson';
-                              
-                              localStorageAssignments.push({
-                                ...content,
-                                lessonTitle,
-                                lessonId: content.lessonId || `lesson-${lessonIndex}`,
-                                classId: cls.id,
-                                className: cls.name || 'Unnamed Class',
-                                teacher: cls.teacher || 'Unnamed Teacher'
-                              });
-                            }
-                          }
-                        });
-                      }
-                    });
-                    
-                    console.log(`Found ${localStorageAssignments.length} additional published assignments in localStorage for class ${cls.name}`);
-                    allAssignments.push(...localStorageAssignments);
-                  }
+                    const dueDate = new Date(content.dueDate);
+                    return dueDate > now && dueDate <= oneWeekFromNow;
+                  });
+                  
+                  dueAssignments.push(...pendingContent);
                 }
-              } catch (localStorageError) {
-                console.error(`Error checking localStorage for published curriculum:`, localStorageError);
               }
             }
-            
-          } catch (error) {
-            console.error(`Error loading curriculum for class ${cls.id}:`, error);
           }
+        } catch (error) {
+          console.error(`Error loading curriculum for class ${classItem.id}:`, error);
         }
-
-        // Sort assignments by due date
-        const sortedAssignments = allAssignments.sort((a, b) => 
-          new Date(a.dueDate || Date.now()).getTime() - new Date(b.dueDate || Date.now()).getTime()
-        )
-        
-        console.log(`Total assignments found: ${sortedAssignments.length}`)
-        setAssignments(sortedAssignments)
-      } catch (error) {
-        console.error("Error loading student assignments:", error)
-        setAuthError("There was a problem loading your assignments")
-      } finally {
-        setLoading(false)
       }
-    }
 
-    loadData()
-  }, [authUser, authRole])
+      // Sort assignments by due date
+      allAssignments.sort((a, b) => {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      });
+
+      console.log(`Total published assignments found: ${allAssignments.length}`);
+      setAssignments(allAssignments);
+      setPendingAssignments(dueAssignments);
+    } catch (error) {
+      console.error('Error loading assignments:', error);
+    }
+    
+    setLoading(false);
+  };
 
   const navigation = [
     {
@@ -368,17 +315,17 @@ export default function StudentAssignments() {
   }
 
   // Filter assignments by status
-  const pendingAssignments = assignments.filter(
-    assignment => !assignment.completed && new Date(assignment.dueDate) > new Date()
-  )
+  const upcomingAssignments = assignments.filter(
+    assignment => !assignment.completed && assignment.dueDate && new Date(assignment.dueDate) > new Date()
+  );
   
   const completedAssignments = assignments.filter(
     assignment => assignment.completed
-  )
+  );
   
   const overdueAssignments = assignments.filter(
-    assignment => !assignment.completed && new Date(assignment.dueDate) < new Date()
-  )
+    assignment => !assignment.completed && assignment.dueDate && new Date(assignment.dueDate) < new Date()
+  );
 
   return (
     <div className="flex min-h-screen">
@@ -409,7 +356,7 @@ export default function StudentAssignments() {
                       <div>
                         <CardTitle className="text-lg">{assignment.title}</CardTitle>
                         <CardDescription>
-                          {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                          {assignment.className} • Due: {new Date(assignment.dueDate || "").toLocaleDateString()}
                         </CardDescription>
                       </div>
                       <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
@@ -453,7 +400,7 @@ export default function StudentAssignments() {
                       <div>
                         <CardTitle className="text-lg">{assignment.title}</CardTitle>
                         <CardDescription>
-                          {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                          {assignment.className} • Due: {new Date(assignment.dueDate || "").toLocaleDateString()}
                         </CardDescription>
                       </div>
                       <Badge variant="destructive">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
