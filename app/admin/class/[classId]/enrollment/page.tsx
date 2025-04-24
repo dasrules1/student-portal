@@ -21,49 +21,85 @@ export default function ClassEnrollment() {
 
   useEffect(() => {
     // Get class data
-    try {
-      console.log("Loading class data for ID:", classId)
-      const currentClass = persistentStorage.getClassById(classId)
+    async function fetchData() {
+      try {
+        console.log("Loading class data for ID:", classId)
+        
+        // Try multiple sources to find the class
+        let currentClass = null;
+        
+        // Try storage first (Firebase/main storage)
+        try {
+          currentClass = await storage.getClassById(classId);
+          console.log("Class found in main storage:", currentClass);
+        } catch (storageErr) {
+          console.log("Class not found in main storage, trying persistentStorage");
+        }
+        
+        // If not found, try persistentStorage
+        if (!currentClass) {
+          currentClass = persistentStorage.getClassById(classId);
+          console.log("Class from persistentStorage:", currentClass);
+        }
+        
+        // If still not found, try getting all classes and finding by ID
+        if (!currentClass) {
+          console.log("Trying to find class in all classes list");
+          const allClasses = await storage.getClasses();
+          currentClass = allClasses.find((c: any) => c.id === classId);
+          console.log("Class from all classes:", currentClass);
+        }
 
-      if (!currentClass) {
-        console.error("Class not found:", classId)
-        setError("Class not found")
+        if (!currentClass) {
+          console.error("Class not found:", classId)
+          setError("Class not found")
+          setLoading(false)
+          return
+        }
+
+        console.log("Class data loaded:", currentClass)
+        setClassData(currentClass)
+
+        // Get all students - try both sources
+        let students = [];
+        try {
+          students = await storage.getUsers();
+          students = students.filter((user: any) => user.role === "student");
+        } catch (err) {
+          console.log("Error getting students from main storage, using persistentStorage");
+          students = persistentStorage.getAllUsers().filter((user: any) => user.role === "student");
+        }
+        
+        console.log("All students:", students.length)
+        setAllStudents(students)
+
+        // Get enrolled students
+        const enrolled = students.filter(
+          (student: any) =>
+            student.classes?.includes(classId) ||
+            (currentClass.enrolledStudents && currentClass.enrolledStudents.includes(student.id)),
+        )
+        console.log("Enrolled students:", enrolled.length)
+        setEnrolledStudents(enrolled)
+
+        // Get unenrolled students
+        const unenrolled = students.filter(
+          (student: any) =>
+            !student.classes?.includes(classId) &&
+            (!currentClass.enrolledStudents || !currentClass.enrolledStudents.includes(student.id)),
+        )
+        console.log("Unenrolled students:", unenrolled.length)
+        setUnenrolledStudents(unenrolled)
+
         setLoading(false)
-        return
+      } catch (err) {
+        console.error("Error loading enrollment data:", err)
+        setError("Failed to load enrollment data")
+        setLoading(false)
       }
-
-      console.log("Class data loaded:", currentClass)
-      setClassData(currentClass)
-
-      // Get all students
-      const students = persistentStorage.getAllUsers().filter((user: any) => user.role === "student")
-      console.log("All students:", students.length)
-      setAllStudents(students)
-
-      // Get enrolled students
-      const enrolled = students.filter(
-        (student: any) =>
-          student.classes.includes(classId) ||
-          (currentClass.enrolledStudents && currentClass.enrolledStudents.includes(student.id)),
-      )
-      console.log("Enrolled students:", enrolled.length)
-      setEnrolledStudents(enrolled)
-
-      // Get unenrolled students
-      const unenrolled = students.filter(
-        (student: any) =>
-          !student.classes.includes(classId) &&
-          (!currentClass.enrolledStudents || !currentClass.enrolledStudents.includes(student.id)),
-      )
-      console.log("Unenrolled students:", unenrolled.length)
-      setUnenrolledStudents(unenrolled)
-
-      setLoading(false)
-    } catch (err) {
-      console.error("Error loading enrollment data:", err)
-      setError("Failed to load enrollment data")
-      setLoading(false)
     }
+    
+    fetchData();
   }, [classId])
 
   const handleEnrollStudent = async (studentId: string) => {
