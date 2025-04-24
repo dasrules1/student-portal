@@ -19,10 +19,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Search, Mail, Download, BookOpen, Users, CalendarDays, Map } from "lucide-react"
+import { ArrowLeft, Search, Mail, Download, BookOpen, Users, CalendarDays, Map, Activity } from "lucide-react"
 import { storage } from "@/lib/storage"
 import { sessionManager } from "@/lib/session"
 import { User, Class } from "@/lib/storage"
+import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 
 export default function ClassPage() {
   const router = useRouter()
@@ -84,7 +85,7 @@ export default function ClassPage() {
         const classStudents = allUsers.filter(
           (user) =>
             user.role === "student" &&
-            (user.classes.includes(classId) ||
+            (user.classes?.includes(classId) ||
               (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id)))
         )
         
@@ -188,6 +189,10 @@ export default function ClassPage() {
             <Users className="w-4 h-4 mr-2" />
             Students ({students.length})
           </TabsTrigger>
+          <TabsTrigger value="activity">
+            <Activity className="w-4 h-4 mr-2" />
+            Live Activity
+          </TabsTrigger>
         </TabsList>
         
         <TabsContent value="details" className="space-y-4">
@@ -251,81 +256,156 @@ export default function ClassPage() {
         </TabsContent>
         
         <TabsContent value="students" className="space-y-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold">Enrolled Students</h2>
-            <div className="relative w-64">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-              <Input
-                placeholder="Search students..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+          <div className="flex items-center justify-between mb-4">
+            <Input
+              placeholder="Search students..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+              prefix={<Search className="w-4 h-4 mr-2 opacity-50" />}
+            />
           </div>
           
-          {filteredStudents.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-10">
-                <p className="text-muted-foreground mb-2">
-                  {students.length === 0 
-                    ? "No students enrolled in this class yet." 
-                    : "No students match your search criteria."}
-                </p>
-                {searchTerm && (
-                  <Button variant="outline" onClick={() => setSearchTerm("")}>
-                    Clear Search
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="p-0">
+          <Card>
+            <CardHeader>
+              <CardTitle>Enrolled Students</CardTitle>
+              <CardDescription>Students currently enrolled in this class</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {filteredStudents.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Student</TableHead>
+                      <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredStudents.map((student) => (
                       <TableRow key={student.id}>
-                        <TableCell>
-                          <div className="flex items-center space-x-3">
-                            <Avatar className="w-8 h-8">
-                              <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <span className="font-medium">{student.name}</span>
-                          </div>
+                        <TableCell className="flex items-center space-x-2">
+                          <Avatar className="w-8 h-8">
+                            <AvatarImage src={student.profileImageUrl || ""} />
+                            <AvatarFallback>
+                              {student.name ? student.name.charAt(0).toUpperCase() : "S"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>{student.name}</span>
                         </TableCell>
                         <TableCell>{student.email}</TableCell>
                         <TableCell>
-                          <Badge variant={student.status === "active" ? "default" : "secondary"}>
-                            {student.status || "Active"}
-                          </Badge>
+                          <Badge>Active</Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell>
                           <Button 
                             variant="ghost" 
                             size="sm" 
                             onClick={() => handleEmailStudent(student.email)}
                           >
                             <Mail className="w-4 h-4 mr-2" />
-                            Email
+                            Contact
                           </Button>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <Users className="w-12 h-12 mb-2 text-muted-foreground" />
+                  <p>No students found</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {searchTerm ? "Try a different search term" : "Add students to this class to see them here"}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        <TabsContent value="activity" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
+            <RealTimeMonitor classId={classId} recentOnly={true} />
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Active Assignments</CardTitle>
+                <CardDescription>Monitor specific assignments</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {classData?.curriculum?.lessons?.filter(lesson => 
+                    lesson.contents?.some(content => 
+                      content.type === 'assignment' || 
+                      content.type === 'quiz')
+                  ).map((lesson) => (
+                    <div key={lesson.id} className="space-y-2">
+                      <h3 className="font-medium">{lesson.title}</h3>
+                      <div className="space-y-2">
+                        {lesson.contents?.filter(content => 
+                          content.type === 'assignment' || 
+                          content.type === 'quiz'
+                        ).map((content) => (
+                          <div key={content.id} className="flex justify-between items-center p-2 border rounded">
+                            <div>
+                              <p className="text-sm">{content.title}</p>
+                              <span className="text-xs text-muted-foreground">
+                                {content.type.charAt(0).toUpperCase() + content.type.slice(1)}
+                              </span>
+                            </div>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => setActiveTab(`activity-${content.id}`)}
+                            >
+                              Monitor
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {!classData?.curriculum?.lessons?.some(lesson => 
+                    lesson.contents?.some(content => 
+                      content.type === 'assignment' || 
+                      content.type === 'quiz')
+                  ) && (
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <BookOpen className="w-12 h-12 mb-2 text-muted-foreground" />
+                      <p>No assignments available</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Create assignments in the curriculum editor
+                      </p>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
-          )}
+          </div>
         </TabsContent>
+        
+        {/* Dynamically created tabs for specific assignment monitoring */}
+        {classData?.curriculum?.lessons?.flatMap(lesson => 
+          lesson.contents?.filter(content => 
+            content.type === 'assignment' || 
+            content.type === 'quiz'
+          ).map(content => (
+            <TabsContent key={`activity-${content.id}`} value={`activity-${content.id}`} className="space-y-4">
+              <div className="flex items-center mb-4 space-x-2">
+                <Button variant="outline" size="sm" onClick={() => setActiveTab("activity")}>
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to All Activities
+                </Button>
+                <h2 className="text-xl font-semibold">{content.title}</h2>
+              </div>
+              
+              <RealTimeMonitor classId={classId} contentId={content.id} />
+            </TabsContent>
+          ))
+        )}
       </Tabs>
     </div>
   )

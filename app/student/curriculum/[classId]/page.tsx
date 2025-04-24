@@ -28,6 +28,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
+import { realtimeDb } from "@/lib/firebase"
+import { ref, set, push, serverTimestamp } from "firebase/database"
 
 // Content types for curriculum
 const contentTypes = [
@@ -84,6 +86,7 @@ export default function StudentCurriculum() {
   const [openEndedAnswers, setOpenEndedAnswers] = useState({})
   const [attemptCounts, setAttemptCounts] = useState({})
   const [currentUser, setCurrentUser] = useState(null)
+  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null)
 
   // Load class and curriculum data
   useEffect(() => {
@@ -309,41 +312,42 @@ export default function StudentCurriculum() {
 
   // Handle multiple choice answer selection
   const handleMultipleChoiceSelect = (problemIndex, optionIndex) => {
-    if (!activeContent) return
-
-    setUserAnswers({
-      ...userAnswers,
-      [activeContent.id]: {
-        ...(userAnswers[activeContent.id] || {}),
-        [problemIndex]: optionIndex,
-      },
-    })
+    const updatedAnswers = { ...userAnswers }
+    updatedAnswers[problemIndex] = optionIndex
+    setUserAnswers(updatedAnswers)
+    
+    // Send real-time update to Firebase
+    if (currentUser && activeContent) {
+      sendRealTimeUpdate(problemIndex, optionIndex.toString(), 'multiple-choice', activeContent.problems[problemIndex])
+    }
   }
 
   // Handle math expression input
   const handleMathExpressionInput = (problemIndex, value) => {
-    if (!activeContent) return
-
-    setMathExpressionInputs({
-      ...mathExpressionInputs,
-      [activeContent.id]: {
-        ...(mathExpressionInputs[activeContent.id] || {}),
-        [problemIndex]: value,
-      },
-    })
+    const updatedInputs = { ...mathExpressionInputs }
+    updatedInputs[problemIndex] = value
+    setMathExpressionInputs(updatedInputs)
+    
+    // Send real-time update to Firebase every few keystrokes
+    // This throttles updates for math expressions to avoid excessive writes
+    if (currentUser && activeContent && (!lastUpdateTimestamp || Date.now() - lastUpdateTimestamp > 2000)) {
+      sendRealTimeUpdate(problemIndex, value, 'math-expression', activeContent.problems[problemIndex])
+      setLastUpdateTimestamp(Date.now())
+    }
   }
 
   // Handle open ended answer input
   const handleOpenEndedInput = (problemIndex, value) => {
-    if (!activeContent) return
-
-    setOpenEndedAnswers({
-      ...openEndedAnswers,
-      [activeContent.id]: {
-        ...(openEndedAnswers[activeContent.id] || {}),
-        [problemIndex]: value,
-      },
-    })
+    const updatedAnswers = { ...openEndedAnswers }
+    updatedAnswers[problemIndex] = value
+    setOpenEndedAnswers(updatedAnswers)
+    
+    // Send real-time update to Firebase every few keystrokes
+    // This throttles updates for open-ended to avoid excessive writes
+    if (currentUser && activeContent && (!lastUpdateTimestamp || Date.now() - lastUpdateTimestamp > 2000)) {
+      sendRealTimeUpdate(problemIndex, value, 'open-ended', activeContent.problems[problemIndex])
+      setLastUpdateTimestamp(Date.now())
+    }
   }
 
   // Auto-grade a math expression answer
@@ -598,6 +602,21 @@ export default function StudentCurriculum() {
       }
     }
 
+    // After submitting answers, mark the submission as completed in real-time DB
+    try {
+      const submissionRef = ref(realtimeDb, `student-submissions/${classId}/${activeContent.id}/${currentUser.id}`)
+      set(submissionRef, {
+        studentId: currentUser.id,
+        studentName: currentUser.name || 'Student',
+        status: 'completed',
+        score: score,
+        totalPoints: totalPoints,
+        completedAt: Date.now()
+      })
+    } catch (error) {
+      console.error('Error marking submission as completed:', error)
+    }
+
     setShowResults(true)
 
     toast({
@@ -662,6 +681,41 @@ export default function StudentCurriculum() {
     }
 
     return <Badge variant="outline">Not Started</Badge>
+  }
+
+  // Add the new function for sending real-time updates
+  const sendRealTimeUpdate = (problemIndex, answer, type, problem) => {
+    if (!currentUser || !activeContent || !problem) return
+    
+    try {
+      const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`)
+      const newAnswerRef = push(answersRef)
+      
+      // Get the question text from the problem
+      const questionText = problem.question || 'Question not available'
+      
+      // Determine if the answer is correct (for multiple choice)
+      let isCorrect = undefined
+      if (type === 'multiple-choice' && typeof problem.correctAnswer !== 'undefined') {
+        isCorrect = parseInt(answer) === problem.correctAnswer
+      }
+      
+      set(newAnswerRef, {
+        studentId: currentUser.id,
+        studentName: currentUser.name || 'Student',
+        studentEmail: currentUser.email,
+        questionId: problem.id || `problem-${problemIndex}`,
+        questionText: questionText,
+        answer: answer,
+        answerType: type,
+        timestamp: Date.now(),
+        correct: isCorrect
+      })
+      
+      console.log(`Real-time update sent for problem ${problemIndex}`)
+    } catch (error) {
+      console.error('Error sending real-time update:', error)
+    }
   }
 
   if (!currentClass || !curriculum) {

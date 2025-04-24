@@ -13,23 +13,20 @@ import {
   Users,
 } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { storage } from "@/lib/storage"
-import { Activity } from "@/components/activity"
 import { User, Class } from "@/lib/storage"
 import { sessionManager } from "@/lib/session"
 import { useAuth } from "@/contexts/auth-context"
+import { Badge } from "@/components/ui/badge"
 
-export default function StudentDashboard() {
+export default function StudentAssignments() {
   const router = useRouter()
   const { user: authUser, role: authRole } = useAuth()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [studentClasses, setStudentClasses] = useState<Class[]>([])
-  const [assignmentsByClass, setAssignmentsByClass] = useState<Record<string, any[]>>({})
-  const [pendingAssignments, setPendingAssignments] = useState<any[]>([])
+  const [assignments, setAssignments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -40,7 +37,6 @@ export default function StudentDashboard() {
         
         // Try to get user from multiple sources
         const sessionUser = sessionManager.getCurrentUser()
-        console.log("Session user:", sessionUser)
         
         // Try local storage as a fallback
         let authData = null
@@ -48,18 +44,16 @@ export default function StudentDashboard() {
           const storedAuth = localStorage.getItem('authUser')
           if (storedAuth) {
             authData = JSON.parse(storedAuth)
-            console.log("Auth data from localStorage:", authData)
           }
         } catch (e) {
           console.error('Error reading auth from localStorage:', e)
         }
         
         // Get user ID from available sources
-        const userId = authUser?.uid || sessionUser?.user?.uid || authData?.uid || storage.getCurrentUserId()
-        console.log("Using user ID:", userId)
+        const userId = authUser?.uid || sessionUser?.user?.uid || authData?.uid
         
         if (!userId) {
-          console.error("No user ID found, redirecting to login")
+          console.error("No user ID found")
           setAuthError("You need to log in to access this page")
           return
         }
@@ -70,7 +64,6 @@ export default function StudentDashboard() {
         // Try storage first
         try {
           userData = storage.getUserById(userId)
-          console.log("User data from storage:", userData)
         } catch (storageErr) {
           console.error("Error getting user from storage:", storageErr)
         }
@@ -83,7 +76,6 @@ export default function StudentDashboard() {
             email: authUser.email,
             role: authRole || "student"
           }
-          console.log("Using auth user directly:", userData)
         }
         
         // Last attempt using local storage data
@@ -94,7 +86,6 @@ export default function StudentDashboard() {
             role: authData.role,
             name: "Student"
           }
-          console.log("Using localStorage auth data:", userData)
         }
         
         if (!userData) {
@@ -109,26 +100,23 @@ export default function StudentDashboard() {
         // Check if the current user is a student
         if (userData.role !== "student") {
           console.error("User is not a student")
-          setAuthError("This dashboard is only available to student accounts")
+          setAuthError("This page is only available to student accounts")
           setLoading(false)
           return
         }
         
         // Load all classes
         const allClasses = await storage.getClasses()
-        console.log("Loaded classes:", allClasses.length)
         
         // Filter classes to only include those the student is enrolled in
         const enrolledClasses = allClasses.filter((cls: Class) => 
           cls.enrolledStudents && cls.enrolledStudents.includes(userData.id)
         )
-        console.log("Enrolled classes:", enrolledClasses.length)
         
         setStudentClasses(enrolledClasses)
         
         // Load assignments for each class
-        const assignmentsTemp: Record<string, any[]> = {}
-        const pendingTemp: any[] = []
+        const allAssignments: any[] = []
         
         for (const cls of enrolledClasses) {
           if (cls.curriculum) {
@@ -156,24 +144,20 @@ export default function StudentDashboard() {
                   }))
               })
               
-              assignmentsTemp[cls.id] = classAssignments
-              
-              // Add assignments without completed status to pending list
-              const pending = classAssignments.filter(
-                assignment => !assignment.completed && new Date(assignment.dueDate) > new Date()
-              )
-              pendingTemp.push(...pending)
+              allAssignments.push(...classAssignments)
             }
           }
         }
         
-        setAssignmentsByClass(assignmentsTemp)
-        setPendingAssignments(pendingTemp.sort((a, b) => 
+        // Sort assignments by due date
+        const sortedAssignments = allAssignments.sort((a, b) => 
           new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-        ))
+        )
+        
+        setAssignments(sortedAssignments)
       } catch (error) {
-        console.error("Error loading student data:", error)
-        setAuthError("There was a problem loading your dashboard")
+        console.error("Error loading student assignments:", error)
+        setAuthError("There was a problem loading your assignments")
       } finally {
         setLoading(false)
       }
@@ -187,7 +171,7 @@ export default function StudentDashboard() {
       title: "Dashboard",
       href: "/student/dashboard",
       icon: LayoutDashboard,
-      current: true,
+      current: false,
     },
     {
       title: "Classes",
@@ -199,7 +183,7 @@ export default function StudentDashboard() {
       title: "Assignments",
       href: "/student/assignments",
       icon: CheckSquare,
-      current: false,
+      current: true,
     },
     {
       title: "Calendar",
@@ -232,7 +216,7 @@ export default function StudentDashboard() {
       <div className="flex min-h-screen">
         <Sidebar navigation={navigation} user={currentUser || undefined} />
         <div className="flex items-center justify-center flex-1">
-          <p>Loading dashboard...</p>
+          <p>Loading assignments...</p>
         </div>
       </div>
     )
@@ -270,7 +254,7 @@ export default function StudentDashboard() {
             <CardHeader>
               <CardTitle>Access Denied</CardTitle>
               <CardDescription>
-                This dashboard is only available to student accounts.
+                This page is only available to student accounts.
               </CardDescription>
             </CardHeader>
             <CardFooter>
@@ -284,41 +268,49 @@ export default function StudentDashboard() {
     )
   }
 
+  // Filter assignments by status
+  const pendingAssignments = assignments.filter(
+    assignment => !assignment.completed && new Date(assignment.dueDate) > new Date()
+  )
+  
+  const completedAssignments = assignments.filter(
+    assignment => assignment.completed
+  )
+  
+  const overdueAssignments = assignments.filter(
+    assignment => !assignment.completed && new Date(assignment.dueDate) < new Date()
+  )
+
   return (
     <div className="flex min-h-screen">
       <Sidebar navigation={navigation} user={currentUser} />
       <div className="flex-1 p-8 pt-6 overflow-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-bold">Student Dashboard</h1>
+            <h1 className="text-3xl font-bold">Assignments</h1>
             <p className="text-muted-foreground">
-              Welcome back, {currentUser.name}!
+              Manage your upcoming and completed assignments
             </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" asChild>
-              <Link href="/student/settings">View Profile</Link>
-            </Button>
           </div>
         </div>
 
         {/* Pending Assignments */}
         <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Pending Assignments</h2>
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/student/assignments">View All</Link>
-            </Button>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <h2 className="text-xl font-semibold mb-4">Pending Assignments</h2>
+          <div className="space-y-4">
             {pendingAssignments.length > 0 ? (
-              pendingAssignments.slice(0, 3).map((assignment) => (
+              pendingAssignments.map((assignment) => (
                 <Card key={assignment.id}>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                    <CardDescription>
-                      {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
-                    </CardDescription>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                        <CardDescription>
+                          {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                        </CardDescription>
+                      </div>
+                      <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
@@ -336,7 +328,7 @@ export default function StudentDashboard() {
                 </Card>
               ))
             ) : (
-              <Card className="col-span-full">
+              <Card>
                 <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                   <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
                   <p className="text-muted-foreground">No pending assignments</p>
@@ -346,78 +338,89 @@ export default function StudentDashboard() {
           </div>
         </section>
 
-        {/* Enrolled Classes */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Your Classes</h2>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {studentClasses.length > 0 ? (
-              studentClasses.map((cls) => (
-                <Card key={cls.id} className="overflow-hidden">
+        {/* Overdue Assignments */}
+        {overdueAssignments.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Overdue Assignments</h2>
+            <div className="space-y-4">
+              {overdueAssignments.map((assignment) => (
+                <Card key={assignment.id}>
                   <CardHeader className="pb-2">
-                    <CardTitle>{cls.name}</CardTitle>
-                    <CardDescription>
-                      Teacher: {cls.teacher}
-                    </CardDescription>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                        <CardDescription>
+                          {assignment.className} • Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                        </CardDescription>
+                      </div>
+                      <Badge variant="destructive">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                    </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Schedule:</span>
-                        <span>{cls.meeting_day || cls.meetingDates || "Not specified"}</span>
-                      </div>
-                      {cls.startTime && cls.endTime && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Time:</span>
-                          <span>{cls.startTime} - {cls.endTime}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Assignments:</span>
-                        <span>{assignmentsByClass[cls.id]?.length || 0} total</span>
-                      </div>
-                    </div>
+                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
                   </CardContent>
-                  <CardFooter className="flex justify-between">
-                    <Button variant="outline" asChild>
-                      <Link href={`/student/curriculum/${cls.id}`}>
-                        View Curriculum
+                  <CardFooter>
+                    <Button 
+                      asChild 
+                      className="w-full"
+                      variant="outline"
+                    >
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                        Submit Late
                       </Link>
                     </Button>
-                    {cls.virtualLink && (
-                      <Button variant="default" asChild>
-                        <a href={cls.virtualLink} target="_blank" rel="noopener noreferrer">
-                          Join Class
-                        </a>
-                      </Button>
-                    )}
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Completed Assignments */}
+        <section>
+          <h2 className="text-xl font-semibold mb-4">Completed Assignments</h2>
+          <div className="space-y-4">
+            {completedAssignments.length > 0 ? (
+              completedAssignments.map((assignment) => (
+                <Card key={assignment.id}>
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                        <CardDescription>
+                          {assignment.className} • Completed on: {new Date(assignment.completedAt || Date.now()).toLocaleDateString()}
+                        </CardDescription>
+                      </div>
+                      <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
+                  </CardContent>
+                  <CardFooter>
+                    <Button 
+                      asChild 
+                      className="w-full"
+                      variant="secondary"
+                    >
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                        View Submission
+                      </Link>
+                    </Button>
                   </CardFooter>
                 </Card>
               ))
             ) : (
-              <Card className="col-span-full">
+              <Card>
                 <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                  <Book className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground">You are not enrolled in any classes</p>
+                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">No completed assignments</p>
                 </CardContent>
               </Card>
             )}
           </div>
         </section>
-
-        {/* Recent Activity */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Recent Activity</h2>
-          </div>
-          <Card>
-            <CardContent className="p-6">
-              <Activity studentId={currentUser.id} />
-            </CardContent>
-          </Card>
-        </section>
       </div>
     </div>
   )
-}
+} 
