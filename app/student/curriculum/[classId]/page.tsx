@@ -87,6 +87,7 @@ export default function StudentCurriculum() {
   const [attemptCounts, setAttemptCounts] = useState({})
   const [currentUser, setCurrentUser] = useState(null)
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null)
+  const [lessonsWithContent, setLessonsWithContent] = useState([])
 
   // Load class and curriculum data
   useEffect(() => {
@@ -159,9 +160,17 @@ export default function StudentCurriculum() {
               })
 
               setCurriculum(studentCurriculum)
+              
+              // Extract lessons with content
+              const filteredLessons = studentCurriculum.lessons.filter(
+                lesson => lesson && lesson.contents && lesson.contents.length > 0
+              )
+              setLessonsWithContent(filteredLessons)
+              
             } catch (error) {
               console.error("Error loading published curriculum:", error)
               setCurriculum({ lessons: [] })
+              setLessonsWithContent([])
             }
           } else {
             // If no published curriculum, check if there's one in the class
@@ -176,8 +185,10 @@ export default function StudentCurriculum() {
                   .filter((lesson) => lesson.contents.length > 0),
               }
               setCurriculum(studentCurriculum)
+              setLessonsWithContent(studentCurriculum.lessons || [])
             } else {
               setCurriculum({ lessons: [] })
+              setLessonsWithContent([])
             }
           }
 
@@ -196,10 +207,11 @@ export default function StudentCurriculum() {
           }
         } else {
           setCurriculum({ lessons: [] })
+          setLessonsWithContent([])
         }
       } else {
         toast({
-          title: "Access denied",
+          title: "Not enrolled",
           description: "You are not enrolled in this class",
           variant: "destructive",
         })
@@ -208,7 +220,7 @@ export default function StudentCurriculum() {
     } else {
       toast({
         title: "Class not found",
-        description: "The requested class could not be found.",
+        description: "The requested class could not be found",
         variant: "destructive",
       })
       router.push("/student/dashboard")
@@ -729,6 +741,7 @@ export default function StudentCurriculum() {
     }
   }
 
+  // Main render function
   if (!currentClass || !curriculum) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -736,11 +749,6 @@ export default function StudentCurriculum() {
       </div>
     )
   }
-
-  // Filter to only show lessons with published content
-  const lessonsWithContent = curriculum.lessons.filter(
-    (lesson) => lesson.contents && lesson.contents.some((content) => content.isPublished),
-  )
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -814,15 +822,19 @@ export default function StudentCurriculum() {
                 <CardDescription>Available lessons and materials</CardDescription>
               </CardHeader>
               <CardContent>
-                {lessonsWithContent.length > 0 ? (
+                {lessonsWithContent && lessonsWithContent.length > 0 ? (
                   <div className="space-y-1">
                     {lessonsWithContent.map((lesson, index) => {
-                      const publishedContents = lesson.contents ? lesson.contents.filter((c) => c.isPublished) : []
-                      if (publishedContents.length === 0) return null
+                      if (!lesson) return null;
+                      const publishedContents = lesson.contents && Array.isArray(lesson.contents) 
+                        ? lesson.contents.filter((c) => c && c.isPublished) 
+                        : [];
+                      
+                      if (publishedContents.length === 0) return null;
 
                       return (
                         <Button
-                          key={lesson.id}
+                          key={lesson.id || `lesson-${index}`}
                           variant={activeLesson === index + 1 ? "default" : "ghost"}
                           className="justify-start w-full"
                           onClick={() => {
@@ -831,7 +843,7 @@ export default function StudentCurriculum() {
                           }}
                         >
                           <span className="mr-2">{index + 1}.</span>
-                          {lesson.title}
+                          {lesson.title || `Lesson ${index + 1}`}
                           {publishedContents.length > 0 && (
                             <Badge variant="secondary" className="ml-auto">
                               {publishedContents.length}
@@ -854,23 +866,25 @@ export default function StudentCurriculum() {
           {/* Content area */}
           <div className="md:col-span-9">
             {!activeContent ? (
-              lessonsWithContent.length > 0 ? (
+              lessonsWithContent && lessonsWithContent.length > 0 && lessonsWithContent[activeLesson - 1] ? (
                 // Lesson overview
                 <Card>
                   <CardHeader>
                     <CardTitle>
-                      Lesson {activeLesson}: {curriculum.lessons[activeLesson - 1].title}
+                      Lesson {activeLesson}: {lessonsWithContent[activeLesson - 1]?.title || `Lesson ${activeLesson}`}
                     </CardTitle>
                     <CardDescription>
-                      {renderLatex(curriculum.lessons[activeLesson - 1].description) || "No description provided"}
+                      {renderLatex(lessonsWithContent[activeLesson - 1]?.description) || "No description provided"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {curriculum.lessons[activeLesson - 1].contents
-                        .filter((content) => content.isPublished)
+                      {lessonsWithContent[activeLesson - 1]?.contents &&
+                       Array.isArray(lessonsWithContent[activeLesson - 1]?.contents) &&
+                       lessonsWithContent[activeLesson - 1]?.contents
+                        .filter((content) => content && content.isPublished)
                         .map((content) => (
-                          <Card key={content.id} className="overflow-hidden">
+                          <Card key={content.id || `content-${Math.random()}`} className="overflow-hidden">
                             <div
                               className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
                               onClick={() => handleSelectContent(content)}
