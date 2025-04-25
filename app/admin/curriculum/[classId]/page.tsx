@@ -14,7 +14,6 @@ import {
   BookMarked,
   FileQuestion,
   X,
-  Bug,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -94,8 +93,6 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [lessonToDelete, setLessonToDelete] = useState<string | null>(null)
   const [contentToDelete, setContentToDelete] = useState<string | null>(null)
   const [problemToDelete, setProblemToDelete] = useState<string | null>(null)
-  const [debugResult, setDebugResult] = useState<any>(null)
-  const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
     // Check if user is an admin
@@ -131,32 +128,16 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         const curriculumData = await storage.getCurriculum(classId)
         if (curriculumData) {
           console.log("Loaded curriculum data:", curriculumData)
-          
           // Handle both formats - content field or direct structure
-          let formattedCurriculum
-          if (curriculumData.content) {
-            // Use content field if it exists
-            formattedCurriculum = curriculumData.content
-          } else {
-            // Otherwise use the whole object as is
-            formattedCurriculum = curriculumData
-          }
-          
-          // Ensure lessons property exists
-          if (!formattedCurriculum.lessons) {
-            formattedCurriculum.lessons = []
-          }
-          
-          console.log("Formatted curriculum with ensured structure:", formattedCurriculum)
+          const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
           setCurriculum(formattedCurriculum)
           
-          // Set active items if lessons exist
           if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
             setActiveLesson(formattedCurriculum.lessons[0].id)
-
+  
             if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
               setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
-
+  
               if (
                 formattedCurriculum.lessons[0].contents[0].problems &&
                 formattedCurriculum.lessons[0].contents[0].problems.length > 0
@@ -175,33 +156,19 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       // Fall back to curriculum on class object
       if (loadedClass.curriculum) {
         console.log("Using curriculum from class object")
+        setCurriculum(loadedClass.curriculum)
         
-        // Handle class object curriculum format
-        let formattedCurriculum
-        if (loadedClass.curriculum.content) {
-          formattedCurriculum = loadedClass.curriculum.content
-        } else {
-          formattedCurriculum = loadedClass.curriculum
-        }
-        
-        // Ensure lessons property exists
-        if (!formattedCurriculum.lessons) {
-          formattedCurriculum.lessons = []
-        }
-        
-        setCurriculum(formattedCurriculum)
-        
-        if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
-          setActiveLesson(formattedCurriculum.lessons[0].id)
+        if (loadedClass.curriculum.lessons && loadedClass.curriculum.lessons.length > 0) {
+          setActiveLesson(loadedClass.curriculum.lessons[0].id)
 
-          if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
-            setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
+          if (loadedClass.curriculum.lessons[0].contents && loadedClass.curriculum.lessons[0].contents.length > 0) {
+            setActiveContent(loadedClass.curriculum.lessons[0].contents[0].id)
 
             if (
-              formattedCurriculum.lessons[0].contents[0].problems &&
-              formattedCurriculum.lessons[0].contents[0].problems.length > 0
+              loadedClass.curriculum.lessons[0].contents[0].problems &&
+              loadedClass.curriculum.lessons[0].contents[0].problems.length > 0
             ) {
-              setActiveProblem(formattedCurriculum.lessons[0].contents[0].problems[0].id)
+              setActiveProblem(loadedClass.curriculum.lessons[0].contents[0].problems[0].id)
             }
           }
         }
@@ -750,19 +717,6 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     return contentType ? contentType.icon : <FileText className="w-4 h-4 mr-2" />
   }
 
-  // Add this function for debugging
-  const runDiagnostics = async () => {
-    try {
-      const result = await storage.diagnoseCurriculumStorage(params.classId)
-      setDebugResult(result)
-      setShowDebug(true)
-    } catch (error) {
-      console.error("Error running diagnostics:", error)
-      setDebugResult({ error: String(error) })
-      setShowDebug(true)
-    }
-  }
-
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">Loading curriculum...</div>
   }
@@ -787,18 +741,13 @@ export default function CurriculumEditor({ params }: { params: { classId: string
               <p className="text-muted-foreground">Teacher: {classData.teacher}</p>
             </div>
             <div className="flex space-x-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={runDiagnostics}
-                className="flex items-center space-x-1"
-              >
-                <Bug className="w-4 h-4" />
-                <span>Diagnose Storage</span>
+              <Button onClick={saveCurriculum}>
+                <Save className="w-4 h-4 mr-2" />
+                Save Curriculum
               </Button>
-              <Button onClick={saveCurriculum} className="flex items-center space-x-1">
-                <Save className="w-4 h-4" />
-                <span>Save Curriculum</span>
+              <Button variant="outline" onClick={() => router.push("/admin/dashboard?tab=classes")}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Classes
               </Button>
             </div>
           </div>
@@ -814,27 +763,25 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                 </Button>
               </div>
               <div className="space-y-2">
-                {curriculum?.lessons && Array.isArray(curriculum.lessons) ? 
-                  curriculum.lessons.map((lesson) => (
-                    <Card
-                      key={lesson.id}
-                      className={`cursor-pointer ${activeLesson === lesson.id ? "border-primary" : ""}`}
-                      onClick={() => {
-                        setActiveLesson(lesson.id)
-                        setActiveContent(lesson.contents && lesson.contents.length > 0 ? lesson.contents[0].id : null)
-                        setActiveProblem(null)
-                      }}
-                    >
-                      <CardHeader className="p-3">
-                        <CardTitle className="text-sm">{lesson.title}</CardTitle>
-                        <CardDescription className="text-xs">
-                          {lesson.contents ? lesson.contents.length : 0} content items
-                        </CardDescription>
-                      </CardHeader>
-                    </Card>
-                  )) 
-                : null}
-                {(!curriculum?.lessons || !Array.isArray(curriculum.lessons) || curriculum.lessons.length === 0) && !isAddingLesson && (
+                {curriculum.lessons.map((lesson) => (
+                  <Card
+                    key={lesson.id}
+                    className={`cursor-pointer ${activeLesson === lesson.id ? "border-primary" : ""}`}
+                    onClick={() => {
+                      setActiveLesson(lesson.id)
+                      setActiveContent(lesson.contents && lesson.contents.length > 0 ? lesson.contents[0].id : null)
+                      setActiveProblem(null)
+                    }}
+                  >
+                    <CardHeader className="p-3">
+                      <CardTitle className="text-sm">{lesson.title}</CardTitle>
+                      <CardDescription className="text-xs">
+                        {lesson.contents ? lesson.contents.length : 0} content items
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                ))}
+                {curriculum.lessons.length === 0 && !isAddingLesson && (
                   <div className="p-4 text-center border rounded-lg">
                     <p className="text-sm text-muted-foreground">No lessons yet. Click "Add Lesson" to get started.</p>
                   </div>
@@ -1651,34 +1598,6 @@ export default function CurriculumEditor({ params }: { params: { classId: string
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Add this debug modal/panel */}
-      {showDebug && debugResult && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h2 className="text-xl font-bold">Storage Diagnostics Results</h2>
-              <Button variant="ghost" size="sm" onClick={() => setShowDebug(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="p-4">
-              <h3 className="font-semibold mb-2">Summary:</h3>
-              <pre className="bg-gray-100 p-3 rounded mb-4 whitespace-pre-wrap">
-                {debugResult.summary}
-              </pre>
-              
-              <h3 className="font-semibold mb-2">Details:</h3>
-              <div className="bg-gray-100 p-3 rounded overflow-x-auto">
-                <pre>{JSON.stringify(debugResult.sources, null, 2)}</pre>
-              </div>
-            </div>
-            <div className="p-4 border-t flex justify-end">
-              <Button onClick={() => setShowDebug(false)}>Close</Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -8,7 +8,7 @@ import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc } fro
 
 // Constants
 const STORAGE_VERSION = "1.0.0"
-export const STORAGE_PREFIX = "educationmore_"
+const STORAGE_PREFIX = "educationmore_"
 const STORAGE_KEYS = {
   VERSION: `${STORAGE_PREFIX}version`,
   USERS: `${STORAGE_PREFIX}users`,
@@ -1028,20 +1028,6 @@ export class PersistentStorage {
       console.error("Error getting current user:", error)
       return null
     }
-  }
-
-  // Get classes by student ID
-  public getClassesForStudent(studentId: string): Class[] {
-    return this.classes.filter(cls => 
-      cls.enrolledStudents && 
-      Array.isArray(cls.enrolledStudents) && 
-      cls.enrolledStudents.includes(studentId)
-    );
-  }
-
-  // Alias function for compatibility
-  public getClassesByStudentId(studentId: string): Class[] {
-    return this.getClassesForStudent(studentId);
   }
 }
 
