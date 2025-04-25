@@ -300,27 +300,29 @@ export default function TeacherCurriculum() {
 
   // Confirm publishing content
   const confirmPublish = async () => {
-    if (!contentToPublish) return
+    if (!curriculum) return
 
-    const { content, lessonIndex, contentIndex } = contentToPublish
-    const updatedCurriculum = { ...curriculum }
+    // Create a deep copy to avoid mutation issues
+    const updatedCurriculum = JSON.parse(JSON.stringify(curriculum))
 
-    // Toggle published status
-    const newPublishedStatus = !content.isPublished
-    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].isPublished = newPublishedStatus
+    if (!updatedCurriculum.lessons || !updatedCurriculum.lessons[lessonIndex] || !updatedCurriculum.lessons[lessonIndex].contents) {
+      console.error("Invalid curriculum structure")
+      return
+    }
 
-    // Ensure we're explicitly preserving problem data with correct answers
-    if (updatedCurriculum.lessons[lessonIndex].contents[contentIndex].problems) {
-      // Make sure we keep a deep copy of problems with correctAnswer fields intact
-      const problems = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].problems;
-      if (Array.isArray(problems)) {
-        updatedCurriculum.lessons[lessonIndex].contents[contentIndex].problems = problems.map(problem => {
-          // Ensure we preserve the correctAnswer field
-          const preservedProblem = { ...problem };
-          console.log(`Preserving problem with ${preservedProblem.correctAnswer ? 'correct answer' : 'no correct answer'}`);
-          return preservedProblem;
-        });
-      }
+    // Update the content item with the new published status
+    let newPublishedStatus = !content.isPublished
+    console.log(`Setting content ${content.id} published status to ${newPublishedStatus}`)
+    
+    // Find the correct content in the curriculum
+    const targetContent = updatedCurriculum.lessons[lessonIndex].contents[contentIndex]
+    if (targetContent) {
+      // Update isPublished flag for the content
+      targetContent.isPublished = newPublishedStatus
+      console.log(`Updated content in curriculum: ${JSON.stringify(targetContent).substring(0, 100)}...`)
+    } else {
+      console.error("Failed to find content in curriculum")
+      return
     }
 
     // 1. Save to Firebase/Firestore directly using the curriculum API
@@ -384,6 +386,55 @@ export default function TeacherCurriculum() {
         // Save back to localStorage
         localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum));
         console.log(`Saved published curriculum to localStorage for class ${classId}`);
+        
+        // ADDITIONAL CODE: Save individual published assignment for easier lookup
+        if (newPublishedStatus && (content.type === 'assignment' || content.type === 'quiz')) {
+          // Create specific keys for individual assignments
+          const assignmentKey = `assignment_${classId}_${content.id}`;
+          const enrichedAssignment = {
+            ...content,
+            classId: classId,
+            className: currentClass?.name || "Class",
+            lessonId: updatedCurriculum.lessons[lessonIndex].id,
+            lessonTitle: updatedCurriculum.lessons[lessonIndex].title,
+            isPublished: true,
+          };
+          localStorage.setItem(assignmentKey, JSON.stringify(enrichedAssignment));
+          
+          // Update the published assignments list for this class
+          const publishedListKey = `published_assignments_${classId}`;
+          let publishedList = [];
+          try {
+            const existingList = localStorage.getItem(publishedListKey);
+            if (existingList) {
+              publishedList = JSON.parse(existingList);
+            }
+          } catch (err) {
+            console.error("Error parsing published assignments list:", err);
+          }
+          
+          if (!publishedList.includes(content.id)) {
+            publishedList.push(content.id);
+            localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+          }
+        } else if (!newPublishedStatus && (content.type === 'assignment' || content.type === 'quiz')) {
+          // Remove from published individual assignments
+          localStorage.removeItem(`assignment_${classId}_${content.id}`);
+          
+          // Update the published assignments list
+          const publishedListKey = `published_assignments_${classId}`;
+          let publishedList = [];
+          try {
+            const existingList = localStorage.getItem(publishedListKey);
+            if (existingList) {
+              publishedList = JSON.parse(existingList);
+              const updatedList = publishedList.filter(id => id !== content.id);
+              localStorage.setItem(publishedListKey, JSON.stringify(updatedList));
+            }
+          } catch (err) {
+            console.error("Error updating published assignments list:", err);
+          }
+        }
       } catch (error) {
         console.error("Error saving published curriculum to localStorage:", error);
       }

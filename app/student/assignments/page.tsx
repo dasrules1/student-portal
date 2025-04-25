@@ -236,6 +236,53 @@ export default function StudentAssignments() {
       for (const classItem of enrolledClasses) {
         try {
           console.log(`Loading curriculum for class: ${classItem.id}`);
+          
+          // ADDITIONAL STEP: Check for individually published assignments first
+          if (typeof window !== 'undefined') {
+            // Try to get the list of published assignments for this class
+            const publishedListKey = `published_assignments_${classItem.id}`;
+            try {
+              const publishedList = localStorage.getItem(publishedListKey);
+              if (publishedList) {
+                const assignmentIds = JSON.parse(publishedList);
+                console.log(`Found published assignment list for class ${classItem.id}:`, assignmentIds);
+                
+                // Get each published assignment
+                for (const assignmentId of assignmentIds) {
+                  const assignmentKey = `assignment_${classItem.id}_${assignmentId}`;
+                  const assignmentData = localStorage.getItem(assignmentKey);
+                  
+                  if (assignmentData) {
+                    try {
+                      const assignment = JSON.parse(assignmentData);
+                      console.log(`Loaded published assignment: ${assignment.title}`);
+                      
+                      // Add to lists
+                      allAssignments.push(assignment);
+                      
+                      // Check for pending status
+                      if (assignment.dueDate) {
+                        const now = new Date();
+                        const dueDate = new Date(assignment.dueDate);
+                        const oneWeekFromNow = new Date();
+                        oneWeekFromNow.setDate(now.getDate() + 7);
+                        
+                        if (dueDate > now && dueDate <= oneWeekFromNow) {
+                          dueAssignments.push(assignment);
+                        }
+                      }
+                    } catch (err) {
+                      console.error(`Error parsing assignment ${assignmentId}:`, err);
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error(`Error loading published assignments list for class ${classItem.id}:`, err);
+            }
+          }
+          
+          // Continue with normal curriculum loading as fallback
           const curriculum = await storage.getCurriculum(classItem.id);
           
           if (curriculum) {
