@@ -58,6 +58,18 @@ interface EnrichedAssignment extends Content {
   lessonTitle?: string;
 }
 
+interface Curriculum {
+  classId: string;
+  content?: {
+    lessons?: any[];
+    assignments?: any[];
+  };
+  lastUpdated?: string;
+  // Add these properties since they're accessed directly in the code
+  lessons?: any[];
+  assignments?: any[];
+}
+
 export default function StudentAssignments() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -191,17 +203,7 @@ export default function StudentAssignments() {
   const getClassesForStudent = async (studentId: string) => {
     try {
       // Try specialized method if available
-      if (typeof persistentStorage.getClassesByStudentId === 'function') {
-        return await persistentStorage.getClassesByStudentId(studentId);
-      }
-      
-      // Fallback to getting all classes and filtering
-      const allClasses = await persistentStorage.getAllClasses();
-      return allClasses.filter(cls => 
-        cls.enrolledStudents && 
-        Array.isArray(cls.enrolledStudents) && 
-        cls.enrolledStudents.includes(studentId)
-      );
+      return persistentStorage.getClassesForStudent(studentId);
     } catch (error) {
       console.error("Error getting classes for student:", error);
       
@@ -237,8 +239,9 @@ export default function StudentAssignments() {
         try {
           console.log(`Loading curriculum for class: ${classItem.id}`);
           
-          // ADDITIONAL STEP: Check for individually published assignments first
+          // STEP 1: Check for individually published assignments first
           if (typeof window !== 'undefined') {
+            console.log(`Checking for published assignments for class ${classItem.id} in localStorage`);
             // Try to get the list of published assignments for this class
             const publishedListKey = `published_assignments_${classItem.id}`;
             try {
@@ -255,10 +258,19 @@ export default function StudentAssignments() {
                   if (assignmentData) {
                     try {
                       const assignment = JSON.parse(assignmentData);
-                      console.log(`Loaded published assignment: ${assignment.title}`);
+                      console.log(`Loaded published assignment: ${assignment.title || assignmentId}`);
+                      
+                      // Ensure the assignment has required fields
+                      const enrichedAssignment = {
+                        ...assignment,
+                        id: assignment.id || assignmentId,
+                        classId: classItem.id,
+                        className: assignment.className || classItem.name,
+                        isPublished: true
+                      };
                       
                       // Add to lists
-                      allAssignments.push(assignment);
+                      allAssignments.push(enrichedAssignment);
                       
                       // Check for pending status
                       if (assignment.dueDate) {
@@ -268,21 +280,26 @@ export default function StudentAssignments() {
                         oneWeekFromNow.setDate(now.getDate() + 7);
                         
                         if (dueDate > now && dueDate <= oneWeekFromNow) {
-                          dueAssignments.push(assignment);
+                          dueAssignments.push(enrichedAssignment);
                         }
                       }
                     } catch (err) {
                       console.error(`Error parsing assignment ${assignmentId}:`, err);
                     }
+                  } else {
+                    console.log(`Assignment data not found for key: ${assignmentKey}`);
                   }
                 }
+              } else {
+                console.log(`No published assignments list found for class ${classItem.id}`);
               }
             } catch (err) {
               console.error(`Error loading published assignments list for class ${classItem.id}:`, err);
             }
           }
           
-          // Continue with normal curriculum loading as fallback
+          // STEP 2: Load class curriculum as a fallback
+          console.log(`Loading full curriculum for class ${classItem.id}`);
           const curriculum = await storage.getCurriculum(classItem.id);
           
           if (curriculum) {
@@ -311,6 +328,7 @@ export default function StudentAssignments() {
                   classId: classItem.id
                 }));
               
+              console.log(`Found ${classAssignments.length} published assignments in curriculum.assignments`);
               allAssignments.push(...classAssignments);
               
               // Check for assignments due soon or overdue
@@ -326,19 +344,26 @@ export default function StudentAssignments() {
               });
               
               dueAssignments.push(...pendingAssignments);
+            } else {
+              console.log(`No assignments array found in curriculum for class ${classItem.name}`);
             }
             
-            // Process quizzes and assignments from lessons
+            // STEP 3: Process assignments embedded in lessons
             if (lessons && Array.isArray(lessons)) {
+              let lessonContentCount = 0;
               for (const lesson of lessons) {
                 // Extract published content from each lesson
-                const lessonContent = lesson.content || lesson.contents;
+                const lessonContent = lesson.contents || lesson.content;
                 if (lessonContent && Array.isArray(lessonContent)) {
                   const publishedContent = lessonContent
-                    .filter((content: Content) => 
-                      content && content.isPublished === true && 
-                      (content.type === 'assignment' || content.type === 'quiz')
-                    )
+                    .filter((content: Content) => {
+                      const isPublished = content && content.isPublished === true && 
+                        (content.type === 'assignment' || content.type === 'quiz');
+                      if (content) {
+                        console.log(`Lesson content ${content.title}: isPublished=${isPublished}, type=${content.type}`);
+                      }
+                      return isPublished;
+                    })
                     .map((content: Content) => ({
                       ...content,
                       classId: classItem.id,
@@ -348,6 +373,7 @@ export default function StudentAssignments() {
                     }));
                   
                   if (publishedContent.length > 0) {
+                    lessonContentCount += publishedContent.length;
                     allAssignments.push(...publishedContent);
                     
                     // Check for lesson content due soon
@@ -366,22 +392,39 @@ export default function StudentAssignments() {
                   }
                 }
               }
+              console.log(`Found ${lessonContentCount} published assignments in lessons for class ${classItem.name}`);
+            } else {
+              console.log(`No lessons array found in curriculum for class ${classItem.name}`);
             }
+          } else {
+            console.log(`No curriculum found for class ${classItem.id}`);
           }
         } catch (error) {
           console.error(`Error loading curriculum for class ${classItem.id}:`, error);
         }
       }
 
+      // Remove duplicates by ID
+      const uniqueAssignments = [];
+      const assignmentIds = new Set();
+      
+      for (const assignment of allAssignments) {
+        if (assignment.id && !assignmentIds.has(assignment.id)) {
+          assignmentIds.add(assignment.id);
+          uniqueAssignments.push(assignment);
+        }
+      }
+      
+      console.log(`Total unique published assignments found: ${uniqueAssignments.length}`);
+      
       // Sort assignments by due date
-      allAssignments.sort((a, b) => {
+      uniqueAssignments.sort((a, b) => {
         if (!a.dueDate) return 1;
         if (!b.dueDate) return -1;
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
 
-      console.log(`Total published assignments found: ${allAssignments.length}`);
-      setAssignments(allAssignments);
+      setAssignments(uniqueAssignments);
       setPendingAssignments(dueAssignments);
     } catch (error) {
       console.error('Error loading assignments:', error);

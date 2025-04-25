@@ -1029,6 +1029,20 @@ export class PersistentStorage {
       return null
     }
   }
+
+  // Get classes by student ID
+  public getClassesForStudent(studentId: string): Class[] {
+    return this.classes.filter(cls => 
+      cls.enrolledStudents && 
+      Array.isArray(cls.enrolledStudents) && 
+      cls.enrolledStudents.includes(studentId)
+    );
+  }
+
+  // Alias function for compatibility
+  public getClassesByStudentId(studentId: string): Class[] {
+    return this.getClassesForStudent(studentId);
+  }
 }
 
 // Create and export instance
