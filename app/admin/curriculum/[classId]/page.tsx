@@ -131,16 +131,32 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         const curriculumData = await storage.getCurriculum(classId)
         if (curriculumData) {
           console.log("Loaded curriculum data:", curriculumData)
+          
           // Handle both formats - content field or direct structure
-          const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
+          let formattedCurriculum
+          if (curriculumData.content) {
+            // Use content field if it exists
+            formattedCurriculum = curriculumData.content
+          } else {
+            // Otherwise use the whole object as is
+            formattedCurriculum = curriculumData
+          }
+          
+          // Ensure lessons property exists
+          if (!formattedCurriculum.lessons) {
+            formattedCurriculum.lessons = []
+          }
+          
+          console.log("Formatted curriculum with ensured structure:", formattedCurriculum)
           setCurriculum(formattedCurriculum)
           
+          // Set active items if lessons exist
           if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
             setActiveLesson(formattedCurriculum.lessons[0].id)
-  
+
             if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
               setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
-  
+
               if (
                 formattedCurriculum.lessons[0].contents[0].problems &&
                 formattedCurriculum.lessons[0].contents[0].problems.length > 0
@@ -159,19 +175,33 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       // Fall back to curriculum on class object
       if (loadedClass.curriculum) {
         console.log("Using curriculum from class object")
-        setCurriculum(loadedClass.curriculum)
         
-        if (loadedClass.curriculum.lessons && loadedClass.curriculum.lessons.length > 0) {
-          setActiveLesson(loadedClass.curriculum.lessons[0].id)
+        // Handle class object curriculum format
+        let formattedCurriculum
+        if (loadedClass.curriculum.content) {
+          formattedCurriculum = loadedClass.curriculum.content
+        } else {
+          formattedCurriculum = loadedClass.curriculum
+        }
+        
+        // Ensure lessons property exists
+        if (!formattedCurriculum.lessons) {
+          formattedCurriculum.lessons = []
+        }
+        
+        setCurriculum(formattedCurriculum)
+        
+        if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
+          setActiveLesson(formattedCurriculum.lessons[0].id)
 
-          if (loadedClass.curriculum.lessons[0].contents && loadedClass.curriculum.lessons[0].contents.length > 0) {
-            setActiveContent(loadedClass.curriculum.lessons[0].contents[0].id)
+          if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
+            setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
 
             if (
-              loadedClass.curriculum.lessons[0].contents[0].problems &&
-              loadedClass.curriculum.lessons[0].contents[0].problems.length > 0
+              formattedCurriculum.lessons[0].contents[0].problems &&
+              formattedCurriculum.lessons[0].contents[0].problems.length > 0
             ) {
-              setActiveProblem(loadedClass.curriculum.lessons[0].contents[0].problems[0].id)
+              setActiveProblem(formattedCurriculum.lessons[0].contents[0].problems[0].id)
             }
           }
         }
@@ -784,25 +814,27 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                 </Button>
               </div>
               <div className="space-y-2">
-                {curriculum.lessons.map((lesson) => (
-                  <Card
-                    key={lesson.id}
-                    className={`cursor-pointer ${activeLesson === lesson.id ? "border-primary" : ""}`}
-                    onClick={() => {
-                      setActiveLesson(lesson.id)
-                      setActiveContent(lesson.contents && lesson.contents.length > 0 ? lesson.contents[0].id : null)
-                      setActiveProblem(null)
-                    }}
-                  >
-                    <CardHeader className="p-3">
-                      <CardTitle className="text-sm">{lesson.title}</CardTitle>
-                      <CardDescription className="text-xs">
-                        {lesson.contents ? lesson.contents.length : 0} content items
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                ))}
-                {curriculum.lessons.length === 0 && !isAddingLesson && (
+                {curriculum?.lessons && Array.isArray(curriculum.lessons) ? 
+                  curriculum.lessons.map((lesson) => (
+                    <Card
+                      key={lesson.id}
+                      className={`cursor-pointer ${activeLesson === lesson.id ? "border-primary" : ""}`}
+                      onClick={() => {
+                        setActiveLesson(lesson.id)
+                        setActiveContent(lesson.contents && lesson.contents.length > 0 ? lesson.contents[0].id : null)
+                        setActiveProblem(null)
+                      }}
+                    >
+                      <CardHeader className="p-3">
+                        <CardTitle className="text-sm">{lesson.title}</CardTitle>
+                        <CardDescription className="text-xs">
+                          {lesson.contents ? lesson.contents.length : 0} content items
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  )) 
+                : null}
+                {(!curriculum?.lessons || !Array.isArray(curriculum.lessons) || curriculum.lessons.length === 0) && !isAddingLesson && (
                   <div className="p-4 text-center border rounded-lg">
                     <p className="text-sm text-muted-foreground">No lessons yet. Click "Add Lesson" to get started.</p>
                   </div>
