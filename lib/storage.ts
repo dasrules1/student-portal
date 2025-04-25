@@ -135,52 +135,84 @@ class StorageService {
   private activityLogs: ActivityLog[] = []
 
   async getUsers(): Promise<User[]> {
+    console.log("Getting all users");
+    
     try {
-      console.log("Getting users from Firestore...")
-      const usersRef = collection(db, 'users');
-      const snapshot = await getDocs(usersRef);
+      // First try to get users from Firestore
+      const usersCollection = collection(db, "users");
+      const usersSnapshot = await getDocs(usersCollection);
       
-      if (!snapshot || !snapshot.docs) {
-        console.warn("No snapshot or docs found in Firestore");
-        // Return from localStorage
-        const localUsers = persistentStorage.getAllUsers();
-        this.users = Array.isArray(localUsers) ? localUsers : [];
-        return this.users;
+      if (!usersSnapshot.empty) {
+        const usersData = usersSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as User[];
+        
+        console.log(`Retrieved ${usersData.length} users from Firestore`);
+        
+        // Update cache
+        this.users = usersData;
+        
+        return usersData;
       }
       
-      const loadedUsers = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
-        const data = doc.data();
-        return { 
-          id: doc.id, 
-          name: data.name || '', 
-          email: data.email || '', 
-          password: data.password || '', 
-          role: data.role || 'student',
-          status: data.status || 'active',
-          avatar: data.avatar || '',
-          classes: data.classes || []
-        } as User;
-      });
+      // Fallback to local state if available and non-empty
+      if (this.users && this.users.length > 0) {
+        console.log(`Using ${this.users.length} cached users`);
+        return [...this.users];
+      }
       
-      // Cache the users locally (ensure it's an array)
-      this.users = Array.isArray(loadedUsers) ? loadedUsers : [];
-      console.log(`Loaded ${this.users.length} users from Firestore`, this.users);
-      return this.users;
-    } catch (error) {
-      console.error('Error getting users:', error);
-      // Fallback to localStorage
+      // Final fallback to persistent storage
       try {
-        const localUsers = persistentStorage.getAllUsers();
-        // Make sure we always return an array
-        const safeUsers = Array.isArray(localUsers) ? localUsers : [];
-        console.log('Falling back to local storage users:', safeUsers);
-        this.users = safeUsers;
-        return safeUsers;
-      } catch (backupError) {
-        console.error('Critical error getting users from all sources:', backupError);
-        // Ultimate fallback - empty array
-        this.users = [];
+        console.log("Fetching users from persistent storage");
+        const persistentUsers = persistentStorage.getAllUsers();
+        
+        if (persistentUsers && persistentUsers.length > 0) {
+          console.log(`Retrieved ${persistentUsers.length} users from persistent storage`);
+          
+          // Update local cache
+          this.users = persistentUsers;
+          
+          // Ensure users have the classes property
+          this.users = this.users.map(user => ({
+            ...user,
+            classes: user.classes || []
+          }));
+          
+          // Try to save back to Firestore for consistency
+          try {
+            for (const user of persistentUsers) {
+              const userRef = doc(db, "users", user.id);
+              await setDoc(userRef, user, { merge: true });
+            }
+            console.log("Synced users from persistent storage to Firestore");
+          } catch (syncError) {
+            console.warn("Failed to sync users to Firestore:", syncError);
+          }
+          
+          return [...persistentUsers];
+        }
+      } catch (persistentError) {
+        console.error("Error getting users from persistent storage:", persistentError);
+      }
+      
+      // If we get here, we couldn't get users from any source
+      console.warn("Could not retrieve users from any source, using empty array");
       return [];
+    } catch (error) {
+      console.error("Error in getUsers:", error);
+      
+      // In case of error, try to return cached values
+      if (this.users && this.users.length > 0) {
+        return [...this.users];
+      }
+      
+      // Last resort: try persistent storage directly
+      try {
+        return persistentStorage.getAllUsers();
+      } catch (e) {
+        console.error("Final error getting users:", e);
+        return [];
       }
     }
   }
@@ -793,6 +825,17 @@ class StorageService {
         return curriculumData as Curriculum;
       }
       
+      // Try alternate collection structure
+      const classRef = doc(db, 'classes', classId);
+      const curriculumRef2 = doc(classRef, 'curriculum', 'main');
+      const curriculumSnapshot2 = await getDoc(curriculumRef2);
+      
+      if (curriculumSnapshot2.exists()) {
+        const curriculumData = curriculumSnapshot2.data();
+        console.log(`Retrieved curriculum from class/curriculum collection for class ${classId}`);
+        return curriculumData as Curriculum;
+      }
+      
       console.log(`No curriculum found in Firestore for class ${classId}, trying persistent storage`);
       
       // Second attempt to get from persistent storage
@@ -817,25 +860,61 @@ class StorageService {
       // Third attempt: check localStorage
       if (typeof window !== "undefined") {
         try {
-          // Try both key formats for compatibility
-          const localData = localStorage.getItem(`curriculum_${classId}`) || 
-                           localStorage.getItem(`${STORAGE_PREFIX}curriculum_${classId}`);
+          // Try both the standardized and direct formats
+          const standardizedData = localStorage.getItem(`curriculum_${classId}`);
+          const directData = localStorage.getItem(`curriculum_direct_${classId}`);
+          const legacyData = localStorage.getItem(`curriculum_${classId}_main`);
+          const prefixedData = localStorage.getItem(`${STORAGE_PREFIX}curriculum_${classId}`);
           
-          if (localData) {
+          // First try the standardized format
+          if (standardizedData) {
             try {
-              const parsedData = JSON.parse(localData);
-              console.log(`Retrieved curriculum from localStorage for class ${classId}`);
-              
-              // Save to Firestore to ensure consistency
-              try {
-                await this.saveCurriculum(classId, parsedData);
-              } catch (saveError) {
-                console.warn(`Failed to save localStorage curriculum to Firestore: ${saveError}`);
-              }
-              
-              return parsedData;
+              const parsedData = JSON.parse(standardizedData);
+              console.log(`Retrieved standardized curriculum from localStorage for class ${classId}`);
+              return parsedData as Curriculum;
             } catch (parseError) {
-              console.error(`Error parsing localStorage curriculum data: ${parseError}`);
+              console.error(`Error parsing standardized curriculum data: ${parseError}`);
+            }
+          }
+          
+          // Then try the direct format
+          if (directData) {
+            try {
+              const parsedDirectData = JSON.parse(directData);
+              console.log(`Retrieved direct curriculum from localStorage for class ${classId}`);
+              
+              // Convert to standardized format
+              const standardizedCurriculum = {
+                classId,
+                content: parsedDirectData,
+                lastUpdated: new Date().toISOString()
+              };
+              
+              return standardizedCurriculum as Curriculum;
+            } catch (parseError) {
+              console.error(`Error parsing direct curriculum data: ${parseError}`);
+            }
+          }
+          
+          // Try legacy format
+          if (legacyData) {
+            try {
+              const parsedLegacyData = JSON.parse(legacyData);
+              console.log(`Retrieved legacy curriculum from localStorage for class ${classId}`);
+              return parsedLegacyData as Curriculum;
+            } catch (parseError) {
+              console.error(`Error parsing legacy curriculum data: ${parseError}`);
+            }
+          }
+          
+          // Try prefixed format
+          if (prefixedData) {
+            try {
+              const parsedPrefixedData = JSON.parse(prefixedData);
+              console.log(`Retrieved prefixed curriculum from localStorage for class ${classId}`);
+              return parsedPrefixedData as Curriculum;
+            } catch (parseError) {
+              console.error(`Error parsing prefixed curriculum data: ${parseError}`);
             }
           }
         } catch (localStorageError) {
@@ -848,12 +927,20 @@ class StorageService {
       if (classData && classData.curriculum) {
         console.log(`Found curriculum embedded in class ${classId}`);
         
-        // Format the data properly
-        const formattedCurriculum = {
-          classId,
-          content: classData.curriculum,
-          lastUpdated: new Date().toISOString()
-        };
+        // Format the data properly - if it's already in standardized format, use it directly
+        let formattedCurriculum;
+        
+        if (classData.curriculum.content) {
+          // It's already in standardized format
+          formattedCurriculum = classData.curriculum;
+        } else {
+          // Convert to standardized format
+          formattedCurriculum = {
+            classId,
+            content: classData.curriculum,
+            lastUpdated: new Date().toISOString()
+          };
+        }
         
         // Save to Firestore for future use
         try {
@@ -867,7 +954,7 @@ class StorageService {
       
       console.log(`No curriculum found for class ${classId} in any storage`);
       return null;
-  } catch (error) {
+    } catch (error) {
       console.error(`Error retrieving curriculum for class ${classId}:`, error);
       return null;
     }
@@ -876,95 +963,158 @@ class StorageService {
   async saveCurriculum(classId: string, curriculum: Curriculum): Promise<boolean> {
     console.log(`Saving curriculum for class ${classId}`);
     
-    // Validate curriculum data
-    if (!curriculum || !curriculum.content) {
-      console.error("Invalid curriculum data to save");
+    // Normalize curriculum data structure to ensure compatibility
+    let normalizedContent;
+    
+    // Handle both format types
+    if (!curriculum) {
+      console.error("Invalid curriculum data: curriculum is null or undefined");
       return false;
     }
     
-    const content = curriculum.content;
+    if (curriculum.content) {
+      // Format 1: {classId, content: {...}}
+      normalizedContent = curriculum.content;
+    } else if (curriculum.lessons || curriculum.assignments) {
+      // Format 2: Direct curriculum structure
+      normalizedContent = curriculum;
+    } else {
+      console.error("Invalid curriculum data: missing required structure");
+      return false;
+    }
     
     // Handle individual content item with isPublished flag (like when publishing directly)
-    if (content && content.isPublished !== undefined) {
+    if (normalizedContent && normalizedContent.isPublished !== undefined) {
       // Make sure isPublished is a boolean
-      content.isPublished = Boolean(content.isPublished);
+      normalizedContent.isPublished = Boolean(normalizedContent.isPublished);
       
-      // If the content is published, save it to localStorage for student access
-      if (content.isPublished === true && 
-         (content.type === 'assignment' || content.type === 'quiz')) {
-        try {
-          // Create a stable key for the published item
-          const publishedKey = `published_${classId}_${content.id}`;
-          localStorage.setItem(publishedKey, JSON.stringify(content));
-          
-          // Keep track of all published assignments for this class
-          const existingPublishedKey = `published_assignments_${classId}`;
-          let existingPublished = [];
+      // Handle content of type assignment or quiz
+      if (normalizedContent.type === 'assignment' || normalizedContent.type === 'quiz') {
+        const publishedKey = `published_${classId}_${normalizedContent.id}`;
+        const publishedListKey = `published_assignments_${classId}`;
+        
+        if (normalizedContent.isPublished === true) {
+          // PUBLISHING: Save to localStorage for student access
           try {
-            const storedPublished = localStorage.getItem(existingPublishedKey);
-            if (storedPublished) {
-              existingPublished = JSON.parse(storedPublished);
+            // Create a stable key for the published item
+            localStorage.setItem(publishedKey, JSON.stringify(normalizedContent));
+            
+            // Keep track of all published assignments for this class
+            let existingPublished = [];
+            try {
+              const storedPublished = localStorage.getItem(publishedListKey);
+              if (storedPublished) {
+                existingPublished = JSON.parse(storedPublished);
+              }
+            } catch (e) {
+              console.error("Error parsing existing published assignments", e);
             }
+            
+            // Add this assignment to the list if not already there
+            if (!existingPublished.includes(normalizedContent.id)) {
+              existingPublished.push(normalizedContent.id);
+              localStorage.setItem(publishedListKey, JSON.stringify(existingPublished));
+            }
+            
+            console.log(`Published assignment/quiz ${normalizedContent.id} saved to localStorage`);
           } catch (e) {
-            console.error("Error parsing existing published assignments", e);
+            console.error("Error saving published assignment to localStorage", e);
           }
-          
-          // Add this assignment to the list if not already there
-          if (!existingPublished.includes(content.id)) {
-            existingPublished.push(content.id);
-            localStorage.setItem(existingPublishedKey, JSON.stringify(existingPublished));
+        } else {
+          // UNPUBLISHING: Remove from localStorage
+          try {
+            // Remove the assignment from localStorage
+            localStorage.removeItem(publishedKey);
+            
+            // Remove from published assignments list
+            try {
+              const storedPublished = localStorage.getItem(publishedListKey);
+              if (storedPublished) {
+                let existingPublished = JSON.parse(storedPublished);
+                existingPublished = existingPublished.filter(id => id !== normalizedContent.id);
+                localStorage.setItem(publishedListKey, JSON.stringify(existingPublished));
+              }
+            } catch (e) {
+              console.error("Error updating published assignments list during unpublish", e);
+            }
+            
+            console.log(`Unpublished assignment/quiz ${normalizedContent.id} removed from localStorage`);
+          } catch (e) {
+            console.error("Error removing unpublished assignment from localStorage", e);
           }
-          
-          console.log(`Published assignment/quiz ${content.id} saved to localStorage`);
-        } catch (e) {
-          console.error("Error saving published assignment to localStorage", e);
         }
       }
     }
     
     // ADDITIONAL: Process assignments array if it exists in the curriculum structure
-    if (content.lessons && Array.isArray(content.lessons)) {
+    if (normalizedContent.lessons && Array.isArray(normalizedContent.lessons)) {
       // Look through each lesson for published content
-      content.lessons.forEach((lesson, lessonIndex) => {
+      normalizedContent.lessons.forEach((lesson, lessonIndex) => {
         if (lesson.contents && Array.isArray(lesson.contents)) {
           // Process each content item in the lesson
           lesson.contents.forEach((contentItem, contentIndex) => {
-            if (contentItem && contentItem.isPublished === true && 
-                (contentItem.type === 'assignment' || contentItem.type === 'quiz')) {
-              try {
-                // Create an enriched assignment with class and lesson data
-                const enrichedAssignment = {
-                  ...contentItem,
-                  classId: classId,
-                  lessonId: lesson.id,
-                  lessonTitle: lesson.title,
-                  isPublished: true
-                };
-                
-                // Create specific keys for individual assignments
-                const assignmentKey = `assignment_${classId}_${contentItem.id}`;
-                localStorage.setItem(assignmentKey, JSON.stringify(enrichedAssignment));
-                
-                // Update the published assignments list for this class
-                const publishedListKey = `published_assignments_${classId}`;
-                let publishedList = [];
+            if (contentItem && (contentItem.type === 'assignment' || contentItem.type === 'quiz')) {
+              // Create assignment key for localStorage
+              const assignmentKey = `assignment_${classId}_${contentItem.id}`;
+              const publishedListKey = `published_assignments_${classId}`;
+              
+              if (contentItem.isPublished === true) {
+                // PUBLISHING: Content is published, save it
                 try {
-                  const existingList = localStorage.getItem(publishedListKey);
-                  if (existingList) {
-                    publishedList = JSON.parse(existingList);
+                  // Create an enriched assignment with class and lesson data
+                  const enrichedAssignment = {
+                    ...contentItem,
+                    classId: classId,
+                    lessonId: lesson.id,
+                    lessonTitle: lesson.title,
+                    isPublished: true
+                  };
+                  
+                  // Save to localStorage
+                  localStorage.setItem(assignmentKey, JSON.stringify(enrichedAssignment));
+                  
+                  // Update the published assignments list for this class
+                  let publishedList = [];
+                  try {
+                    const existingList = localStorage.getItem(publishedListKey);
+                    if (existingList) {
+                      publishedList = JSON.parse(existingList);
+                    }
+                  } catch (err) {
+                    console.error("Error parsing published assignments list:", err);
                   }
-                } catch (err) {
-                  console.error("Error parsing published assignments list:", err);
+                  
+                  if (!publishedList.includes(contentItem.id)) {
+                    publishedList.push(contentItem.id);
+                    localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+                  }
+                  
+                  console.log(`Published lesson content (${contentItem.type}) with ID ${contentItem.id} saved to localStorage`);
+                } catch (e) {
+                  console.error(`Error saving published content from lesson ${lesson.title}:`, e);
                 }
-                
-                if (!publishedList.includes(contentItem.id)) {
-                  publishedList.push(contentItem.id);
-                  localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+              } else {
+                // UNPUBLISHING: Content is not published, remove it
+                try {
+                  // Remove from localStorage
+                  localStorage.removeItem(assignmentKey);
+                  
+                  // Update published list
+                  try {
+                    const existingList = localStorage.getItem(publishedListKey);
+                    if (existingList) {
+                      let publishedList = JSON.parse(existingList);
+                      publishedList = publishedList.filter(id => id !== contentItem.id);
+                      localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+                    }
+                  } catch (err) {
+                    console.error("Error updating published assignments list during unpublish:", err);
+                  }
+                  
+                  console.log(`Unpublished lesson content (${contentItem.type}) with ID ${contentItem.id} removed from localStorage`);
+                } catch (e) {
+                  console.error(`Error removing unpublished content for ${contentItem.id}:`, e);
                 }
-                
-                console.log(`Published lesson content (${contentItem.type}) with ID ${contentItem.id} saved to localStorage`);
-              } catch (e) {
-                console.error(`Error saving published content from lesson ${lesson.title}:`, e);
               }
             }
           });
@@ -973,47 +1123,79 @@ class StorageService {
     }
     
     // Also handle direct assignments array if present
-    if (content.assignments && Array.isArray(content.assignments)) {
-      content.assignments.forEach(assignment => {
-        if (assignment && assignment.isPublished) {
-          try {
-            // Create specific key for individual assignment
-            const assignmentKey = `assignment_${classId}_${assignment.id}`;
-            
-            // Create enriched assignment
-            const enrichedAssignment = {
-              ...assignment,
-              classId: classId, 
-              isPublished: true,
-              type: 'assignment'  // Ensure type is set
-            };
-            
-            localStorage.setItem(assignmentKey, JSON.stringify(enrichedAssignment));
-            
-            // Update published assignments list
-            const publishedListKey = `published_assignments_${classId}`;
-            let publishedList = [];
+    if (normalizedContent.assignments && Array.isArray(normalizedContent.assignments)) {
+      normalizedContent.assignments.forEach(assignment => {
+        if (assignment) {
+          // Create specific key for individual assignment
+          const assignmentKey = `assignment_${classId}_${assignment.id}`;
+          const publishedListKey = `published_assignments_${classId}`;
+          
+          if (assignment.isPublished) {
+            // PUBLISHING: Assignment is published
             try {
-              const existingList = localStorage.getItem(publishedListKey);
-              if (existingList) {
-                publishedList = JSON.parse(existingList);
+              // Create enriched assignment
+              const enrichedAssignment = {
+                ...assignment,
+                classId: classId, 
+                isPublished: true,
+                type: 'assignment'  // Ensure type is set
+              };
+              
+              localStorage.setItem(assignmentKey, JSON.stringify(enrichedAssignment));
+              
+              // Update published assignments list
+              let publishedList = [];
+              try {
+                const existingList = localStorage.getItem(publishedListKey);
+                if (existingList) {
+                  publishedList = JSON.parse(existingList);
+                }
+              } catch (err) {
+                console.error("Error parsing published assignments list:", err);
               }
-            } catch (err) {
-              console.error("Error parsing published assignments list:", err);
+              
+              if (!publishedList.includes(assignment.id)) {
+                publishedList.push(assignment.id);
+                localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+              }
+              
+              console.log(`Published assignment ${assignment.id} from assignments array saved to localStorage`);
+            } catch (e) {
+              console.error(`Error saving published assignment ${assignment.id}:`, e);
             }
-            
-            if (!publishedList.includes(assignment.id)) {
-              publishedList.push(assignment.id);
-              localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+          } else {
+            // UNPUBLISHING: Assignment is not published
+            try {
+              // Remove from localStorage
+              localStorage.removeItem(assignmentKey);
+              
+              // Update published list
+              try {
+                const existingList = localStorage.getItem(publishedListKey);
+                if (existingList) {
+                  let publishedList = JSON.parse(existingList);
+                  publishedList = publishedList.filter(id => id !== assignment.id);
+                  localStorage.setItem(publishedListKey, JSON.stringify(publishedList));
+                }
+              } catch (err) {
+                console.error("Error updating published assignments list during unpublish:", err);
+              }
+              
+              console.log(`Unpublished assignment ${assignment.id} removed from localStorage`);
+            } catch (e) {
+              console.error(`Error removing unpublished assignment ${assignment.id}:`, e);
             }
-            
-            console.log(`Published assignment ${assignment.id} from assignments array saved to localStorage`);
-          } catch (e) {
-            console.error(`Error saving published assignment ${assignment.id}:`, e);
           }
         }
       });
     }
+
+    // Create standardized curriculum object
+    const standardizedCurriculum = {
+      classId: classId,
+      content: normalizedContent,
+      lastUpdated: new Date().toISOString()
+    };
 
     // Save to Firestore if available
     try {
@@ -1021,12 +1203,9 @@ class StorageService {
       if (auth.currentUser) {
         const db = getFirestore();
         const classRef = doc(db, 'classes', classId);
-        const curriculumRef = doc(classRef, 'curriculum', content.id || 'main');
+        const curriculumRef = doc(classRef, 'curriculum', 'main');
         
-        await setDoc(curriculumRef, {
-          content,
-          lastUpdated: new Date().toISOString()
-        });
+        await setDoc(curriculumRef, standardizedCurriculum);
         
         console.log("Curriculum saved to Firestore successfully");
       }
@@ -1037,11 +1216,30 @@ class StorageService {
 
     // Always save to localStorage as backup for offline access
     try {
-      const currKey = `curriculum_${classId}_${content.id || 'main'}`;
-      localStorage.setItem(currKey, JSON.stringify({
-        content,
-        lastUpdated: new Date().toISOString()
-      }));
+      // Save both formats for better compatibility
+      const currKey = `curriculum_${classId}`;
+      localStorage.setItem(currKey, JSON.stringify(standardizedCurriculum));
+      
+      // Also save the direct curriculum for components that expect that format
+      const directCurrKey = `curriculum_direct_${classId}`;
+      localStorage.setItem(directCurrKey, JSON.stringify(normalizedContent));
+      
+      // Update the class object as well to ensure consistency
+      try {
+        const classData = await this.getClassById(classId);
+        if (classData) {
+          const updatedClass = {
+            ...classData,
+            curriculum: normalizedContent,
+            updatedAt: new Date().toISOString()
+          };
+          
+          await this.updateClass(classId, updatedClass);
+          console.log("Class object updated with curriculum");
+        }
+      } catch (classUpdateError) {
+        console.warn("Error updating class with curriculum:", classUpdateError);
+      }
       
       console.log("Curriculum successfully saved to localStorage");
       return true;
@@ -1178,41 +1376,32 @@ class StorageService {
 
   // Enrollment
   async enrollStudent(classId: string, studentId: string): Promise<boolean> {
+    console.log(`Enrolling student ${studentId} in class ${classId}`);
+    
     try {
-      console.log(`Attempting to enroll student ${studentId} in class ${classId}`);
-      
-      // First, verify both class and student exist
-      const classRef = doc(db, 'classes', classId);
-      const studentRef = doc(db, 'users', studentId);
-      
-      const [classSnap, studentSnap] = await Promise.all([
-        getDoc(classRef),
-        getDoc(studentRef)
-      ]);
-      
-      if (!classSnap.exists()) {
-        console.error(`Class ${classId} not found`);
-        // Fall back to persistent storage
-        return persistentStorage.enrollStudent(classId, studentId);
-      }
-      
-      if (!studentSnap.exists()) {
-        console.error(`Student ${studentId} not found`);
-        // Fall back to persistent storage
-        return persistentStorage.enrollStudent(classId, studentId);
-      }
-      
-      const classData = classSnap.data();
-      const studentData = studentSnap.data();
-      
-      // Validate student role
-      if (studentData.role !== 'student') {
-        console.error(`User ${studentId} is not a student`);
+      // First validate that both class and student exist
+      const classData = await this.getClassById(classId);
+      if (!classData) {
+        console.error(`Cannot enroll student: Class ${classId} not found`);
         return false;
       }
       
-      const enrolledStudents = classData.enrolledStudents || [];
-      const studentClasses = studentData.classes || [];
+      const student = await this.getUserById(studentId);
+      if (!student) {
+        console.error(`Cannot enroll student: Student ${studentId} not found`);
+        return false;
+      }
+      
+      if (student.role !== 'student') {
+        console.error(`Cannot enroll non-student user: ${studentId} has role ${student.role}`);
+        return false;
+      }
+      
+      // Update class with enrolled student
+      let enrolledStudents = classData.enrolledStudents || [];
+      if (!Array.isArray(enrolledStudents)) {
+        enrolledStudents = [];
+      }
       
       // Check if student is already enrolled
       if (enrolledStudents.includes(studentId)) {
@@ -1221,34 +1410,89 @@ class StorageService {
       }
       
       // Add student to class
-      const updatedEnrolledStudents = [...enrolledStudents, studentId];
-      const updatedClassData = {
+      enrolledStudents.push(studentId);
+      
+      // Update class record in all storage methods
+      const updatedClass = {
         ...classData,
-        enrolledStudents: updatedEnrolledStudents
+        enrolledStudents,
+        students: enrolledStudents.length
       };
       
-      // Update class in Firestore
-      await updateDoc(classRef, updatedClassData);
-      
-      // Update student in Firestore
-      await updateDoc(studentRef, {
-        classes: [...studentClasses, classId]
-      });
-      
-      // Update local cache
-      const index = this.classes.findIndex(cls => cls.id === classId);
-      if (index !== -1) {
-        this.classes[index] = { ...this.classes[index], ...updatedClassData };
+      // Update in Firestore
+      try {
+        const classRef = doc(db, 'classes', classId);
+        await setDoc(classRef, updatedClass, { merge: true });
+        console.log(`Updated class ${classId} in Firestore with enrolled student ${studentId}`);
+      } catch (firestoreError) {
+        console.error('Error updating class in Firestore:', firestoreError);
       }
       
-      // Also update in persistent storage
-      persistentStorage.enrollStudent(classId, studentId);
+      // Update in persistent storage
+      try {
+        persistentStorage.updateClass(classId, updatedClass);
+        console.log(`Updated class ${classId} in persistent storage with enrolled student ${studentId}`);
+      } catch (storageError) {
+        console.error('Error updating class in persistent storage:', storageError);
+      }
       
-      console.log(`Student ${studentId} enrolled in class ${classId} successfully`);
+      // Also update student record with class
+      let studentClasses = student.classes || [];
+      if (!Array.isArray(studentClasses)) {
+        studentClasses = [];
+      }
+      
+      if (!studentClasses.includes(classId)) {
+        studentClasses.push(classId);
+        
+        const updatedStudent = {
+          ...student,
+          classes: studentClasses
+        };
+        
+        // Update in Firestore
+        try {
+          const studentRef = doc(db, 'users', studentId);
+          await setDoc(studentRef, updatedStudent, { merge: true });
+          console.log(`Updated student ${studentId} in Firestore with class ${classId}`);
+        } catch (firestoreError) {
+          console.error('Error updating student in Firestore:', firestoreError);
+        }
+        
+        // Update in persistent storage
+        try {
+          persistentStorage.updateUser(studentId, updatedStudent);
+          console.log(`Updated student ${studentId} in persistent storage with class ${classId}`);
+        } catch (storageError) {
+          console.error('Error updating student in persistent storage:', storageError);
+        }
+        
+        // Update local cache
+        this.users = this.users.map(u => u.id === studentId ? updatedStudent : u);
+      }
+      
+      // Update local cache
+      this.classes = this.classes.map(c => c.id === classId ? updatedClass : c);
+      
+      // Add activity log
+      await this.addActivityLog({
+        action: 'Student Enrolled',
+        details: `Student ${student.name} enrolled in class ${classData.name}`,
+        timestamp: new Date().toISOString(),
+        category: 'Enrollment'
+      });
+      
       return true;
     } catch (error) {
       console.error(`Error enrolling student ${studentId} in class ${classId}:`, error);
-      return persistentStorage.enrollStudent(classId, studentId);
+      
+      // Try persistent storage as fallback
+      try {
+        return persistentStorage.enrollStudent(classId, studentId);
+      } catch (fallbackError) {
+        console.error('Critical error in enrollment process:', fallbackError);
+        return false;
+      }
     }
   }
 
