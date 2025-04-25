@@ -75,22 +75,65 @@ export default function StudentAssignments() {
         
         // Check localStorage for user data
         if (typeof window !== 'undefined') {
-          const storedUser = localStorage.getItem('currentUser');
-          if (storedUser) {
+          // Show login debug info in console
+          console.log("Looking for user in localStorage and persistentStorage...");
+          
+          // First check for a user that might be in a different format
+          const storedAuth = localStorage.getItem('authUser');
+          if (storedAuth) {
             try {
-              user = JSON.parse(storedUser);
-              console.log("Found user in localStorage:", user);
+              const authData = JSON.parse(storedAuth);
+              console.log("Found authUser in localStorage:", authData);
+              user = {
+                id: authData.uid || authData.id,
+                name: authData.displayName || authData.name || "Student",
+                email: authData.email,
+                role: authData.role || "student",
+                password: "",
+                status: "active",
+                classes: []
+              };
             } catch (e) {
-              console.error("Error parsing user from localStorage:", e);
+              console.error("Error parsing authUser from localStorage:", e);
             }
-          } else {
-            console.log("No user found in localStorage");
+          }
+          
+          // If no authUser, try the standard currentUser format
+          if (!user) {
+            const storedUser = localStorage.getItem('currentUser');
+            if (storedUser) {
+              try {
+                user = JSON.parse(storedUser);
+                console.log("Found currentUser in localStorage:", user);
+              } catch (e) {
+                console.error("Error parsing currentUser from localStorage:", e);
+              }
+            } else {
+              console.log("No currentUser found in localStorage");
+            }
           }
           
           // If we still don't have a user, try persistentStorage
           if (!user) {
-            user = await persistentStorage.getCurrentUser();
-            console.log("Found user from persistentStorage:", user);
+            try {
+              user = await persistentStorage.getCurrentUser();
+              console.log("Found user from persistentStorage:", user);
+            } catch (e) {
+              console.error("Error getting user from persistentStorage:", e);
+            }
+          }
+          
+          // Last attempt - check sessionStorage
+          if (!user) {
+            const sessionUser = sessionStorage.getItem('currentUser');
+            if (sessionUser) {
+              try {
+                user = JSON.parse(sessionUser);
+                console.log("Found user in sessionStorage:", user);
+              } catch (e) {
+                console.error("Error parsing user from sessionStorage:", e);
+              }
+            }
           }
         }
         
@@ -98,6 +141,13 @@ export default function StudentAssignments() {
           console.error('No authenticated user found');
           setAuthError('You must be logged in to view this page');
           setLoading(false);
+          
+          // Auto-redirect to login after a short delay
+          setTimeout(() => {
+            if (typeof window !== 'undefined') {
+              window.location.href = '/login?redirect=/student/assignments';
+            }
+          }, 2000);
           return;
         }
         
@@ -355,8 +405,22 @@ export default function StudentAssignments() {
                 {authError}
               </CardDescription>
             </CardHeader>
+            <CardContent>
+              <div className="mt-4 text-sm text-muted-foreground">
+                <p>Try the following:</p>
+                <ul className="list-disc pl-5 mt-2">
+                  <li>Make sure you are logged in as a student</li>
+                  <li>If you were logged in before, your session may have expired</li>
+                  <li>Clear browser cache and try again</li>
+                  <li>You will be redirected to the login page shortly...</li>
+                </ul>
+              </div>
+            </CardContent>
             <CardFooter>
-              <Button onClick={() => router.push("/login?role=student")}>
+              <Button 
+                onClick={() => router.push("/login?redirect=/student/assignments")}
+                className="w-full"
+              >
                 Go to Login
               </Button>
             </CardFooter>
