@@ -213,7 +213,7 @@ class StorageService {
         return persistentStorage.getAllUsers();
       } catch (e) {
         console.error("Final error getting users:", e);
-        return [];
+      return [];
       }
     }
   }
@@ -822,11 +822,11 @@ class StorageService {
       // 1. Try Firestore (primary source)
       try {
         // First try the standalone curriculum collection
-        const curriculumRef = doc(db, 'curricula', classId);
-        const curriculumSnapshot = await getDoc(curriculumRef);
-        
-        if (curriculumSnapshot.exists()) {
-          const curriculumData = curriculumSnapshot.data();
+      const curriculumRef = doc(db, 'curricula', classId);
+      const curriculumSnapshot = await getDoc(curriculumRef);
+      
+      if (curriculumSnapshot.exists()) {
+        const curriculumData = curriculumSnapshot.data();
           console.log(`Retrieved curriculum from Firestore curriculum collection for class ${classId}`);
           curriculum = curriculumData as Curriculum;
           curriculumSources.push('firestore_curriculum');
@@ -933,9 +933,9 @@ class StorageService {
       
       // 3. Try the class object itself
       try {
-        const classData = await this.getClassById(classId);
-        if (classData && classData.curriculum) {
-          console.log(`Found curriculum embedded in class ${classId}`);
+      const classData = await this.getClassById(classId);
+      if (classData && classData.curriculum) {
+        console.log(`Found curriculum embedded in class ${classId}`);
           curriculumSources.push('class_object');
           
           // If we don't have a curriculum yet, or this class data appears more recent, use it
@@ -950,8 +950,8 @@ class StorageService {
             } else {
               // Convert to standardized format
               curriculum = {
-                classId,
-                content: classData.curriculum,
+          classId,
+          content: classData.curriculum,
                 lastUpdated
               };
             }
@@ -984,8 +984,8 @@ class StorageService {
           curriculum = {
             classId,
             content: curriculum,
-            lastUpdated: new Date().toISOString()
-          };
+          lastUpdated: new Date().toISOString()
+        };
         }
         
         // Save back to all storage mechanisms to ensure consistency
@@ -1005,7 +1005,7 @@ class StorageService {
       
       console.log(`No curriculum found for class ${classId} in any storage`);
       return null;
-    } catch (error) {
+  } catch (error) {
       console.error(`Error retrieving curriculum for class ${classId}:`, error);
       return null;
     }
@@ -1013,8 +1013,8 @@ class StorageService {
 
   async saveCurriculum(classId: string, curriculum: Curriculum): Promise<void> {
     try {
-      console.log(`Saving curriculum for class ${classId}`);
-      
+    console.log(`Saving curriculum for class ${classId}`);
+    
       // Ensure the curriculum has a standardized format
       if (!curriculum.content) {
         console.warn("Curriculum missing content property, attempting to standardize format");
@@ -1029,6 +1029,30 @@ class StorageService {
       // Ensure classId is attached to the curriculum
       if (!curriculum.classId) {
         curriculum.classId = classId;
+      }
+      
+      // Add visibility and publishing properties if they don't exist
+      if (curriculum.content && typeof curriculum.content === 'object') {
+        curriculum.visibility = curriculum.visibility || "public";
+        curriculum.isPublished = curriculum.isPublished !== undefined ? curriculum.isPublished : false;
+        
+        // Ensure each lesson has a visibility property
+        if (Array.isArray(curriculum.content.lessons)) {
+          curriculum.content.lessons.forEach(lesson => {
+            if (lesson && typeof lesson === 'object') {
+              lesson.isVisible = lesson.isVisible !== undefined ? lesson.isVisible : true;
+              
+              // Ensure each content has a published property
+              if (Array.isArray(lesson.contents)) {
+                lesson.contents.forEach(content => {
+                  if (content && typeof content === 'object') {
+                    content.isPublished = content.isPublished !== undefined ? content.isPublished : false;
+                  }
+                });
+              }
+            }
+          });
+        }
       }
       
       // Save to Firestore in the curricula collection
@@ -1050,10 +1074,14 @@ class StorageService {
         console.error("Failed to save curriculum to nested class collection:", error);
       }
       
-      // Save to class document directly
+      // Save to class document directly - this is essential for teacher access
       try {
         const classRef = doc(db, 'classes', classId);
-        await updateDoc(classRef, { curriculum });
+        await updateDoc(classRef, { 
+          curriculum: curriculum,
+          hasCurriculum: true,
+          curriculumLastUpdated: new Date().toISOString() 
+        });
         console.log("Successfully updated curriculum in class document");
       } catch (error) {
         console.error("Failed to update curriculum in class document:", error);
@@ -1342,8 +1370,8 @@ class StorageService {
         } catch (storageError) {
           console.error('Error updating student in persistent storage:', storageError);
         }
-        
-        // Update local cache
+      
+      // Update local cache
         this.users = this.users.map(u => u.id === studentId ? updatedStudent : u);
       }
       
@@ -1364,7 +1392,7 @@ class StorageService {
       
       // Try persistent storage as fallback
       try {
-        return persistentStorage.enrollStudent(classId, studentId);
+      return persistentStorage.enrollStudent(classId, studentId);
       } catch (fallbackError) {
         console.error('Critical error in enrollment process:', fallbackError);
         return false;
