@@ -300,8 +300,10 @@ export default function TeacherCurriculum() {
 
   // Confirm publishing content
   const confirmPublish = async () => {
-    if (!curriculum) return
+    if (!contentToPublish || !curriculum) return
 
+    const { content, lessonIndex, contentIndex } = contentToPublish
+    
     // Create a deep copy to avoid mutation issues
     const updatedCurriculum = JSON.parse(JSON.stringify(curriculum))
 
@@ -311,7 +313,7 @@ export default function TeacherCurriculum() {
     }
 
     // Update the content item with the new published status
-    let newPublishedStatus = !content.isPublished
+    const newPublishedStatus = !content.isPublished
     console.log(`Setting content ${content.id} published status to ${newPublishedStatus}`)
     
     // Find the correct content in the curriculum
