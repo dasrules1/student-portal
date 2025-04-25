@@ -14,6 +14,7 @@ import {
   BookMarked,
   FileQuestion,
   X,
+  Bug,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -93,6 +94,8 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [lessonToDelete, setLessonToDelete] = useState<string | null>(null)
   const [contentToDelete, setContentToDelete] = useState<string | null>(null)
   const [problemToDelete, setProblemToDelete] = useState<string | null>(null)
+  const [debugResult, setDebugResult] = useState<any>(null)
+  const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
     // Check if user is an admin
@@ -717,6 +720,19 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     return contentType ? contentType.icon : <FileText className="w-4 h-4 mr-2" />
   }
 
+  // Add this function for debugging
+  const runDiagnostics = async () => {
+    try {
+      const result = await storage.diagnoseCurriculumStorage(params.classId)
+      setDebugResult(result)
+      setShowDebug(true)
+    } catch (error) {
+      console.error("Error running diagnostics:", error)
+      setDebugResult({ error: String(error) })
+      setShowDebug(true)
+    }
+  }
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">Loading curriculum...</div>
   }
@@ -741,13 +757,18 @@ export default function CurriculumEditor({ params }: { params: { classId: string
               <p className="text-muted-foreground">Teacher: {classData.teacher}</p>
             </div>
             <div className="flex space-x-2">
-              <Button onClick={saveCurriculum}>
-                <Save className="w-4 h-4 mr-2" />
-                Save Curriculum
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={runDiagnostics}
+                className="flex items-center space-x-1"
+              >
+                <Bug className="w-4 h-4" />
+                <span>Diagnose Storage</span>
               </Button>
-              <Button variant="outline" onClick={() => router.push("/admin/dashboard?tab=classes")}>
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Classes
+              <Button onClick={saveCurriculum} className="flex items-center space-x-1">
+                <Save className="w-4 h-4" />
+                <span>Save Curriculum</span>
               </Button>
             </div>
           </div>
@@ -1598,6 +1619,34 @@ export default function CurriculumEditor({ params }: { params: { classId: string
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add this debug modal/panel */}
+      {showDebug && debugResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-bold">Storage Diagnostics Results</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowDebug(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-4">
+              <h3 className="font-semibold mb-2">Summary:</h3>
+              <pre className="bg-gray-100 p-3 rounded mb-4 whitespace-pre-wrap">
+                {debugResult.summary}
+              </pre>
+              
+              <h3 className="font-semibold mb-2">Details:</h3>
+              <div className="bg-gray-100 p-3 rounded overflow-x-auto">
+                <pre>{JSON.stringify(debugResult.sources, null, 2)}</pre>
+              </div>
+            </div>
+            <div className="p-4 border-t flex justify-end">
+              <Button onClick={() => setShowDebug(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

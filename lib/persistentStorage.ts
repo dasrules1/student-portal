@@ -8,7 +8,7 @@ import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc } fro
 
 // Constants
 const STORAGE_VERSION = "1.0.0"
-const STORAGE_PREFIX = "educationmore_"
+export const STORAGE_PREFIX = "educationmore_"
 const STORAGE_KEYS = {
   VERSION: `${STORAGE_PREFIX}version`,
   USERS: `${STORAGE_PREFIX}users`,
