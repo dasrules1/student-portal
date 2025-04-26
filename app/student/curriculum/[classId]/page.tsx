@@ -52,8 +52,8 @@ const renderLatex = (text) => {
 
   return (
     <>
-      {parts.map((part, index) => {
-        if (part.startsWith("$$") && part.endsWith("$$")) {
+      {parts && Array.isArray(parts) && parts.map((part, index) => {
+        if (part && part.startsWith("$$") && part.endsWith("$$")) {
           const latex = part.slice(2, -2)
           return (
             <span
@@ -375,21 +375,23 @@ export default function StudentCurriculum() {
 
   // Auto-grade a math expression answer
   const gradeMathExpression = (problem, studentAnswer) => {
-    if (!studentAnswer) return { correct: false, score: 0 }
+    if (!studentAnswer || !problem) return { correct: false, score: 0 }
 
     // Clean up the student answer
     const cleanStudentAnswer = studentAnswer.replace(/\s+/g, "").toLowerCase()
 
     // Check if problem has multiple correct answers
-    if (problem.correctAnswers && problem.correctAnswers.length > 0) {
+    if (problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0) {
       // Try each correct answer
       for (const correctAnswer of problem.correctAnswers) {
+        if (!correctAnswer) continue;
+        
         // Clean up the correct answer
         const cleanCorrectAnswer = correctAnswer.replace(/\s+/g, "").toLowerCase()
 
         // Check for exact match
         if (cleanStudentAnswer === cleanCorrectAnswer) {
-          return { correct: true, score: problem.points }
+          return { correct: true, score: problem.points || 0 }
         }
 
         // Try numerical comparison if possible
@@ -398,20 +400,21 @@ export default function StudentCurriculum() {
 
         if (!isNaN(correctNum) && !isNaN(studentNum)) {
           // Check if within tolerance
-          if (Math.abs(correctNum - studentNum) <= problem.tolerance) {
-            return { correct: true, score: problem.points }
+          const tolerance = problem.tolerance || 0.001;
+          if (Math.abs(correctNum - studentNum) <= tolerance) {
+            return { correct: true, score: problem.points || 0 }
           }
         }
       }
 
       return { correct: false, score: 0 }
-    } else {
+    } else if (problem.correctAnswer) {
       // Legacy support for single correct answer
       const cleanCorrectAnswer = problem.correctAnswer.replace(/\s+/g, "").toLowerCase()
 
       // Check for exact match first
       if (cleanStudentAnswer === cleanCorrectAnswer) {
-        return { correct: true, score: problem.points }
+        return { correct: true, score: problem.points || 0 }
       }
 
       // Try to parse as numbers for numerical comparison
@@ -420,37 +423,42 @@ export default function StudentCurriculum() {
 
       if (!isNaN(correctNum) && !isNaN(studentNum)) {
         // Check if within tolerance
-        if (Math.abs(correctNum - studentNum) <= problem.tolerance) {
-          return { correct: true, score: problem.points }
+        const tolerance = problem.tolerance || 0.001;
+        if (Math.abs(correctNum - studentNum) <= tolerance) {
+          return { correct: true, score: problem.points || 0 }
         }
       }
-
-      return { correct: false, score: 0 }
     }
+
+    return { correct: false, score: 0 }
   }
 
   // Auto-grade an open ended answer
   const gradeOpenEnded = (problem, studentAnswer) => {
-    if (!studentAnswer) return { correct: false, score: 0 }
+    if (!studentAnswer || !problem || !problem.keywords || !Array.isArray(problem.keywords)) {
+      return { correct: false, score: 0, matchedKeywords: [] }
+    }
 
     // Count how many keywords are present in the student's answer
     const lowerStudentAnswer = studentAnswer.toLowerCase()
-    const matchedKeywords = problem.keywords.filter((keyword) => lowerStudentAnswer.includes(keyword.toLowerCase()))
+    const matchedKeywords = problem.keywords.filter((keyword) => 
+      keyword && lowerStudentAnswer.includes(keyword.toLowerCase())
+    )
 
     // Calculate score based on keyword matches
     let score = 0
     if (matchedKeywords.length > 0) {
       if (problem.allowPartialCredit) {
         // Award partial credit based on keyword matches
-        score = Math.round((matchedKeywords.length / problem.keywords.length) * problem.points)
+        score = Math.round((matchedKeywords.length / problem.keywords.length) * (problem.points || 0))
       } else if (matchedKeywords.length === problem.keywords.length) {
         // All keywords must be present for full credit
-        score = problem.points
+        score = problem.points || 0
       }
     }
 
     return {
-      correct: score === problem.points,
+      correct: score === (problem.points || 0),
       score,
       matchedKeywords,
     }
@@ -458,10 +466,12 @@ export default function StudentCurriculum() {
 
   // Handle submitting answers
   const handleSubmitAnswers = () => {
-    if (!activeContent || !currentUser) return
-
+    if (!activeContent || !currentUser || !activeContent.problems || !Array.isArray(activeContent.problems)) return;
+    
     // Check if all questions are answered
     const allAnswered = activeContent.problems.every((problem, index) => {
+      if (!problem) return false;
+      
       if (problem.type === "multiple-choice") {
         return userAnswers[activeContent.id]?.[index] !== undefined && userAnswers[activeContent.id]?.[index] !== -1
       } else if (problem.type === "math-expression") {
@@ -925,8 +935,8 @@ export default function StudentCurriculum() {
                     <div className="flex items-center">
                       {renderContentTypeIcon(activeContent.type)}
                       <div>
-                        <CardTitle>{activeContent.title}</CardTitle>
-                        <CardDescription>{renderLatex(activeContent.description)}</CardDescription>
+                        <CardTitle>{activeContent.title || 'Untitled Content'}</CardTitle>
+                        <CardDescription>{renderLatex(activeContent.description || '')}</CardDescription>
                       </div>
                     </div>
                     <Button
@@ -943,194 +953,197 @@ export default function StudentCurriculum() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {activeContent.problems && activeContent.problems.length > 0 ? (
+                  {activeContent.problems && Array.isArray(activeContent.problems) && activeContent.problems.length > 0 ? (
                     <div className="space-y-8">
-                      {activeContent.problems.map((problem, problemIndex) => (
-                        <div key={problemIndex} className="p-4 border rounded-lg">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center mb-2">
-                                <p className="font-medium">Problem {problemIndex + 1}</p>
-                                <Badge variant="outline" className="ml-2">
-                                  {problem.type === "multiple-choice"
-                                    ? "Multiple Choice"
-                                    : problem.type === "open-ended"
-                                      ? "Open Ended"
-                                      : "Math Expression"}
-                                </Badge>
-                                <Badge variant="secondary" className="ml-2">
-                                  {problem.points} {problem.points === 1 ? "point" : "points"}
-                                </Badge>
-                                {problem.maxAttempts && (
+                      {activeContent.problems.map((problem, problemIndex) => {
+                        if (!problem) return null;
+                        return (
+                          <div key={problemIndex} className="p-4 border rounded-lg">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center mb-2">
+                                  <p className="font-medium">Problem {problemIndex + 1}</p>
                                   <Badge variant="outline" className="ml-2">
-                                    Attempts: {getRemainingAttempts(problemIndex)} of {problem.maxAttempts} remaining
+                                    {problem.type === "multiple-choice"
+                                      ? "Multiple Choice"
+                                      : problem.type === "open-ended"
+                                        ? "Open Ended"
+                                        : "Math Expression"}
                                   </Badge>
-                                )}
-                              </div>
+                                  <Badge variant="secondary" className="ml-2">
+                                    {problem.points} {problem.points === 1 ? "point" : "points"}
+                                  </Badge>
+                                  {problem.maxAttempts && (
+                                    <Badge variant="outline" className="ml-2">
+                                      Attempts: {getRemainingAttempts(problemIndex)} of {problem.maxAttempts} remaining
+                                    </Badge>
+                                  )}
+                                </div>
 
-                              <p className="mt-2 mb-4">{renderLatex(problem.question)}</p>
+                                <p className="mt-2 mb-4">{renderLatex(problem.question || '')}</p>
 
-                              {problem.type === "multiple-choice" && (
-                                <RadioGroup
-                                  value={userAnswers[activeContent.id]?.[problemIndex]?.toString() || "-1"}
-                                  onValueChange={(value) =>
-                                    handleMultipleChoiceSelect(problemIndex, Number.parseInt(value))
-                                  }
-                                  disabled={showResults}
-                                  className="space-y-3"
-                                >
-                                  {problem.options.map((option, optionIndex) => (
-                                    <div
-                                      key={optionIndex}
-                                      className={`flex items-center space-x-2 p-2 rounded-md ${
-                                        showResults && optionIndex === problem.correctAnswer
-                                          ? "bg-green-50 dark:bg-green-900/20"
-                                          : showResults &&
-                                              userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
-                                              optionIndex !== problem.correctAnswer
-                                            ? "bg-red-50 dark:bg-red-900/20"
-                                            : ""
-                                      }`}
-                                    >
-                                      <RadioGroupItem
-                                        value={optionIndex.toString()}
-                                        id={`option-${problemIndex}-${optionIndex}`}
-                                      />
-                                      <Label htmlFor={`option-${problemIndex}-${optionIndex}`}>
-                                        {renderLatex(option)}
-                                      </Label>
-
-                                      {showResults && optionIndex === problem.correctAnswer && (
-                                        <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
-                                      )}
-                                      {showResults &&
-                                        userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
-                                        optionIndex !== problem.correctAnswer && (
-                                          <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
-                                        )}
-                                    </div>
-                                  ))}
-                                </RadioGroup>
-                              )}
-
-                              {problem.type === "math-expression" && (
-                                <div className="space-y-3">
-                                  <div className="flex flex-col space-y-2">
-                                    <Label htmlFor={`math-answer-${problemIndex}`}>Your Answer:</Label>
-                                    <div className="flex space-x-2">
-                                      <Input
-                                        id={`math-answer-${problemIndex}`}
-                                        value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
-                                        onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
-                                        placeholder="Enter your answer (e.g., 2x + 3 or 7)"
-                                        disabled={showResults}
-                                        className="flex-1"
-                                      />
-                                    </div>
-
-                                    {showResults && (
+                                {problem.type === "multiple-choice" && problem.options && Array.isArray(problem.options) && (
+                                  <RadioGroup
+                                    value={userAnswers[activeContent.id]?.[problemIndex]?.toString() || "-1"}
+                                    onValueChange={(value) =>
+                                      handleMultipleChoiceSelect(problemIndex, Number.parseInt(value))
+                                    }
+                                    disabled={showResults}
+                                    className="space-y-3"
+                                  >
+                                    {problem.options.map((option, optionIndex) => (
                                       <div
-                                        className={`p-2 mt-2 rounded-md ${
-                                          gradeMathExpression(
+                                        key={optionIndex}
+                                        className={`flex items-center space-x-2 p-2 rounded-md ${
+                                          showResults && optionIndex === problem.correctAnswer
+                                            ? "bg-green-50 dark:bg-green-900/20"
+                                            : showResults &&
+                                                userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
+                                                optionIndex !== problem.correctAnswer
+                                              ? "bg-red-50 dark:bg-red-900/20"
+                                              : ""
+                                        }`}
+                                      >
+                                        <RadioGroupItem
+                                          value={optionIndex.toString()}
+                                          id={`option-${problemIndex}-${optionIndex}`}
+                                        />
+                                        <Label htmlFor={`option-${problemIndex}-${optionIndex}`}>
+                                          {renderLatex(option || '')}
+                                        </Label>
+
+                                        {showResults && optionIndex === problem.correctAnswer && (
+                                          <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
+                                        )}
+                                        {showResults &&
+                                          userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
+                                          optionIndex !== problem.correctAnswer && (
+                                            <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
+                                          )}
+                                      </div>
+                                    ))}
+                                  </RadioGroup>
+                                )}
+
+                                {problem.type === "math-expression" && (
+                                  <div className="space-y-3">
+                                    <div className="flex flex-col space-y-2">
+                                      <Label htmlFor={`math-answer-${problemIndex}`}>Your Answer:</Label>
+                                      <div className="flex space-x-2">
+                                        <Input
+                                          id={`math-answer-${problemIndex}`}
+                                          value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
+                                          onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
+                                          placeholder="Enter your answer (e.g., 2x + 3 or 7)"
+                                          disabled={showResults}
+                                          className="flex-1"
+                                        />
+                                      </div>
+
+                                      {showResults && (
+                                        <div
+                                          className={`p-2 mt-2 rounded-md ${
+                                            gradeMathExpression(
+                                              problem,
+                                              mathExpressionInputs[activeContent.id]?.[problemIndex],
+                                            ).correct
+                                              ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                              : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                          }`}
+                                        >
+                                          {gradeMathExpression(
                                             problem,
                                             mathExpressionInputs[activeContent.id]?.[problemIndex],
                                           ).correct
-                                            ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-                                            : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
-                                        }`}
-                                      >
-                                        {gradeMathExpression(
-                                          problem,
-                                          mathExpressionInputs[activeContent.id]?.[problemIndex],
-                                        ).correct
-                                          ? "Correct!"
-                                          : "Incorrect. The correct answer is:"}
-                                        {!gradeMathExpression(
-                                          problem,
-                                          mathExpressionInputs[activeContent.id]?.[problemIndex],
-                                        ).correct && (
-                                          <div className="font-medium mt-1">
-                                            {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
-                                              <div className="flex flex-col gap-1">
-                                                {problem.correctAnswers.map((answer, i) => (
-                                                  <div key={i}>{renderLatex(`$$${answer}$$`)}</div>
-                                                ))}
-                                              </div>
-                                            ) : (
-                                              renderLatex(`$$${problem.correctAnswer}$$`)
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {problem.type === "open-ended" && (
-                                <div className="space-y-3">
-                                  <div className="flex flex-col space-y-2">
-                                    <Label htmlFor={`open-answer-${problemIndex}`}>Your Answer:</Label>
-                                    <Textarea
-                                      id={`open-answer-${problemIndex}`}
-                                      value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
-                                      onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
-                                      placeholder="Type your answer here..."
-                                      disabled={showResults}
-                                      rows={4}
-                                    />
-
-                                    {showResults && (
-                                      <div className="p-3 mt-2 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                        <p className="font-medium text-sm">Sample Correct Answer:</p>
-                                        {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
-                                          <div className="flex flex-col gap-2 mt-1">
-                                            {problem.correctAnswers.map((answer, i) => (
-                                              <p key={i}>{answer}</p>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          <p className="mt-1">{problem.correctAnswer}</p>
-                                        )}
-
-                                        {problem.keywords.length > 0 && (
-                                          <div className="mt-3">
-                                            <p className="font-medium text-sm">Keywords Found in Your Answer:</p>
-                                            <div className="flex flex-wrap gap-1 mt-1">
-                                              {problem.keywords.map((keyword, keywordIndex) => {
-                                                const isMatched = openEndedAnswers[activeContent.id]?.[problemIndex]
-                                                  ?.toLowerCase()
-                                                  .includes(keyword.toLowerCase())
-                                                return (
-                                                  <Badge
-                                                    key={keywordIndex}
-                                                    variant={isMatched ? "default" : "outline"}
-                                                    className={isMatched ? "bg-green-500" : ""}
-                                                  >
-                                                    {keyword}
-                                                    {isMatched && <CheckCircle2 className="w-3 h-3 ml-1" />}
-                                                  </Badge>
-                                                )
-                                              })}
+                                            ? "Correct!"
+                                            : "Incorrect. The correct answer is:"}
+                                          {!gradeMathExpression(
+                                            problem,
+                                            mathExpressionInputs[activeContent.id]?.[problemIndex],
+                                          ).correct && (
+                                            <div className="font-medium mt-1">
+                                              {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
+                                                <div className="flex flex-col gap-1">
+                                                  {problem.correctAnswers.map((answer, i) => (
+                                                    <div key={i}>{renderLatex(answer ? `$$${answer}$$` : '')}</div>
+                                                  ))}
+                                                </div>
+                                              ) : (
+                                                renderLatex(problem.correctAnswer ? `$$${problem.correctAnswer}$$` : '$$\\text{No answer provided}$$')
+                                              )}
                                             </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {showResults && problem.explanation && (
-                                <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                  <p className="font-medium text-sm">Explanation:</p>
-                                  <p className="text-sm">{renderLatex(problem.explanation)}</p>
-                                </div>
-                              )}
+                                {problem.type === "open-ended" && (
+                                  <div className="space-y-3">
+                                    <div className="flex flex-col space-y-2">
+                                      <Label htmlFor={`open-answer-${problemIndex}`}>Your Answer:</Label>
+                                      <Textarea
+                                        id={`open-answer-${problemIndex}`}
+                                        value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
+                                        onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
+                                        placeholder="Type your answer here..."
+                                        disabled={showResults}
+                                        rows={4}
+                                      />
+
+                                      {showResults && (
+                                        <div className="p-3 mt-2 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                          <p className="font-medium text-sm">Sample Correct Answer:</p>
+                                          {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
+                                            <div className="flex flex-col gap-2 mt-1">
+                                              {problem.correctAnswers.map((answer, i) => (
+                                                <p key={i}>{answer}</p>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <p className="mt-1">{problem.correctAnswer || 'No answer provided'}</p>
+                                          )}
+
+                                          {problem.keywords && Array.isArray(problem.keywords) && problem.keywords.length > 0 && (
+                                            <div className="mt-3">
+                                              <p className="font-medium text-sm">Keywords Found in Your Answer:</p>
+                                              <div className="flex flex-wrap gap-1 mt-1">
+                                                {problem.keywords.map((keyword, keywordIndex) => {
+                                                  const isMatched = openEndedAnswers[activeContent.id]?.[problemIndex]
+                                                    ?.toLowerCase()
+                                                    .includes(keyword.toLowerCase())
+                                                  return (
+                                                    <Badge
+                                                      key={keywordIndex}
+                                                      variant={isMatched ? "default" : "outline"}
+                                                      className={isMatched ? "bg-green-500" : ""}
+                                                    >
+                                                      {keyword}
+                                                      {isMatched && <CheckCircle2 className="w-3 h-3 ml-1" />}
+                                                    </Badge>
+                                                  )
+                                                })}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {showResults && problem.explanation && (
+                                  <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                    <p className="font-medium text-sm">Explanation:</p>
+                                    <p className="text-sm">{renderLatex(problem.explanation)}</p>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
 
                       {!showResults && (
                         <Button
@@ -1186,7 +1199,7 @@ export default function StudentCurriculum() {
                     </div>
                   ) : (
                     <div className="p-4 border rounded-lg">
-                      <p>{renderLatex(activeContent.description)}</p>
+                      <p>{renderLatex(activeContent.description || '')}</p>
                       <p className="mt-4 text-sm text-muted-foreground">
                         This content doesn't have any problems to solve.
                       </p>
