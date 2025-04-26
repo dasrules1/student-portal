@@ -1544,77 +1544,141 @@ class StorageService {
 
   // Enrollment
   async enrollStudent(classId: string, studentId: string): Promise<boolean> {
+    console.log(`Enrolling student ${studentId} in class ${classId}`);
+    
+    if (!classId || !studentId) {
+      console.error("Invalid class ID or student ID for enrollment");
+      return false;
+    }
+    
     try {
-      console.log(`Attempting to enroll student ${studentId} in class ${classId}`);
-      
-      // First, verify both class and student exist
-      const classRef = doc(db, 'classes', classId);
-      const studentRef = doc(db, 'users', studentId);
-      
-      const [classSnap, studentSnap] = await Promise.all([
-        getDoc(classRef),
-        getDoc(studentRef)
-      ]);
-      
-      if (!classSnap.exists()) {
-        console.error(`Class ${classId} not found`);
-        // Fall back to persistent storage
-        return persistentStorage.enrollStudent(classId, studentId);
-      }
-      
-      if (!studentSnap.exists()) {
-        console.error(`Student ${studentId} not found`);
-        // Fall back to persistent storage
-        return persistentStorage.enrollStudent(classId, studentId);
-      }
-      
-      const classData = classSnap.data();
-      const studentData = studentSnap.data();
-      
-      // Validate student role
-      if (studentData.role !== 'student') {
-        console.error(`User ${studentId} is not a student`);
+      // First get the class to update
+      const classToUpdate = await this.getClassById(classId);
+      if (!classToUpdate) {
+        console.error(`Class ${classId} not found for enrollment`);
         return false;
       }
       
-      const enrolledStudents = classData.enrolledStudents || [];
-      const studentClasses = studentData.classes || [];
+      // Get the student to verify they exist
+      const studentToEnroll = await this.getUserById(studentId);
+      if (!studentToEnroll) {
+        console.error(`Student ${studentId} not found for enrollment`);
+        return false;
+      }
+      
+      // Initialize enrolledStudents array if it doesn't exist
+      if (!classToUpdate.enrolledStudents) {
+        classToUpdate.enrolledStudents = [];
+      } else if (!Array.isArray(classToUpdate.enrolledStudents)) {
+        // Convert to array if it's not already
+        classToUpdate.enrolledStudents = [];
+      }
       
       // Check if student is already enrolled
-      if (enrolledStudents.includes(studentId)) {
+      if (classToUpdate.enrolledStudents.includes(studentId)) {
         console.log(`Student ${studentId} is already enrolled in class ${classId}`);
+        
+        // Still make sure we have a direct enrollment record
+        this.storeStudentEnrollment(studentId, classId);
+        
         return true;
       }
       
-      // Add student to class
-      const updatedEnrolledStudents = [...enrolledStudents, studentId];
-      const updatedClassData = {
-        ...classData,
-        enrolledStudents: updatedEnrolledStudents
-      };
+      // Add student to enrolledStudents array
+      classToUpdate.enrolledStudents.push(studentId);
       
-      // Update class in Firestore
-      await updateDoc(classRef, updatedClassData);
-      
-      // Update student in Firestore
-      await updateDoc(studentRef, {
-        classes: [...studentClasses, classId]
+      // Update the class
+      await this.updateClass(classId, { 
+        enrolledStudents: classToUpdate.enrolledStudents,
+        updatedAt: new Date().toISOString()
       });
       
-      // Update local cache
-      const index = this.classes.findIndex(cls => cls.id === classId);
-      if (index !== -1) {
-        this.classes[index] = { ...this.classes[index], ...updatedClassData };
+      // Update student's classes list
+      if (!studentToEnroll.classes) {
+        studentToEnroll.classes = [];
+      }
+      if (!studentToEnroll.classes.includes(classId)) {
+        studentToEnroll.classes.push(classId);
+        await this.updateUser(studentId, { 
+          classes: studentToEnroll.classes 
+        });
       }
       
-      // Also update in persistent storage
-      persistentStorage.enrollStudent(classId, studentId);
+      // Make sure we store a direct enrollment record
+      this.storeStudentEnrollment(studentId, classId);
       
-      console.log(`Student ${studentId} enrolled in class ${classId} successfully`);
+      // Update enrollment in persistent storage as well
+      try {
+        persistentStorage.enrollStudent(classId, studentId);
+      } catch (persistentError) {
+        console.error("Error enrolling in persistent storage:", persistentError);
+      }
+      
+      console.log(`Successfully enrolled student ${studentId} in class ${classId}`);
       return true;
     } catch (error) {
-      console.error(`Error enrolling student ${studentId} in class ${classId}:`, error);
-      return persistentStorage.enrollStudent(classId, studentId);
+      console.error("Error enrolling student:", error);
+      return false;
+    }
+  }
+
+  // Save a direct record of student enrollment for easier lookup
+  private storeStudentEnrollment(studentId: string, classId: string): void {
+    if (typeof window === 'undefined' || !studentId || !classId) return;
+    
+    try {
+      // Store in a format that's easy to look up by student ID
+      const enrollmentsKey = `student-enrollments-${studentId}`;
+      
+      // Get existing enrollments
+      let enrollments: string[] = [];
+      const existingData = localStorage.getItem(enrollmentsKey);
+      
+      if (existingData) {
+        try {
+          const parsed = JSON.parse(existingData);
+          if (Array.isArray(parsed)) {
+            enrollments = parsed;
+          }
+        } catch (e) {
+          console.warn("Error parsing existing enrollments, creating new array");
+        }
+      }
+      
+      // Add this class if not already included
+      if (!enrollments.includes(classId)) {
+        enrollments.push(classId);
+      }
+      
+      // Save updated enrollments
+      localStorage.setItem(enrollmentsKey, JSON.stringify(enrollments));
+      console.log(`Stored direct enrollment record for student ${studentId} with ${enrollments.length} classes`);
+      
+      // Also store in another format to lookup students by class
+      const classStudentsKey = `class-students-${classId}`;
+      let classStudents: string[] = [];
+      const existingClassData = localStorage.getItem(classStudentsKey);
+      
+      if (existingClassData) {
+        try {
+          const parsed = JSON.parse(existingClassData);
+          if (Array.isArray(parsed)) {
+            classStudents = parsed;
+          }
+        } catch (e) {
+          console.warn("Error parsing existing class students, creating new array");
+        }
+      }
+      
+      // Add this student if not already included
+      if (!classStudents.includes(studentId)) {
+        classStudents.push(studentId);
+      }
+      
+      // Save updated class students
+      localStorage.setItem(classStudentsKey, JSON.stringify(classStudents));
+    } catch (error) {
+      console.error("Error storing enrollment record:", error);
     }
   }
 
@@ -1653,7 +1717,150 @@ class StorageService {
     }
   }
 
-  // ... rest of the file - files, etc. ...
+  // Get classes by student ID - directly from all available sources
+  async getClassesByStudentId(studentId: string): Promise<Class[]> {
+    console.log(`Storage: Getting classes for student ID ${studentId}`);
+    
+    if (!studentId) {
+      console.warn("Storage: Invalid student ID provided");
+      return [];
+    }
+    
+    // Try multiple sources to find the student's enrolled classes
+    let enrolledClasses: Class[] = [];
+    
+    // 1. First check our cached classes
+    if (this.classes && Array.isArray(this.classes) && this.classes.length > 0) {
+      const cachedEnrolledClasses = this.classes.filter(cls => 
+        cls.enrolledStudents && 
+        Array.isArray(cls.enrolledStudents) && 
+        cls.enrolledStudents.includes(studentId)
+      );
+      
+      if (cachedEnrolledClasses.length > 0) {
+        console.log(`Storage: Found ${cachedEnrolledClasses.length} classes in cache for student ${studentId}`);
+        enrolledClasses = [...cachedEnrolledClasses];
+      }
+    }
+    
+    // 2. Try to get from Firestore
+    try {
+      const auth = getAuth();
+      if (auth.currentUser) {
+        const db = getFirestore();
+        const classesRef = collection(db, 'classes');
+        // Query for classes where this student is enrolled
+        const q = query(classesRef, where('enrolledStudents', 'array-contains', studentId));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const firestoreClasses = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          } as Class));
+          
+          console.log(`Storage: Found ${firestoreClasses.length} classes in Firestore for student ${studentId}`);
+          
+          // Merge with existing classes, avoiding duplicates
+          firestoreClasses.forEach(cls => {
+            if (!enrolledClasses.some(existingCls => existingCls.id === cls.id)) {
+              enrolledClasses.push(cls);
+            }
+          });
+        }
+      }
+    } catch (firestoreError) {
+      console.error("Storage: Error getting classes from Firestore:", firestoreError);
+    }
+    
+    // 3. Try persistent storage
+    try {
+      const persistentClasses = persistentStorage.getClassesByStudentId(studentId);
+      if (persistentClasses && persistentClasses.length > 0) {
+        console.log(`Storage: Found ${persistentClasses.length} classes in persistent storage for student ${studentId}`);
+        
+        // Merge with existing classes, avoiding duplicates
+        persistentClasses.forEach(cls => {
+          if (!enrolledClasses.some(existingCls => existingCls.id === cls.id)) {
+            enrolledClasses.push(cls);
+          }
+        });
+      }
+    } catch (persistentError) {
+      console.error("Storage: Error getting classes from persistent storage:", persistentError);
+    }
+    
+    // 4. Last resort - check localStorage directly
+    if (typeof window !== "undefined") {
+      try {
+        // First check for a direct enrollment record
+        const enrollmentsKey = `student-enrollments-${studentId}`;
+        const enrollmentsJson = localStorage.getItem(enrollmentsKey);
+        
+        if (enrollmentsJson) {
+          const enrollmentData = JSON.parse(enrollmentsJson);
+          if (Array.isArray(enrollmentData) && enrollmentData.length > 0) {
+            console.log(`Storage: Found direct enrollment data in localStorage for student ${studentId}`);
+            
+            // Look up each class by ID
+            for (const classId of enrollmentData) {
+              // Skip if we already have this class
+              if (enrolledClasses.some(cls => cls.id === classId)) continue;
+              
+              // Try to get the class details
+              const classData = await this.getClassById(classId);
+              if (classData) {
+                enrolledClasses.push(classData);
+              }
+            }
+          }
+        }
+        
+        // If still no classes, try to parse all classes from localStorage
+        if (enrolledClasses.length === 0) {
+          const allClassesJson = localStorage.getItem('classes');
+          if (allClassesJson) {
+            try {
+              const allClasses = JSON.parse(allClassesJson);
+              if (Array.isArray(allClasses)) {
+                const filtered = allClasses.filter(cls => 
+                  cls && cls.enrolledStudents && 
+                  Array.isArray(cls.enrolledStudents) && 
+                  cls.enrolledStudents.includes(studentId)
+                );
+                
+                if (filtered.length > 0) {
+                  console.log(`Storage: Found ${filtered.length} classes in localStorage for student ${studentId}`);
+                  filtered.forEach(cls => {
+                    if (!enrolledClasses.some(existingCls => existingCls.id === cls.id)) {
+                      enrolledClasses.push(cls);
+                    }
+                  });
+                }
+              }
+            } catch (parseError) {
+              console.error("Storage: Error parsing classes from localStorage:", parseError);
+            }
+          }
+        }
+      } catch (localStorageError) {
+        console.error("Storage: Error accessing localStorage:", localStorageError);
+      }
+    }
+    
+    console.log(`Storage: Returning ${enrolledClasses.length} total enrolled classes for student ${studentId}`);
+    // Update our cache with any new classes we found
+    enrolledClasses.forEach(cls => {
+      const existingIndex = this.classes.findIndex(c => c.id === cls.id);
+      if (existingIndex >= 0) {
+        this.classes[existingIndex] = cls;
+      } else {
+        this.classes.push(cls);
+      }
+    });
+    
+    return enrolledClasses;
+  }
 }
 
 // Export a singleton instance

@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge"
 import { persistentStorage } from '@/lib/persistentStorage'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from "@/components/ui/use-toast"
+import { PersistentStorage } from "@/lib/persistentStorage"
+import { sessionManager } from "@/lib/session"
 
 // Define interfaces for data structures
 interface User {
@@ -191,28 +193,163 @@ export default function StudentAssignments() {
 
   const getClassesForStudent = async (studentId: string) => {
     try {
-      // Try specialized method if available
+      // Try the direct method from storage service first
+      try {
+        const directClasses = await storage.getClassesByStudentId(studentId);
+        if (directClasses && Array.isArray(directClasses) && directClasses.length > 0) {
+          console.log(`Found ${directClasses.length} classes directly from storage service`);
+          
+          // Log each class for debugging
+          directClasses.forEach(cls => {
+            console.log(`- Student enrolled in class: ${cls.id} - ${cls.name}`);
+          });
+          
+          return directClasses;
+        }
+      } catch (directError) {
+        console.error("Error using direct getClassesByStudentId method:", directError);
+      }
+      
+      // Try specialized method from persistentStorage if available
       if (typeof persistentStorage.getClassesByStudentId === 'function') {
-        return persistentStorage.getClassesByStudentId(studentId);
+        const persistentClasses = persistentStorage.getClassesByStudentId(studentId);
+        if (persistentClasses && Array.isArray(persistentClasses) && persistentClasses.length > 0) {
+          console.log(`Found ${persistentClasses.length} classes from persistent storage`);
+          
+          // Log each class for debugging
+          persistentClasses.forEach(cls => {
+            console.log(`- Student enrolled in class: ${cls.id} - ${cls.name}`);
+          });
+          
+          return persistentClasses;
+        }
       }
       
       // Fallback to getting all classes and filtering
-      const allClasses = await persistentStorage.getAllClasses();
-      return allClasses.filter(cls => 
-        cls.enrolledStudents && 
-        Array.isArray(cls.enrolledStudents) && 
-        cls.enrolledStudents.includes(studentId)
-      );
-    } catch (error) {
-      console.error("Error getting classes for student:", error);
+      console.log("Using fallback method: getting all classes and filtering");
       
-      // Last resort: try storage directly
-      const allClasses = await storage.getClasses();
-      return allClasses.filter(cls => 
-        cls.enrolledStudents && 
-        Array.isArray(cls.enrolledStudents) && 
-        cls.enrolledStudents.includes(studentId)
-      );
+      // Try to get from localStorage first
+      if (typeof window !== 'undefined') {
+        try {
+          // Check for direct enrollment record
+          const enrollmentsKey = `student-enrollments-${studentId}`;
+          const enrollmentsJson = localStorage.getItem(enrollmentsKey);
+          
+          if (enrollmentsJson) {
+            const enrollments = JSON.parse(enrollmentsJson);
+            if (Array.isArray(enrollments) && enrollments.length > 0) {
+              console.log(`Found direct enrollment record for student ${studentId} with ${enrollments.length} classes`);
+              
+              // Get details for each enrolled class
+              const enrolledClasses = [];
+              for (const classId of enrollments) {
+                const classDetails = await storage.getClassById(classId);
+                if (classDetails) {
+                  enrolledClasses.push(classDetails);
+                }
+              }
+              
+              if (enrolledClasses.length > 0) {
+                return enrolledClasses;
+              }
+            }
+          }
+          
+          // Try classes in localStorage directly
+          const classesJson = localStorage.getItem('classes');
+          if (classesJson) {
+            const allClasses = JSON.parse(classesJson);
+            if (Array.isArray(allClasses) && allClasses.length > 0) {
+              const filteredClasses = allClasses.filter(cls => 
+                cls && cls.enrolledStudents && 
+                Array.isArray(cls.enrolledStudents) && 
+                cls.enrolledStudents.includes(studentId)
+              );
+              
+              if (filteredClasses.length > 0) {
+                console.log(`Found ${filteredClasses.length} classes in localStorage`);
+                return filteredClasses;
+              }
+            }
+          }
+        } catch (localStorageError) {
+          console.error("Error checking localStorage for enrollments:", localStorageError);
+        }
+      }
+      
+      // Get all classes from persistent storage
+      const allClasses = persistentStorage.getAllClasses();
+      if (allClasses && Array.isArray(allClasses) && allClasses.length > 0) {
+        console.log(`Checking ${allClasses.length} classes from persistent storage for student ${studentId}`);
+        
+        const filteredClasses = allClasses.filter(cls => 
+          cls && cls.enrolledStudents && 
+          Array.isArray(cls.enrolledStudents) && 
+          cls.enrolledStudents.includes(studentId)
+        );
+        
+        if (filteredClasses.length > 0) {
+          console.log(`Found ${filteredClasses.length} classes with enrollment check`);
+          return filteredClasses;
+        }
+      }
+      
+      // Last resort: try getting all classes from storage service
+      console.log("Last resort: getting all classes from storage service");
+      const storageClasses = await storage.getClasses();
+      if (storageClasses && Array.isArray(storageClasses) && storageClasses.length > 0) {
+        console.log(`Checking ${storageClasses.length} classes from storage service`);
+        
+        // Perform a loose check to handle different data formats
+        const enrolledClasses = storageClasses.filter(cls => {
+          // Skip invalid classes
+          if (!cls) return false;
+          
+          // Try to match by student ID in enrolledStudents array
+          if (cls.enrolledStudents && Array.isArray(cls.enrolledStudents)) {
+            const isDirectlyEnrolled = cls.enrolledStudents.includes(studentId);
+            if (isDirectlyEnrolled) {
+              console.log(`Found direct enrollment in class ${cls.id} - ${cls.name}`);
+              return true;
+            }
+          }
+          
+          // Check if student ID is in the class's students array
+          if (cls.students && Array.isArray(cls.students)) {
+            const isInStudentsArray = cls.students.includes(studentId);
+            if (isInStudentsArray) {
+              console.log(`Found student in class.students array: ${cls.id} - ${cls.name}`);
+              return true;
+            }
+          }
+          
+          // Check if student's classes list includes this class
+          const currentUser = sessionManager.getCurrentUser();
+          if (currentUser && currentUser.user) {
+            // Cast the user to any type to bypass TypeScript checks
+            const userAny = currentUser.user as any;
+            const userClasses = userAny.classes || [];
+            
+            if (Array.isArray(userClasses) && userClasses.includes(cls.id)) {
+              console.log(`Found class ID in user's classes list: ${cls.id} - ${cls.name}`);
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        if (enrolledClasses.length > 0) {
+          console.log(`Found ${enrolledClasses.length} enrolled classes with comprehensive checks`);
+          return enrolledClasses;
+        }
+      }
+      
+      console.warn(`No enrolled classes found for student ${studentId} after trying all methods`);
+      return [];
+    } catch (error) {
+      console.error("Critical error in getClassesForStudent:", error);
+      return [];
     }
   };
 
@@ -220,12 +357,21 @@ export default function StudentAssignments() {
     if (!studentId) return;
     
     setLoading(true);
+    
+    // First check if we have any published assignments directly, regardless of enrollment
+    const directAssignments = await checkForDirectPublishedAssignments(studentId);
+    if (directAssignments && directAssignments.length > 0) {
+      console.log(`Found ${directAssignments.length} direct published assignments`);
+      setAssignments(directAssignments);
+      setLoading(false);
+      return;
+    }
+    
     try {
       // Get all classes the student is enrolled in
       const enrolledClasses = await getClassesForStudent(studentId);
       if (!enrolledClasses || enrolledClasses.length === 0) {
         console.log('Student is not enrolled in any classes');
-        setLoading(false);
         
         // Try one more approach to get ALL classes
         try {
@@ -263,23 +409,24 @@ export default function StudentAssignments() {
             if (manuallyEnrolledClasses.length > 0) {
               console.log(`Found ${manuallyEnrolledClasses.length} enrolled classes with manual checking`);
               // Continue with these classes
-              processEnrolledClasses(manuallyEnrolledClasses, studentId);
+              await processEnrolledClasses(manuallyEnrolledClasses, studentId);
               return;
             }
           }
           
-          toast({
-            title: "Not enrolled in any classes",
-            description: "You are not currently enrolled in any classes. Please contact your teacher if this is an error.",
-            variant: "default"
-          });
+          // Rather than showing not enrolled message, just set loading to false
+          // and let the published content check handle showing appropriate UI
+          setLoading(false);
+          
+          // This is a secondary check - we'll fall back to checking for any published content 
+          // before showing the "not enrolled" message
+          await checkAllClassesForPublishedContent(studentId);
         } catch (finalError) {
           console.error("Final attempt to find classes failed:", finalError);
-          toast({
-            title: "Error loading classes",
-            description: "There was a problem loading your enrolled classes. Please try refreshing the page.",
-            variant: "destructive"
-          });
+          setLoading(false);
+          
+          // Try as a last resort
+          await checkAllClassesForPublishedContent(studentId);
         }
         return;
       }
@@ -295,9 +442,100 @@ export default function StudentAssignments() {
         variant: "destructive"
       });
       setLoading(false);
+      
+      // Try as a last resort
+      await checkAllClassesForPublishedContent(studentId);
     }
   };
   
+  // Check for published assignments without requiring class enrollment
+  const checkForDirectPublishedAssignments = async (studentId: string): Promise<EnrichedAssignment[]> => {
+    try {
+      if (typeof window === 'undefined') return [];
+      
+      // Check for direct assignment publications in localStorage
+      const allAssignments: EnrichedAssignment[] = [];
+      
+      // Get all items from localStorage that might be published assignments
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        
+        // Check if it's a published content key
+        if (key.startsWith('published-contents-')) {
+          try {
+            const content = localStorage.getItem(key);
+            if (content) {
+              const parsedContent = JSON.parse(content);
+              if (Array.isArray(parsedContent)) {
+                // Filter for assignment and quiz type content
+                const assignments = parsedContent.filter(item => 
+                  item && item.isPublished === true && 
+                  (item.type === 'assignment' || item.type === 'quiz')
+                );
+                
+                if (assignments.length > 0) {
+                  console.log(`Found ${assignments.length} assignments in ${key}`);
+                  allAssignments.push(...assignments);
+                }
+              }
+            }
+          } catch (keyError) {
+            console.warn(`Error processing key ${key}:`, keyError);
+          }
+        }
+      }
+      
+      // If we found assignments, sort them by due date
+      if (allAssignments.length > 0) {
+        return allAssignments.sort((a, b) => {
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        });
+      }
+      
+      return [];
+    } catch (error) {
+      console.error("Error checking for direct published assignments:", error);
+      return [];
+    }
+  };
+
+  // Check all available classes for published content
+  const checkAllClassesForPublishedContent = async (studentId: string) => {
+    try {
+      // Get all classes from storage
+      const allClasses = await storage.getClasses();
+      if (!allClasses || !Array.isArray(allClasses) || allClasses.length === 0) {
+        console.log("No classes available to check for content");
+        
+        // Now we can show the not enrolled message
+        toast({
+          title: "Not enrolled in any classes",
+          description: "You are not currently enrolled in any classes. Please contact your teacher if this is an error.",
+          variant: "default"
+        });
+        
+        return;
+      }
+      
+      console.log(`Checking ${allClasses.length} classes for published content`);
+      
+      // Process all classes to look for published content
+      await processEnrolledClasses(allClasses, studentId);
+    } catch (error) {
+      console.error("Error checking all classes for content:", error);
+      
+      // Now show the error message
+      toast({
+        title: "Error loading classes",
+        description: "There was a problem loading your enrolled classes. Please try refreshing the page.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Separate function to process enrolled classes and extract assignments
   const processEnrolledClasses = async (enrolledClasses: any[], studentId: string) => {
     const allAssignments: EnrichedAssignment[] = [];
