@@ -16,15 +16,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { storage } from "@/lib/storage"
 import { Badge } from "@/components/ui/badge"
-import { PersistentStorage } from '@/lib/persistentStorage'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from "@/components/ui/use-toast"
 import { sessionManager } from "@/lib/session"
 import { getDoc, doc, collection, query, where, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
-
-// Initialize persistentStorage as a global instance to avoid reference errors
-const persistentStorage = new PersistentStorage();
 
 // Define interfaces for data structures
 interface User {
@@ -74,20 +70,26 @@ export default function StudentAssignments() {
   const [pendingAssignments, setPendingAssignments] = useState<EnrichedAssignment[]>([])
 
   useEffect(() => {
-    // Initialize persistent storage
-    const initPersistentStorage = async () => {
+    // Pre-initialize storage service
+    const initStorage = async () => {
       try {
-        // This will properly initialize the PersistentStorage module
+        console.log("Pre-initializing storage service to ensure classes can be fetched");
+        // Load users first to initialize internal storage
         await storage.getUsers();
+        // Then load classes to make sure they're cached
+        await storage.getClasses();
+        console.log("Storage service pre-initialization complete");
       } catch (error) {
-        console.error("Error initializing persistent storage:", error);
+        console.error("Error during storage pre-initialization:", error);
       }
     };
     
-    initPersistentStorage();
-    
-    // Load current user and check authorization
-    const checkAuth = async () => {
+    // Sequence the initialization and authentication
+    const initialize = async () => {
+      // First initialize storage
+      await initStorage();
+      
+      // Then check authentication
       try {
         // Try to get user from localStorage directly first
         let user;
@@ -132,13 +134,24 @@ export default function StudentAssignments() {
             }
           }
           
-          // If we still don't have a user, try persistentStorage
+          // Try session manager instead of direct persistentStorage
           if (!user) {
             try {
-              user = await persistentStorage.getCurrentUser();
-              console.log("Found user from persistentStorage:", user);
+              const sessionUser = sessionManager.getCurrentUser();
+              if (sessionUser && sessionUser.user) {
+                user = {
+                  id: sessionUser.user.uid || sessionUser.user.id,
+                  name: sessionUser.user.displayName || sessionUser.user.name || "Student",
+                  email: sessionUser.user.email,
+                  role: sessionUser.role || "student",
+                  password: "",
+                  status: "active",
+                  classes: []
+                };
+                console.log("Found user from session manager:", user);
+              }
             } catch (e) {
-              console.error("Error getting user from persistentStorage:", e);
+              console.error("Error getting user from session manager:", e);
             }
           }
           
@@ -204,7 +217,7 @@ export default function StudentAssignments() {
       }
     };
     
-    checkAuth();
+    initialize();
   }, []);
 
   const getClassesForStudent = async (studentId: string) => {
@@ -247,20 +260,8 @@ export default function StudentAssignments() {
         console.error("Error getting classes via storage service proxy:", proxyError);
       }
       
-      // Try specialized method from persistentStorage if available
-      if (typeof persistentStorage.getClassesByStudentId === 'function') {
-        const persistentClasses = persistentStorage.getClassesByStudentId(studentId);
-        if (persistentClasses && Array.isArray(persistentClasses) && persistentClasses.length > 0) {
-          console.log(`Found ${persistentClasses.length} classes from persistent storage`);
-          
-          // Log each class for debugging
-          persistentClasses.forEach(cls => {
-            console.log(`- Student enrolled in class: ${cls.id} - ${cls.name}`);
-          });
-          
-          return persistentClasses;
-        }
-      }
+      // Skip direct persistentStorage calls as they're causing reference errors
+      // Instead, always rely on the storage service or localStorage
       
       // Fallback to getting all classes and filtering
       console.log("Using fallback method: getting all classes and filtering");
@@ -311,23 +312,6 @@ export default function StudentAssignments() {
           }
         } catch (localStorageError) {
           console.error("Error checking localStorage for enrollments:", localStorageError);
-        }
-      }
-      
-      // Get all classes from persistent storage
-      const allClasses = persistentStorage.getAllClasses();
-      if (allClasses && Array.isArray(allClasses) && allClasses.length > 0) {
-        console.log(`Checking ${allClasses.length} classes from persistent storage for student ${studentId}`);
-        
-        const filteredClasses = allClasses.filter(cls => 
-          cls && cls.enrolledStudents && 
-          Array.isArray(cls.enrolledStudents) && 
-          cls.enrolledStudents.includes(studentId)
-        );
-        
-        if (filteredClasses.length > 0) {
-          console.log(`Found ${filteredClasses.length} classes with enrollment check`);
-          return filteredClasses;
         }
       }
       
