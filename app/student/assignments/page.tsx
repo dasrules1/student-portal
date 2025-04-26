@@ -310,165 +310,169 @@ export default function StudentAssignments() {
         console.log(`Loading curriculum for class: ${classItem.id}`);
         let foundPublishedContent = false;
         
-        // 1. First try to get filtered curriculum with published content
-        const curriculum = await storage.getCurriculum(classItem.id, { id: studentId, role: "student" } as User);
+        // Try multiple sources for published content, in order of preference
         
-        if (curriculum && curriculum.content) {
-          console.log("Loaded curriculum structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
-          
-          // Handle different curriculum structures
-          const extractAssignmentsFromContent = (content: any) => {
-            let extractedAssignments: EnrichedAssignment[] = [];
-            
-            // Direct assignments array at top level
-            if (content.assignments && Array.isArray(content.assignments)) {
-              const assignments = content.assignments
-                .filter((item: Content) => item && item.isPublished === true)
-                .map((assignment: Content) => ({
-                  ...assignment,
-                  className: classItem.name,
-                  classId: classItem.id
-                }));
+        // 1. First try direct published content array (newest format)
+        try {
+          if (typeof window !== 'undefined') {
+            const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
+            if (directPublishedContent) {
+              const parsedContent = JSON.parse(directPublishedContent);
+              console.log(`Found ${parsedContent.length} published contents in direct format`);
               
-              if (assignments.length > 0) {
-                console.log(`Found ${assignments.length} published assignments in class ${classItem.name}`);
-                extractedAssignments.push(...assignments);
+              if (Array.isArray(parsedContent) && parsedContent.length > 0) {
+                // These are already filtered for published status
+                const assignmentContent = parsedContent.filter(item => 
+                  item && (item.type === 'assignment' || item.type === 'quiz')
+                );
+                
+                if (assignmentContent.length > 0) {
+                  allAssignments.push(...assignmentContent);
+                  foundPublishedContent = true;
+                  foundAnyPublishedContent = true;
+                  
+                  // Check for assignments due soon
+                  const now = new Date();
+                  const oneWeekFromNow = new Date();
+                  oneWeekFromNow.setDate(now.getDate() + 7);
+                  
+                  const pendingAssignments = assignmentContent.filter((assignment: EnrichedAssignment) => {
+                    if (!assignment.dueDate) return false;
+                    const dueDate = new Date(assignment.dueDate);
+                    return dueDate > now && dueDate <= oneWeekFromNow;
+                  });
+                  
+                  dueAssignments.push(...pendingAssignments);
+                }
+              }
+            }
+          }
+        } catch (directError) {
+          console.warn(`Error accessing direct published content: ${directError}`);
+        }
+        
+        // Continue to try other methods if we haven't found anything
+        if (!foundPublishedContent) {
+          // 2. Try the published curriculum structure from storage API
+          try {
+            const curriculum = await storage.getCurriculum(classItem.id, { id: studentId, role: "student" } as User);
+            
+            if (curriculum && curriculum.content) {
+              console.log("Loaded curriculum structure from API:", JSON.stringify(curriculum).substring(0, 200) + "...");
+              
+              // Extract assignments from curriculum content
+              const extractedAssignments = extractAssignmentsFromContent(curriculum.content, classItem);
+              
+              if (extractedAssignments.length > 0) {
+                allAssignments.push(...extractedAssignments);
                 foundPublishedContent = true;
                 foundAnyPublishedContent = true;
+                
+                // Check for assignments due soon
+                const now = new Date();
+                const oneWeekFromNow = new Date();
+                oneWeekFromNow.setDate(now.getDate() + 7);
+                
+                const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
+                  if (!assignment.dueDate) return false;
+                  const dueDate = new Date(assignment.dueDate);
+                  return dueDate > now && dueDate <= oneWeekFromNow;
+                });
+                
+                dueAssignments.push(...pendingAssignments);
+              }
+            }
+          } catch (apiError) {
+            console.warn(`Error getting curriculum from API: ${apiError}`);
+          }
+        }
+        
+        // 3. Try legacy published formats from localStorage
+        if (!foundPublishedContent && typeof window !== 'undefined') {
+          try {
+            // Try published curriculum format
+            const publishedCurriculum = localStorage.getItem(`published-curriculum-${classItem.id}`);
+            if (publishedCurriculum) {
+              const parsedCurriculum = JSON.parse(publishedCurriculum);
+              console.log("Found published curriculum in localStorage:", JSON.stringify(parsedCurriculum).substring(0, 200) + "...");
+              
+              if (parsedCurriculum.lessons && Array.isArray(parsedCurriculum.lessons)) {
+                const extractedAssignments = extractAssignmentsFromContent(parsedCurriculum, classItem);
+                
+                if (extractedAssignments.length > 0) {
+                  allAssignments.push(...extractedAssignments);
+                  foundPublishedContent = true;
+                  foundAnyPublishedContent = true;
+                  
+                  // Check for assignments due soon
+                  const now = new Date();
+                  const oneWeekFromNow = new Date();
+                  oneWeekFromNow.setDate(now.getDate() + 7);
+                  
+                  const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
+                    if (!assignment.dueDate) return false;
+                    const dueDate = new Date(assignment.dueDate);
+                    return dueDate > now && dueDate <= oneWeekFromNow;
+                  });
+                  
+                  dueAssignments.push(...pendingAssignments);
+                }
               }
             }
             
-            // Process lessons array
-            if (content.lessons && Array.isArray(content.lessons)) {
-              console.log(`Processing ${content.lessons.length} lessons in class ${classItem.name}`);
-              
-              content.lessons.forEach((lesson: any) => {
-                // Extract direct assignments from lesson
-                if (lesson.assignments && Array.isArray(lesson.assignments)) {
-                  const assignments = lesson.assignments
-                    .filter((item: Content) => item && item.isPublished === true)
-                    .map((assignment: Content) => ({
-                      ...assignment,
-                      className: classItem.name,
-                      classId: classItem.id,
-                      lessonId: lesson.id,
-                      lessonTitle: lesson.title
-                    }));
-                  
-                  if (assignments.length > 0) {
-                    extractedAssignments.push(...assignments);
-                    foundPublishedContent = true;
-                    foundAnyPublishedContent = true;
-                  }
-                }
+            // Try legacy indexed format
+            if (!foundPublishedContent) {
+              const legacyFormat = localStorage.getItem(`published-curriculum-${classItem.id}-legacy`);
+              if (legacyFormat) {
+                const parsedLegacy = JSON.parse(legacyFormat);
+                console.log("Found legacy published format in localStorage");
                 
-                // Extract from lesson contents array
-                if (lesson.contents && Array.isArray(lesson.contents)) {
-                  const assignmentContents = lesson.contents
-                    .filter((content: Content) => 
-                      content && 
-                      content.isPublished === true && 
-                      (content.type === 'assignment' || content.type === 'quiz')
-                    )
-                    .map((content: Content) => ({
-                      ...content,
-                      classId: classItem.id,
-                      className: classItem.name,
-                      lessonId: lesson.id,
-                      lessonTitle: lesson.title
-                    }));
+                if (typeof parsedLegacy === 'object' && !Array.isArray(parsedLegacy)) {
+                  const extractedAssignments: EnrichedAssignment[] = [];
                   
-                  if (assignmentContents.length > 0) {
-                    extractedAssignments.push(...assignmentContents);
-                    foundPublishedContent = true;
-                    foundAnyPublishedContent = true;
-                  }
-                }
-                
-                // Handle content property as well (some data models use this)
-                if (lesson.content && Array.isArray(lesson.content)) {
-                  const assignmentContents = lesson.content
-                    .filter((content: Content) => 
-                      content && 
-                      content.isPublished === true && 
-                      (content.type === 'assignment' || content.type === 'quiz')
-                    )
-                    .map((content: Content) => ({
-                      ...content,
-                      classId: classItem.id,
-                      className: classItem.name,
-                      lessonId: lesson.id,
-                      lessonTitle: lesson.title
-                    }));
-                  
-                  if (assignmentContents.length > 0) {
-                    extractedAssignments.push(...assignmentContents);
-                    foundPublishedContent = true;
-                    foundAnyPublishedContent = true;
-                  }
-                }
-              });
-            }
-            
-            // Process units with lessons
-            if (content.units && Array.isArray(content.units)) {
-              content.units.forEach((unit: any) => {
-                if (unit.lessons && Array.isArray(unit.lessons)) {
-                  unit.lessons.forEach((lesson: any) => {
-                    // Extract from lesson contents array
-                    if (lesson.contents && Array.isArray(lesson.contents)) {
-                      const assignmentContents = lesson.contents
-                        .filter((content: Content) => 
-                          content && 
-                          content.isPublished === true && 
-                          (content.type === 'assignment' || content.type === 'quiz')
-                        )
-                        .map((content: Content) => ({
+                  // Parse the legacy indexed format
+                  for (const lessonIdx in parsedLegacy) {
+                    for (const contentIdx in parsedLegacy[lessonIdx]) {
+                      const content = parsedLegacy[lessonIdx][contentIdx];
+                      if (content && content.isPublished === true && 
+                          (content.type === 'assignment' || content.type === 'quiz')) {
+                        extractedAssignments.push({
                           ...content,
                           classId: classItem.id,
-                          className: classItem.name,
-                          lessonId: lesson.id,
-                          lessonTitle: lesson.title,
-                          unitId: unit.id,
-                          unitTitle: unit.title
-                        }));
-                      
-                      if (assignmentContents.length > 0) {
-                        extractedAssignments.push(...assignmentContents);
-                        foundPublishedContent = true;
-                        foundAnyPublishedContent = true;
+                          className: classItem.name
+                        });
                       }
                     }
-                  });
+                  }
+                  
+                  if (extractedAssignments.length > 0) {
+                    allAssignments.push(...extractedAssignments);
+                    foundPublishedContent = true;
+                    foundAnyPublishedContent = true;
+                    
+                    // Check for assignments due soon
+                    const now = new Date();
+                    const oneWeekFromNow = new Date();
+                    oneWeekFromNow.setDate(now.getDate() + 7);
+                    
+                    const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
+                      if (!assignment.dueDate) return false;
+                      const dueDate = new Date(assignment.dueDate);
+                      return dueDate > now && dueDate <= oneWeekFromNow;
+                    });
+                    
+                    dueAssignments.push(...pendingAssignments);
+                  }
                 }
-              });
+              }
             }
-            
-            return extractedAssignments;
-          };
-          
-          // Extract assignments from curriculum content
-          const extractedAssignments = extractAssignmentsFromContent(curriculum.content);
-          
-          if (extractedAssignments.length > 0) {
-            allAssignments.push(...extractedAssignments);
-            
-            // Check for assignments due soon or overdue
-            const now = new Date();
-            const oneWeekFromNow = new Date();
-            oneWeekFromNow.setDate(now.getDate() + 7);
-            
-            const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
-              if (!assignment.dueDate) return false;
-              
-              const dueDate = new Date(assignment.dueDate);
-              return dueDate > now && dueDate <= oneWeekFromNow;
-            });
-            
-            dueAssignments.push(...pendingAssignments);
+          } catch (localStorageError) {
+            console.warn(`Error accessing published curriculum from localStorage: ${localStorageError}`);
           }
-        } else {
-          console.log(`No curriculum content found for class ${classItem.name} (${classItem.id})`);
+        }
+        
+        if (!foundPublishedContent) {
+          console.log(`No published content found for class ${classItem.name} (${classItem.id})`);
         }
         
       } catch (error) {
@@ -498,6 +502,127 @@ export default function StudentAssignments() {
         variant: "default"
       });
     }
+  };
+
+  // Helper function to extract assignments from content
+  const extractAssignmentsFromContent = (content: any, classItem: any): EnrichedAssignment[] => {
+    let extractedAssignments: EnrichedAssignment[] = [];
+    
+    // Direct assignments array at top level
+    if (content.assignments && Array.isArray(content.assignments)) {
+      const assignments = content.assignments
+        .filter((item: Content) => item && item.isPublished === true)
+        .map((assignment: Content) => ({
+          ...assignment,
+          className: classItem.name,
+          classId: classItem.id
+        }));
+      
+      if (assignments.length > 0) {
+        console.log(`Found ${assignments.length} published assignments in class ${classItem.name}`);
+        extractedAssignments.push(...assignments);
+      }
+    }
+    
+    // Process lessons array
+    if (content.lessons && Array.isArray(content.lessons)) {
+      console.log(`Processing ${content.lessons.length} lessons in class ${classItem.name}`);
+      
+      content.lessons.forEach((lesson: any) => {
+        // Extract direct assignments from lesson
+        if (lesson.assignments && Array.isArray(lesson.assignments)) {
+          const assignments = lesson.assignments
+            .filter((item: Content) => item && item.isPublished === true)
+            .map((assignment: Content) => ({
+              ...assignment,
+              className: classItem.name,
+              classId: classItem.id,
+              lessonId: lesson.id,
+              lessonTitle: lesson.title
+            }));
+          
+          if (assignments.length > 0) {
+            extractedAssignments.push(...assignments);
+          }
+        }
+        
+        // Extract from lesson contents array
+        if (lesson.contents && Array.isArray(lesson.contents)) {
+          const assignmentContents = lesson.contents
+            .filter((content: Content) => 
+              content && 
+              content.isPublished === true && 
+              (content.type === 'assignment' || content.type === 'quiz')
+            )
+            .map((content: Content) => ({
+              ...content,
+              classId: classItem.id,
+              className: classItem.name,
+              lessonId: lesson.id,
+              lessonTitle: lesson.title
+            }));
+          
+          if (assignmentContents.length > 0) {
+            extractedAssignments.push(...assignmentContents);
+          }
+        }
+        
+        // Handle content property as well (some data models use this)
+        if (lesson.content && Array.isArray(lesson.content)) {
+          const assignmentContents = lesson.content
+            .filter((content: Content) => 
+              content && 
+              content.isPublished === true && 
+              (content.type === 'assignment' || content.type === 'quiz')
+            )
+            .map((content: Content) => ({
+              ...content,
+              classId: classItem.id,
+              className: classItem.name,
+              lessonId: lesson.id,
+              lessonTitle: lesson.title
+            }));
+          
+          if (assignmentContents.length > 0) {
+            extractedAssignments.push(...assignmentContents);
+          }
+        }
+      });
+    }
+    
+    // Process units with lessons
+    if (content.units && Array.isArray(content.units)) {
+      content.units.forEach((unit: any) => {
+        if (unit.lessons && Array.isArray(unit.lessons)) {
+          unit.lessons.forEach((lesson: any) => {
+            // Extract from lesson contents array
+            if (lesson.contents && Array.isArray(lesson.contents)) {
+              const assignmentContents = lesson.contents
+                .filter((content: Content) => 
+                  content && 
+                  content.isPublished === true && 
+                  (content.type === 'assignment' || content.type === 'quiz')
+                )
+                .map((content: Content) => ({
+                  ...content,
+                  classId: classItem.id,
+                  className: classItem.name,
+                  lessonId: lesson.id,
+                  lessonTitle: lesson.title,
+                  unitId: unit.id,
+                  unitTitle: unit.title
+                }));
+              
+              if (assignmentContents.length > 0) {
+                extractedAssignments.push(...assignmentContents);
+              }
+            }
+          });
+        }
+      });
+    }
+    
+    return extractedAssignments;
   };
 
   const navigation = [

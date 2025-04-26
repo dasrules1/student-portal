@@ -836,6 +836,7 @@ class StorageService {
       return null;
     }
 
+    console.log("Filtering curriculum for published content");
     const clonedData = structuredClone(curriculumData);
     
     // Handle different curriculum structures
@@ -850,31 +851,57 @@ class StorageService {
         
         // Filter contents array
         if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
-          lessonCopy.contents = lessonCopy.contents.filter(content => content.isPublished === true);
+          lessonCopy.contents = lessonCopy.contents.filter(content => {
+            // Ensure isPublished is explicit true, not just truthy
+            const isPublished = content.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published content: ${content.title || 'Untitled content'}`);
+            }
+            return isPublished;
+          }).map(content => ({...content, isPublished: true})); // Ensure the flag stays true in the copy
         }
         
         // Filter assignments array
         if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
-          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => assignment.isPublished === true);
+          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => {
+            // Ensure isPublished is explicit true, not just truthy
+            const isPublished = assignment.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published assignment: ${assignment.title || 'Untitled assignment'}`);
+            }
+            return isPublished;
+          }).map(assignment => ({...assignment, isPublished: true})); // Ensure the flag stays true in the copy
         }
         
         // Filter quizzes array
         if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
-          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => quiz.isPublished === true);
+          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => {
+            // Ensure isPublished is explicit true, not just truthy
+            const isPublished = quiz.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published quiz: ${quiz.title || 'Untitled quiz'}`);
+            }
+            return isPublished;
+          }).map(quiz => ({...quiz, isPublished: true})); // Ensure the flag stays true in the copy
         }
         
         return lessonCopy;
       }).filter(lesson => {
         // Keep lesson if it has any published content
-        return (
+        const hasContent = (
           (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
           (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
           (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
         );
+        
+        if (hasContent) {
+          console.log(`Including lesson with published content: ${lesson.title || 'Untitled lesson'}`);
+        }
+        return hasContent;
       });
     } 
     else if (clonedData.content.lessons && Array.isArray(clonedData.content.lessons)) {
-      // Object with lessons array
+      // Structure with lessons array
       clonedData.content.lessons = clonedData.content.lessons.map(lesson => {
         // If the lesson itself is published, include it entirely
         if (lesson.isPublished === true) return lesson;
@@ -884,71 +911,167 @@ class StorageService {
         
         // Filter contents array
         if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
-          lessonCopy.contents = lessonCopy.contents.filter(content => content.isPublished === true);
+          lessonCopy.contents = lessonCopy.contents.filter(content => {
+            // Ensure isPublished is explicit true, not just truthy
+            const isPublished = content.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published content: ${content.title || 'Untitled content'}`);
+            }
+            return isPublished;
+          }).map(content => ({...content, isPublished: true})); // Ensure the flag stays true in the copy
         }
         
         // Filter assignments array
         if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
-          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => assignment.isPublished === true);
+          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => {
+            // Ensure isPublished is explicit true, not just truthy
+            const isPublished = assignment.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published assignment: ${assignment.title || 'Untitled assignment'}`);
+            }
+            return isPublished;
+          }).map(assignment => ({...assignment, isPublished: true})); // Ensure the flag stays true in the copy
         }
         
         // Filter quizzes array
         if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
-          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => quiz.isPublished === true);
+          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => {
+            // Ensure isPublished is explicit true, not just truthy
+            const isPublished = quiz.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published quiz: ${quiz.title || 'Untitled quiz'}`);
+            }
+            return isPublished;
+          }).map(quiz => ({...quiz, isPublished: true})); // Ensure the flag stays true in the copy
         }
         
         return lessonCopy;
       }).filter(lesson => {
         // Keep lesson if it has any published content
-        return (
+        const hasContent = (
           (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
           (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
           (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
         );
+        
+        if (hasContent) {
+          console.log(`Including lesson with published content: ${lesson.title || 'Untitled lesson'}`);
+        }
+        return hasContent;
       });
     }
-    else if (clonedData.content.units && Array.isArray(clonedData.content.units)) {
-      // Object with units containing lessons
-      clonedData.content.units = clonedData.content.units.map(unit => {
-        const filteredUnit = { ...unit };
-        if (filteredUnit.lessons && Array.isArray(filteredUnit.lessons)) {
-          filteredUnit.lessons = filteredUnit.lessons.map(lesson => {
-            // If the lesson itself is published, include it entirely
-            if (lesson.isPublished === true) return lesson;
-            
-            // Otherwise, check for published content within the lesson
-            const lessonCopy = { ...lesson };
-            
-            // Filter contents array
-            if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
-              lessonCopy.contents = lessonCopy.contents.filter(content => content.isPublished === true);
-            }
-            
-            // Filter assignments array
-            if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
-              lessonCopy.assignments = lessonCopy.assignments.filter(assignment => assignment.isPublished === true);
-            }
-            
-            // Filter quizzes array
-            if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
-              lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => quiz.isPublished === true);
-            }
-            
-            return lessonCopy;
-          }).filter(lesson => {
-            // Keep lesson if it has any published content
-            return (
-              (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
-              (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
-              (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
-            );
-          });
+    
+    console.log(`After filtering: ${clonedData.content.lessons ? clonedData.content.lessons.length : 'Unknown'} lessons with published content`);
+    return clonedData;
+  }
+
+  // Check if content has any published items
+  private hasPublishedContent(content: any): boolean {
+    if (!content) return false;
+    
+    // Check if content is an array of lessons
+    if (Array.isArray(content)) {
+      // Check if any lesson is published
+      const hasPublishedLessons = content.some(lesson => lesson.isPublished === true);
+      if (hasPublishedLessons) {
+        console.log("Found published lessons");
+        return true;
+      }
+      
+      // Check for published content items within lessons
+      const hasPublishedContent = content.some(lesson => {
+        // Check published contents
+        if (lesson.contents && Array.isArray(lesson.contents)) {
+          if (lesson.contents.some(item => item && item.isPublished === true)) {
+            console.log(`Found published contents in lesson ${lesson.title || 'Untitled'}`);
+            return true;
+          }
         }
-        return filteredUnit;
-      }).filter(unit => unit.lessons && unit.lessons.length > 0);
+        
+        // Check published assignments
+        if (lesson.assignments && Array.isArray(lesson.assignments)) {
+          if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) {
+            console.log(`Found published assignments in lesson ${lesson.title || 'Untitled'}`);
+            return true;
+          }
+        }
+        
+        // Check published quizzes
+        if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
+          if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) {
+            console.log(`Found published quizzes in lesson ${lesson.title || 'Untitled'}`);
+            return true;
+          }
+        }
+        
+        return false;
+      });
+      
+      if (hasPublishedContent) {
+        return true;
+      }
     }
     
-    return clonedData;
+    // Check if content has a lessons property that is an array
+    if (content.lessons && Array.isArray(content.lessons)) {
+      // Check if any lesson is published
+      const hasPublishedLessons = content.lessons.some(lesson => lesson.isPublished === true);
+      if (hasPublishedLessons) {
+        console.log("Found published lessons");
+        return true;
+      }
+      
+      // Check for published content items within lessons
+      const hasPublishedContent = content.lessons.some(lesson => {
+        // Check published contents
+        if (lesson.contents && Array.isArray(lesson.contents)) {
+          if (lesson.contents.some(item => item && item.isPublished === true)) {
+            console.log(`Found published contents in lesson ${lesson.title || 'Untitled'}`);
+            return true;
+          }
+        }
+        
+        // Check published assignments
+        if (lesson.assignments && Array.isArray(lesson.assignments)) {
+          if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) {
+            console.log(`Found published assignments in lesson ${lesson.title || 'Untitled'}`);
+            return true;
+          }
+        }
+        
+        // Check published quizzes
+        if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
+          if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) {
+            console.log(`Found published quizzes in lesson ${lesson.title || 'Untitled'}`);
+            return true;
+          }
+        }
+        
+        return false;
+      });
+      
+      if (hasPublishedContent) {
+        return true;
+      }
+    }
+    
+    // Check if content has a dedicated published flag
+    if (content.isPublished === true) {
+      console.log("Content itself is marked as published");
+      return true;
+    }
+    
+    // Check if content has an assignments array with published items
+    if (content.assignments && Array.isArray(content.assignments)) {
+      const hasPublishedAssignments = content.assignments.some(assignment => assignment && assignment.isPublished === true);
+      if (hasPublishedAssignments) {
+        console.log("Found published assignments in top-level content");
+        return true;
+      }
+    }
+    
+    console.log("No published content found");
+    return false;
   }
 
   // Get curriculum data for a class
@@ -1245,95 +1368,6 @@ class StorageService {
     return success;
   }
   
-  // Check if curriculum content has any published items
-  private hasPublishedContent(content: any): boolean {
-    if (!content) return false;
-    
-    // Check if content is an array of lessons
-    if (Array.isArray(content)) {
-      // Check if any lesson is published
-      const hasPublishedLessons = content.some(lesson => lesson.isPublished === true);
-      if (hasPublishedLessons) return true;
-      
-      // Check for published content items within lessons
-      return content.some(lesson => {
-        // Check published contents
-        if (lesson.contents && Array.isArray(lesson.contents)) {
-          if (lesson.contents.some(item => item && item.isPublished === true)) return true;
-        }
-        
-        // Check published assignments
-        if (lesson.assignments && Array.isArray(lesson.assignments)) {
-          if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) return true;
-        }
-        
-        // Check published quizzes
-        if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
-          if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) return true;
-        }
-        
-        return false;
-      });
-    }
-    
-    // Check if content has a lessons property that is an array
-    if (content.lessons && Array.isArray(content.lessons)) {
-      // Check if any lesson is published
-      const hasPublishedLessons = content.lessons.some(lesson => lesson.isPublished === true);
-      if (hasPublishedLessons) return true;
-      
-      // Check for published content items within lessons
-      return content.lessons.some(lesson => {
-        // Check published contents
-        if (lesson.contents && Array.isArray(lesson.contents)) {
-          if (lesson.contents.some(item => item && item.isPublished === true)) return true;
-        }
-        
-        // Check published assignments
-        if (lesson.assignments && Array.isArray(lesson.assignments)) {
-          if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) return true;
-        }
-        
-        // Check published quizzes
-        if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
-          if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) return true;
-        }
-        
-        return false;
-      });
-    }
-    
-    // Check if content has units with lessons
-    if (content.units && Array.isArray(content.units)) {
-      return content.units.some(unit => 
-        unit.lessons && Array.isArray(unit.lessons) && 
-        unit.lessons.some(lesson => {
-          // Check if lesson itself is published
-          if (lesson.isPublished === true) return true;
-          
-          // Check published contents
-          if (lesson.contents && Array.isArray(lesson.contents)) {
-            if (lesson.contents.some(item => item && item.isPublished === true)) return true;
-          }
-          
-          // Check published assignments
-          if (lesson.assignments && Array.isArray(lesson.assignments)) {
-            if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) return true;
-          }
-          
-          // Check published quizzes
-          if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
-            if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) return true;
-          }
-          
-          return false;
-        })
-      );
-    }
-    
-    return false;
-  }
-
   // Method for students to get published curriculum
   async getPublishedCurriculum(classId: string): Promise<any> {
     console.log(`Getting published curriculum for class ${classId}`);

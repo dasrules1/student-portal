@@ -361,10 +361,12 @@ export default function TeacherCurriculum() {
       }
     }
 
+    // Add explicit debugging
+    console.log(`Publishing status for ${content.title}: ${newPublishedStatus}`);
+    console.log(`Content after toggle:`, JSON.stringify(updatedCurriculum.lessons[lessonIndex].contents[contentIndex]).substring(0, 200));
+
     // 1. Save to Firebase/Firestore directly using the curriculum API
     try {
-      console.log(`Saving curriculum with ${newPublishedStatus ? "published" : "unpublished"} assignment to storage...`);
-      
       // Structure for saving to curriculum
       const curriculumData = {
         classId,
@@ -373,7 +375,7 @@ export default function TeacherCurriculum() {
       };
       
       // Save the entire curriculum to ensure it's properly stored
-      console.log("Curriculum data being saved:", JSON.stringify(curriculumData).substring(0, 200) + "...");
+      console.log("Saving curriculum to storage...");
       const saveCurriculumResult = await storage.saveCurriculum(classId, curriculumData);
       
       if (!saveCurriculumResult) {
@@ -387,16 +389,28 @@ export default function TeacherCurriculum() {
         return;
       }
       
-      // If we're publishing content, also save to the published_curricula collection
+      // If we're publishing content, also save to the published_curricula collection for direct student access
       if (newPublishedStatus) {
         try {
           // Use the imported db directly
           const publishedRef = doc(db, 'published_curricula', classId);
-          await setDoc(publishedRef, {
-            content: updatedCurriculum,
-            lastUpdated: new Date().toISOString()
-          }, { merge: true });
           
+          // Create a direct published format with the explicit published flag for each item
+          const publishedContent = {
+            classId,
+            content: {
+              lessons: updatedCurriculum.lessons.map(lesson => ({
+                ...lesson,
+                contents: lesson.contents.map(item => ({
+                  ...item,
+                  isPublished: !!item.isPublished // Ensure boolean true/false
+                }))
+              }))
+            },
+            lastUpdated: new Date().toISOString()
+          };
+          
+          await setDoc(publishedRef, publishedContent);
           console.log("Successfully saved to published_curricula collection");
         } catch (publishError) {
           console.error("Error saving to published curricula collection:", publishError);
@@ -406,72 +420,73 @@ export default function TeacherCurriculum() {
       console.error("Error saving curriculum:", saveError);
     }
 
-    // 2. Save to localStorage as backup
+    // 2. Save to localStorage as backup using multiple formats to ensure compatibility
     if (typeof window !== "undefined") {
       try {
-        // Save the complete curriculum
+        // Save the complete curriculum with published state
         localStorage.setItem(`curriculum_${classId}`, JSON.stringify(updatedCurriculum));
+        console.log("Saved complete curriculum to localStorage");
         
-        // Also save the published curriculum separately - this is a special format used by student views
-        const publishedCurriculumKey = `published-curriculum-${classId}`;
+        // Create and save a dedicated published version that only includes published content
+        const publishedLessons = updatedCurriculum.lessons.map(lesson => {
+          // Create a copy of the lesson with only published contents
+          return {
+            ...lesson,
+            contents: lesson.contents
+              .filter(item => item.isPublished === true)
+              .map(item => ({...item, isPublished: true})) // Explicitly set flag
+          };
+        }).filter(lesson => lesson.contents && lesson.contents.length > 0);
         
-        // For the published version, create a simplified structure that's easily parsed by student views
-        // This uses the same structure as the main curriculum but includes only published content
+        // 2a. Save as a standard curriculum structure
         const publishedCurriculum = {
-          lessons: updatedCurriculum.lessons.map(lesson => {
-            // Create a copy of the lesson with only published contents
-            return {
-              ...lesson,
-              contents: lesson.contents
-                .filter(item => item.isPublished === true)
-                .map(item => ({...item})) // Deep copy to avoid reference issues
-            };
-          }).filter(lesson => lesson.contents && lesson.contents.length > 0) // Only keep lessons with published content
+          lessons: publishedLessons
         };
         
-        // Save the published version to localStorage
-        localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum));
+        localStorage.setItem(`published-curriculum-${classId}`, JSON.stringify(publishedCurriculum));
         console.log(`Saved published curriculum to localStorage for class ${classId}`);
         
-        // For backwards compatibility, also save in the legacy format
-        try {
-          let legacyFormat = {};
-          const existingData = localStorage.getItem(publishedCurriculumKey + '-legacy');
-          if (existingData) {
-            try {
-              legacyFormat = JSON.parse(existingData);
-            } catch (e) {
-              console.warn("Error parsing existing legacy published curriculum, creating new one");
-            }
-          }
-
-          // Update the specific content's published status in legacy format
-          if (!legacyFormat[lessonIndex]) {
-            legacyFormat[lessonIndex] = {};
-          }
-
-          if (newPublishedStatus) {
-            // If publishing, add the content with extra metadata to help student views
-            const enhancedContent = {
+        // 2b. Also save as a direct published content array for simpler consumption
+        const publishedContents = [];
+        publishedLessons.forEach(lesson => {
+          lesson.contents.forEach(content => {
+            publishedContents.push({
               ...content,
-              lessonId: updatedCurriculum.lessons[lessonIndex].id,
-              lessonTitle: updatedCurriculum.lessons[lessonIndex].title,
-              isPublished: true, // Explicitly set this flag
+              lessonId: lesson.id,
+              lessonTitle: lesson.title,
               classId: classId,
               className: currentClass?.name || 'Class'
-            };
-            
-            legacyFormat[lessonIndex][contentIndex] = enhancedContent;
-          } else {
-            // If unpublishing, remove the content
-            delete legacyFormat[lessonIndex][contentIndex];
-          }
-
-          // Save back to localStorage as legacy format
-          localStorage.setItem(publishedCurriculumKey + '-legacy', JSON.stringify(legacyFormat));
-        } catch (legacyError) {
-          console.warn("Error saving legacy format:", legacyError);
-        }
+            });
+          });
+        });
+        
+        localStorage.setItem(`published-contents-${classId}`, JSON.stringify(publishedContents));
+        console.log(`Saved ${publishedContents.length} flattened published contents to localStorage`);
+        
+        // 2c. For backwards compatibility, also save in the legacy indexed format
+        let legacyFormat = {};
+        
+        updatedCurriculum.lessons.forEach((lesson, lIdx) => {
+          lesson.contents.forEach((item, cIdx) => {
+            if (item.isPublished) {
+              if (!legacyFormat[lIdx]) {
+                legacyFormat[lIdx] = {};
+              }
+              
+              legacyFormat[lIdx][cIdx] = {
+                ...item,
+                lessonId: lesson.id,
+                lessonTitle: lesson.title,
+                isPublished: true,
+                classId: classId,
+                className: currentClass?.name || 'Class'
+              };
+            }
+          });
+        });
+        
+        localStorage.setItem(`published-curriculum-${classId}-legacy`, JSON.stringify(legacyFormat));
+        console.log(`Saved legacy format to localStorage`);
       } catch (error) {
         console.error("Error saving published curriculum to localStorage:", error);
       }
@@ -507,8 +522,6 @@ export default function TeacherCurriculum() {
       details: `${content.title} for ${currentClass?.name}`,
       timestamp: new Date().toLocaleString(),
       category: "Class Management",
-      userId: currentClass?.teacher_id, // Add teacher ID to help with filtering
-      classId: classId, // Add class ID to help with filtering
     });
   }
 
