@@ -763,25 +763,26 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                 </Button>
               </div>
               <div className="space-y-2">
-                {curriculum.lessons.map((lesson) => (
-                  <Card
-                    key={lesson.id}
-                    className={`cursor-pointer ${activeLesson === lesson.id ? "border-primary" : ""}`}
-                    onClick={() => {
-                      setActiveLesson(lesson.id)
-                      setActiveContent(lesson.contents && lesson.contents.length > 0 ? lesson.contents[0].id : null)
-                      setActiveProblem(null)
-                    }}
-                  >
-                    <CardHeader className="p-3">
-                      <CardTitle className="text-sm">{lesson.title}</CardTitle>
-                      <CardDescription className="text-xs">
-                        {lesson.contents ? lesson.contents.length : 0} content items
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                ))}
-                {curriculum.lessons.length === 0 && !isAddingLesson && (
+                {curriculum.lessons && Array.isArray(curriculum.lessons) && curriculum.lessons.length > 0 ? (
+                  curriculum.lessons.map((lesson) => (
+                    <Card
+                      key={lesson.id}
+                      className={`cursor-pointer ${activeLesson === lesson.id ? "border-primary" : ""}`}
+                      onClick={() => {
+                        setActiveLesson(lesson.id)
+                        setActiveContent(lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0 ? lesson.contents[0].id : null)
+                        setActiveProblem(null)
+                      }}
+                    >
+                      <CardHeader className="p-3">
+                        <CardTitle className="text-sm">{lesson.title || `Lesson ${lesson.id}`}</CardTitle>
+                        <CardDescription className="text-xs">
+                          {lesson.contents && Array.isArray(lesson.contents) ? lesson.contents.length : 0} content items
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  ))
+                ) : (
                   <div className="p-4 text-center border rounded-lg">
                     <p className="text-sm text-muted-foreground">No lessons yet. Click "Add Lesson" to get started.</p>
                   </div>
@@ -883,7 +884,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
 
                       {/* Content list */}
                       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {currentLesson?.contents && currentLesson.contents.length > 0 ? (
+                        {currentLesson?.contents && Array.isArray(currentLesson.contents) && currentLesson.contents.length > 0 ? (
                           currentLesson.contents.map((content) => (
                             <Card
                               key={content.id}
@@ -891,7 +892,9 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                               onClick={() => {
                                 setActiveContent(content.id)
                                 setActiveProblem(
-                                  content.problems && content.problems.length > 0 ? content.problems[0].id : null,
+                                  content.problems && Array.isArray(content.problems) && content.problems.length > 0 
+                                    ? content.problems[0].id 
+                                    : null,
                                 )
                               }}
                             >
@@ -899,14 +902,14 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center">
                                     {getContentTypeIcon(content.type)}
-                                    <CardTitle className="text-sm">{content.title}</CardTitle>
+                                    <CardTitle className="text-sm">{content.title || 'Untitled Content'}</CardTitle>
                                   </div>
                                   <Badge variant={content.isPublished ? "default" : "outline"}>
                                     {content.isPublished ? "Published" : "Draft"}
                                   </Badge>
                                 </div>
                                 <CardDescription className="text-xs">
-                                  {content.problems ? content.problems.length : 0} problems
+                                  {content.problems && Array.isArray(content.problems) ? content.problems.length : 0} problems
                                 </CardDescription>
                               </CardHeader>
                             </Card>
@@ -934,7 +937,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                                   <SelectValue placeholder="Select content type" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {contentTypes.map((type) => (
+                                  {contentTypes && Array.isArray(contentTypes) && contentTypes.map((type) => (
                                     <SelectItem key={type.id} value={type.id}>
                                       <div className="flex items-center">
                                         {type.icon}
@@ -1032,7 +1035,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
 
                         {/* Problems list */}
                         <div className="space-y-4">
-                          {currentContent.problems && currentContent.problems.length > 0 ? (
+                          {currentContent.problems && Array.isArray(currentContent.problems) && currentContent.problems.length > 0 ? (
                             currentContent.problems.map((problem, index) => (
                               <Card
                                 key={problem.id}
@@ -1308,7 +1311,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                         {currentProblem.type === "multiple-choice" && (
                           <div className="space-y-4">
                             <Label>Options</Label>
-                            {currentProblem.options.map((option, index) => (
+                            {currentProblem.options && Array.isArray(currentProblem.options) ? currentProblem.options.map((option, index) => (
                               <div key={index} className="flex items-center space-x-2">
                                 <input
                                   type="radio"
@@ -1321,16 +1324,18 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                                   className="w-4 h-4"
                                 />
                                 <Input
-                                  value={option}
+                                  value={option || ''}
                                   onChange={(e) => {
-                                    const newOptions = [...currentProblem.options]
-                                    newOptions[index] = e.target.value
-                                    updateProblem(activeLesson, activeContent, activeProblem, "options", newOptions)
+                                    const newOptions = currentProblem.options ? [...currentProblem.options] : ['', '', '', ''];
+                                    newOptions[index] = e.target.value;
+                                    updateProblem(activeLesson, activeContent, activeProblem, "options", newOptions);
                                   }}
                                   className="flex-1"
                                 />
                               </div>
-                            ))}
+                            )) : (
+                              <p className="text-sm text-muted-foreground">No options available</p>
+                            )}
                           </div>
                         )}
 
@@ -1340,26 +1345,29 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                             <div className="space-y-2">
                               <Label>Correct Answers</Label>
                               <div className="flex flex-wrap gap-2 mt-2">
-                                {currentProblem.correctAnswers &&
-                                  currentProblem.correctAnswers.map((answer, index) => (
-                                    <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                                      {answer}
-                                      <X
-                                        className="w-3 h-3 cursor-pointer"
-                                        onClick={() => {
-                                          const newAnswers = [...currentProblem.correctAnswers]
-                                          newAnswers.splice(index, 1)
-                                          updateProblem(
-                                            activeLesson,
-                                            activeContent,
-                                            activeProblem,
-                                            "correctAnswers",
-                                            newAnswers,
-                                          )
-                                        }}
-                                      />
-                                    </Badge>
-                                  ))}
+                                {currentProblem.correctAnswers && Array.isArray(currentProblem.correctAnswers) 
+                                  ? currentProblem.correctAnswers.map((answer, index) => (
+                                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                        {answer}
+                                        <X
+                                          className="w-3 h-3 cursor-pointer"
+                                          onClick={() => {
+                                            if (currentProblem.correctAnswers) {
+                                              const newAnswers = [...currentProblem.correctAnswers];
+                                              newAnswers.splice(index, 1);
+                                              updateProblem(
+                                                activeLesson,
+                                                activeContent,
+                                                activeProblem,
+                                                "correctAnswers",
+                                                newAnswers,
+                                              );
+                                            }
+                                          }}
+                                        />
+                                      </Badge>
+                                    ))
+                                  : null}
                               </div>
                               <div className="flex space-x-2 mt-2">
                                 <Input
@@ -1417,26 +1425,29 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                             <div className="space-y-2">
                               <Label>Keywords for Auto-grading</Label>
                               <div className="flex flex-wrap gap-2 mt-2">
-                                {currentProblem.keywords &&
-                                  currentProblem.keywords.map((keyword, index) => (
-                                    <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                                      {keyword}
-                                      <X
-                                        className="w-3 h-3 cursor-pointer"
-                                        onClick={() => {
-                                          const newKeywords = [...currentProblem.keywords]
-                                          newKeywords.splice(index, 1)
-                                          updateProblem(
-                                            activeLesson,
-                                            activeContent,
-                                            activeProblem,
-                                            "keywords",
-                                            newKeywords,
-                                          )
-                                        }}
-                                      />
-                                    </Badge>
-                                  ))}
+                                {currentProblem.keywords && Array.isArray(currentProblem.keywords) 
+                                  ? currentProblem.keywords.map((keyword, index) => (
+                                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                        {keyword}
+                                        <X
+                                          className="w-3 h-3 cursor-pointer"
+                                          onClick={() => {
+                                            if (currentProblem.keywords) {
+                                              const newKeywords = [...currentProblem.keywords];
+                                              newKeywords.splice(index, 1);
+                                              updateProblem(
+                                                activeLesson,
+                                                activeContent,
+                                                activeProblem,
+                                                "keywords",
+                                                newKeywords,
+                                              );
+                                            }
+                                          }}
+                                        />
+                                      </Badge>
+                                    ))
+                                  : null}
                               </div>
                               <div className="flex space-x-2 mt-2">
                                 <Input
