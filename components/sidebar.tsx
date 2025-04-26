@@ -54,7 +54,7 @@ export function Sidebar({ navigation, user }: SidebarProps) {
     <div className="flex flex-col w-64 h-screen border-r bg-background">
       <div className="p-4 border-b">
         <div className="flex items-center gap-2 mb-2">
-          <img src="/logo.png" alt="Logo" className="h-6 w-6" />
+          <img src="/school-icon.svg" alt="Logo" className="h-6 w-6 text-primary" />
           <h2 className="text-lg font-bold">Education More</h2>
         </div>
         <p className="text-xs text-muted-foreground pl-8">Student Portal</p>

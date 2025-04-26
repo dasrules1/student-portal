@@ -203,6 +203,32 @@ class StorageService {
     return persistentStorage.getUserByEmail(email);
   }
 
+  // Add a synchronous version for compatibility with UI components
+  getAllUsers(): User[] {
+    console.log("getAllUsers called - providing cached users");
+    
+    // If we don't have users in cache, try to load them from persistent storage first
+    if (!this.users || this.users.length === 0) {
+      try {
+        const localUsers = persistentStorage.getAllUsers();
+        if (localUsers && Array.isArray(localUsers) && localUsers.length > 0) {
+          this.users = [...localUsers];
+          return [...localUsers];
+        }
+      } catch (error) {
+        console.error("Error in getAllUsers from persistent storage:", error);
+      }
+    }
+    
+    // Return cached users if they're available now
+    if (this.users && Array.isArray(this.users) && this.users.length > 0) {
+      return [...this.users];
+    }
+    
+    console.warn("No users available in cache, returning empty array");
+    return [];
+  }
+
   async addUser(userData: Omit<User, "id">): Promise<User> {
     try {
       console.log("Adding user to Firestore:", userData);
@@ -423,20 +449,23 @@ class StorageService {
   // Add a synchronous version for compatibility
   getAllClasses(): Class[] {
     console.log("getAllClasses called - providing cached classes");
-    // Return cached classes if available
-    if (this.classes && Array.isArray(this.classes) && this.classes.length > 0) {
-      return [...this.classes];
+    
+    // If we don't have classes in cache, try to load them from persistent storage first
+    if (!this.classes || this.classes.length === 0) {
+      try {
+        const localClasses = persistentStorage.getAllClasses();
+        if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
+          this.classes = [...localClasses];
+          return [...localClasses];
+        }
+      } catch (error) {
+        console.error("Error in getAllClasses from persistent storage:", error);
+      }
     }
     
-    // Try to get from persistent storage as fallback
-    try {
-      const localClasses = persistentStorage.getAllClasses();
-      if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
-        this.classes = [...localClasses];
-        return [...localClasses];
-      }
-    } catch (error) {
-      console.error("Error in getAllClasses from persistent storage:", error);
+    // Return cached classes if they're available now
+    if (this.classes && Array.isArray(this.classes) && this.classes.length > 0) {
+      return [...this.classes];
     }
     
     console.warn("No classes available in cache, returning empty array");
@@ -1220,6 +1249,5 @@ class StorageService {
   // ... rest of the file - files, etc. ...
 }
 
-// Export the class instance for use throughout the application
-export const storageService = new StorageService()
-export const storage = storageService // Export as 'storage' for backwards compatibility
+// Export a singleton instance
+export const storage = new StorageService();
