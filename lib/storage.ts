@@ -730,7 +730,7 @@ class StorageService {
       // When all else fails, return our safe array
       console.log('All log retrieval methods failed, using safe default logs');
       return Object.freeze([...safeDefaultLogs]);
-    } catch (error) {
+  } catch (error) {
       console.error("Critical error in getActivityLogs:", error);
       return Object.freeze([{
         id: "log_error",
@@ -810,7 +810,7 @@ class StorageService {
       }
       
       return newLog;
-    } catch (error) {
+  } catch (error) {
       console.error('Error adding activity log to Firestore:', error);
       // Fallback to localStorage with error handling
       try {
@@ -830,186 +830,456 @@ class StorageService {
     }
   }
 
-  // Curriculum
-  async getCurriculum(classId: string): Promise<Curriculum | null> {
-    console.log(`Getting curriculum for class ${classId}`);
-    
-    try {
-      // First attempt to get from Firestore
-      const curriculumRef = doc(db, 'curricula', classId);
-      const curriculumSnapshot = await getDoc(curriculumRef);
-      
-      if (curriculumSnapshot.exists()) {
-        const curriculumData = curriculumSnapshot.data();
-        console.log(`Retrieved curriculum from Firestore for class ${classId}`);
-        return curriculumData as Curriculum;
-      }
-      
-      console.log(`No curriculum found in Firestore for class ${classId}, trying persistent storage`);
-      
-      // Second attempt to get from persistent storage
-      try {
-        const persistentCurriculum = await persistentStorage.getCurriculum(classId);
-        if (persistentCurriculum) {
-          console.log(`Retrieved curriculum from persistent storage for class ${classId}`);
-          
-          // Save to Firestore to ensure consistency
-          try {
-            await this.saveCurriculum(classId, persistentCurriculum);
-          } catch (saveError) {
-            console.warn(`Failed to save persistent curriculum to Firestore: ${saveError}`);
-          }
-          
-          return persistentCurriculum;
-        }
-      } catch (persistentError) {
-        console.warn(`Error getting curriculum from persistent storage: ${persistentError}`);
-      }
-      
-      // Third attempt: check localStorage
-      if (typeof window !== "undefined") {
-        try {
-          // Try both key formats for compatibility
-          const localData = localStorage.getItem(`curriculum_${classId}`) || 
-                           localStorage.getItem(`${STORAGE_PREFIX}curriculum_${classId}`);
-          
-          if (localData) {
-            try {
-              const parsedData = JSON.parse(localData);
-              console.log(`Retrieved curriculum from localStorage for class ${classId}`);
-              
-              // Save to Firestore to ensure consistency
-              try {
-                await this.saveCurriculum(classId, parsedData);
-              } catch (saveError) {
-                console.warn(`Failed to save localStorage curriculum to Firestore: ${saveError}`);
-              }
-              
-              return parsedData;
-            } catch (parseError) {
-              console.error(`Error parsing localStorage curriculum data: ${parseError}`);
-            }
-          }
-        } catch (localStorageError) {
-          console.warn(`Error checking localStorage: ${localStorageError}`);
-        }
-      }
-      
-      // Fourth attempt: check if curriculum is embedded in the class object
-      const classData = await this.getClassById(classId);
-      if (classData && classData.curriculum) {
-        console.log(`Found curriculum embedded in class ${classId}`);
-        
-        // Format the data properly
-        const formattedCurriculum = {
-          classId,
-          content: classData.curriculum,
-          lastUpdated: new Date().toISOString()
-        };
-        
-        // Save to Firestore for future use
-        try {
-          await this.saveCurriculum(classId, formattedCurriculum);
-        } catch (saveError) {
-          console.warn(`Failed to save embedded curriculum to Firestore: ${saveError}`);
-        }
-        
-        return formattedCurriculum;
-      }
-      
-      console.log(`No curriculum found for class ${classId} in any storage`);
-      return null;
-  } catch (error) {
-      console.error(`Error retrieving curriculum for class ${classId}:`, error);
+  // Filter curriculum data to only include published content for students
+  filterPublishedContent(curriculumData: any): any {
+    if (!curriculumData || !curriculumData.content) {
       return null;
     }
+
+    const clonedData = structuredClone(curriculumData);
+    
+    // Handle different curriculum structures
+    if (Array.isArray(clonedData.content)) {
+      // Direct array of lessons
+      clonedData.content = clonedData.content.map(lesson => {
+        // If the lesson itself is published, include it entirely
+        if (lesson.isPublished === true) return lesson;
+        
+        // Otherwise, check for published content within the lesson
+        const lessonCopy = { ...lesson };
+        
+        // Filter contents array
+        if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
+          lessonCopy.contents = lessonCopy.contents.filter(content => content.isPublished === true);
+        }
+        
+        // Filter assignments array
+        if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
+          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => assignment.isPublished === true);
+        }
+        
+        // Filter quizzes array
+        if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
+          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => quiz.isPublished === true);
+        }
+        
+        return lessonCopy;
+      }).filter(lesson => {
+        // Keep lesson if it has any published content
+        return (
+          (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
+          (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
+          (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
+        );
+      });
+    } 
+    else if (clonedData.content.lessons && Array.isArray(clonedData.content.lessons)) {
+      // Object with lessons array
+      clonedData.content.lessons = clonedData.content.lessons.map(lesson => {
+        // If the lesson itself is published, include it entirely
+        if (lesson.isPublished === true) return lesson;
+        
+        // Otherwise, check for published content within the lesson
+        const lessonCopy = { ...lesson };
+        
+        // Filter contents array
+        if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
+          lessonCopy.contents = lessonCopy.contents.filter(content => content.isPublished === true);
+        }
+        
+        // Filter assignments array
+        if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
+          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => assignment.isPublished === true);
+        }
+        
+        // Filter quizzes array
+        if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
+          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => quiz.isPublished === true);
+        }
+        
+        return lessonCopy;
+      }).filter(lesson => {
+        // Keep lesson if it has any published content
+        return (
+          (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
+          (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
+          (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
+        );
+      });
+    }
+    else if (clonedData.content.units && Array.isArray(clonedData.content.units)) {
+      // Object with units containing lessons
+      clonedData.content.units = clonedData.content.units.map(unit => {
+        const filteredUnit = { ...unit };
+        if (filteredUnit.lessons && Array.isArray(filteredUnit.lessons)) {
+          filteredUnit.lessons = filteredUnit.lessons.map(lesson => {
+            // If the lesson itself is published, include it entirely
+            if (lesson.isPublished === true) return lesson;
+            
+            // Otherwise, check for published content within the lesson
+            const lessonCopy = { ...lesson };
+            
+            // Filter contents array
+            if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
+              lessonCopy.contents = lessonCopy.contents.filter(content => content.isPublished === true);
+            }
+            
+            // Filter assignments array
+            if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
+              lessonCopy.assignments = lessonCopy.assignments.filter(assignment => assignment.isPublished === true);
+            }
+            
+            // Filter quizzes array
+            if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
+              lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => quiz.isPublished === true);
+            }
+            
+            return lessonCopy;
+          }).filter(lesson => {
+            // Keep lesson if it has any published content
+            return (
+              (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
+              (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
+              (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
+            );
+          });
+        }
+        return filteredUnit;
+      }).filter(unit => unit.lessons && unit.lessons.length > 0);
+    }
+    
+    return clonedData;
   }
 
-  async saveCurriculum(classId: string, curriculum: Curriculum): Promise<boolean> {
-    console.log(`Saving curriculum for class ${classId}`);
+  // Get curriculum data for a class
+  async getCurriculum(classId: string, user?: User): Promise<{classId: string, content: any, lastUpdated: string} | null> {
+    console.log(`Getting curriculum for class ${classId}`);
     
-    // Validate curriculum data
-    if (!curriculum || !curriculum.content) {
-      console.error("Invalid curriculum data to save");
-      return false;
-    }
+    let curriculumData = null;
+    const isStudent = user?.role === 'student';
     
-    const content = curriculum.content;
-    
-    // Process lessons/assignments/quizzes to ensure isPublished is properly set
-    if (content && content.isPublished !== undefined) {
-      // Make sure isPublished is a boolean
-      content.isPublished = Boolean(content.isPublished);
-      
-      // If the content is published, save it to localStorage for student access
-      if (content.isPublished === true && 
-         (content.type === 'assignment' || content.type === 'quiz')) {
-        try {
-          // Create a stable key for the published item
-          const publishedKey = `published_${classId}_${content.id}`;
-          localStorage.setItem(publishedKey, JSON.stringify(content));
-          
-          // Keep track of all published assignments for this class
-          const existingPublishedKey = `published_assignments_${classId}`;
-          let existingPublished = [];
-          try {
-            const storedPublished = localStorage.getItem(existingPublishedKey);
-            if (storedPublished) {
-              existingPublished = JSON.parse(storedPublished);
-            }
-          } catch (e) {
-            console.error("Error parsing existing published assignments", e);
-          }
-          
-          // Add this assignment to the list if not already there
-          if (!existingPublished.includes(content.id)) {
-            existingPublished.push(content.id);
-            localStorage.setItem(existingPublishedKey, JSON.stringify(existingPublished));
-          }
-          
-          console.log(`Published assignment/quiz ${content.id} saved to localStorage`);
-        } catch (e) {
-          console.error("Error saving published assignment to localStorage", e);
-        }
-      }
-    }
-
-    // Save to Firestore if available
+    // Try to get from Firestore first
     try {
       const auth = getAuth();
       if (auth.currentUser) {
         const db = getFirestore();
-        const classRef = doc(db, 'classes', classId);
-        const curriculumRef = doc(classRef, 'curriculum', content.id || 'main');
+        const curriculumRef = doc(db, 'curricula', classId);
+        const curriculumSnap = await getDoc(curriculumRef);
+        
+        if (curriculumSnap.exists()) {
+          const data = curriculumSnap.data();
+          curriculumData = {
+            classId,
+            content: data.content,
+            lastUpdated: data.lastUpdated || new Date().toISOString()
+          };
+          console.log("Curriculum retrieved from Firestore successfully");
+          
+          // Filter content for students
+          if (isStudent) {
+            return this.filterPublishedContent(curriculumData);
+          }
+          
+          return curriculumData;
+        }
+      }
+    } catch (firestoreError) {
+      console.error("Error retrieving curriculum from Firestore:", firestoreError);
+    }
+    
+    // Try to get from persistent storage
+    try {
+      const persistentStorage = new PersistentStorage();
+      curriculumData = persistentStorage.getCurriculumByClassId(classId);
+      
+      if (curriculumData) {
+        console.log("Curriculum retrieved from persistent storage successfully");
+        
+        // Filter content for students
+        if (isStudent) {
+          return this.filterPublishedContent(curriculumData);
+        }
+        
+        return curriculumData;
+      }
+    } catch (persistentStorageError) {
+      console.error("Error retrieving curriculum from persistent storage:", persistentStorageError);
+    }
+    
+    // Try to get from local storage
+    try {
+      const localStorageKey = `curriculum_${classId}`;
+      const storedData = localStorage.getItem(localStorageKey);
+      
+      if (storedData) {
+        try {
+          curriculumData = JSON.parse(storedData);
+          console.log("Curriculum retrieved from localStorage successfully");
+          
+          // Filter content for students
+          if (isStudent) {
+            return this.filterPublishedContent(curriculumData);
+          }
+          
+          return curriculumData;
+        } catch (parseError) {
+          console.error("Error parsing curriculum data from localStorage:", parseError);
+        }
+      }
+    } catch (localStorageError) {
+      console.error("Error accessing localStorage:", localStorageError);
+    }
+    
+    // If we still don't have data, try to get from embedded class data
+    try {
+      const persistentStorage = new PersistentStorage();
+      const classData = persistentStorage.getClassById(classId);
+      
+      if (classData && classData.curriculum) {
+        curriculumData = {
+          classId,
+          content: classData.curriculum,
+          lastUpdated: classData.updatedAt || new Date().toISOString()
+        };
+        console.log("Curriculum retrieved from embedded class data successfully");
+        
+        // Filter content for students
+        if (isStudent) {
+          return this.filterPublishedContent(curriculumData);
+        }
+        
+        return curriculumData;
+      }
+    } catch (embeddedDataError) {
+      console.error("Error retrieving curriculum from embedded class data:", embeddedDataError);
+    }
+    
+    console.log(`No curriculum data found for class ${classId}`);
+    return null;
+  }
+
+  // Save curriculum for a class
+  async saveCurriculum(classId: string, curriculumData: {classId: string, content: any, lastUpdated: string}): Promise<boolean> {
+    if (!classId || !curriculumData || !curriculumData.content) {
+      console.error("Invalid curriculum data or class ID");
+      return false;
+    }
+    
+    let success = false;
+    
+    // Try to save to Firestore
+    try {
+      const auth = getAuth();
+      if (auth.currentUser) {
+        const db = getFirestore();
+        const curriculumRef = doc(db, 'curricula', classId);
         
         await setDoc(curriculumRef, {
-          content,
+          content: curriculumData.content,
           lastUpdated: new Date().toISOString()
         });
         
         console.log("Curriculum saved to Firestore successfully");
+        success = true;
+        
+        // If content is published, also save a separate published version
+        if (this.hasPublishedContent(curriculumData.content)) {
+          const publishedContent = this.filterPublishedContent(curriculumData);
+          if (publishedContent) {
+            const publishedRef = doc(db, 'published_curricula', classId);
+            await setDoc(publishedRef, {
+              content: publishedContent.content,
+              lastUpdated: new Date().toISOString()
+            });
+            console.log("Published curriculum saved to Firestore successfully");
+          }
+        }
       }
     } catch (firestoreError) {
       console.error("Error saving curriculum to Firestore:", firestoreError);
-      // Continue to save to localStorage as a backup
+      // Continue to save to other storage mechanisms
     }
-
-    // Always save to localStorage as backup for offline access
+    
+    // Save to persistent storage
     try {
-      const currKey = `curriculum_${classId}_${content.id || 'main'}`;
-      localStorage.setItem(currKey, JSON.stringify({
-        content,
-        lastUpdated: new Date().toISOString()
-      }));
+      const persistentStorage = new PersistentStorage();
+      await persistentStorage.saveCurriculum(classId, curriculumData);
+      console.log("Curriculum saved to persistent storage successfully");
+      success = true;
       
-      console.log("Curriculum saved to localStorage successfully");
-      return true;
-    } catch (e) {
-      console.error("Error saving curriculum to localStorage:", e);
-      return false;
+      // If content is published, also save a separate published version
+      if (this.hasPublishedContent(curriculumData.content)) {
+        const publishedContent = this.filterPublishedContent(curriculumData);
+        if (publishedContent) {
+          await persistentStorage.savePublishedCurriculum(classId, publishedContent);
+          console.log("Published curriculum saved to persistent storage successfully");
+        }
+      }
+    } catch (persistentStorageError) {
+      console.error("Error saving curriculum to persistent storage:", persistentStorageError);
     }
+    
+    // Save to localStorage as a fallback
+    try {
+      const localStorageKey = `curriculum_${classId}`;
+      localStorage.setItem(localStorageKey, JSON.stringify(curriculumData));
+      console.log("Curriculum saved to localStorage successfully");
+      success = true;
+      
+      // If content is published, also save a separate published version
+      if (this.hasPublishedContent(curriculumData.content)) {
+        const publishedContent = this.filterPublishedContent(curriculumData);
+        if (publishedContent) {
+          const publishedKey = `published-curriculum-${classId}`;
+          localStorage.setItem(publishedKey, JSON.stringify(publishedContent.content));
+          console.log("Published curriculum saved to localStorage successfully");
+        }
+      }
+    } catch (localStorageError) {
+      console.error("Error saving curriculum to localStorage:", localStorageError);
+    }
+    
+    return success;
+  }
+  
+  // Check if curriculum content has any published items
+  private hasPublishedContent(content: any): boolean {
+    if (!content) return false;
+    
+    // Check if content is an array of lessons
+    if (Array.isArray(content)) {
+      // Check if any lesson is published
+      const hasPublishedLessons = content.some(lesson => lesson.isPublished === true);
+      if (hasPublishedLessons) return true;
+      
+      // Check for published content items within lessons
+      return content.some(lesson => {
+        // Check published contents
+        if (lesson.contents && Array.isArray(lesson.contents)) {
+          if (lesson.contents.some(item => item && item.isPublished === true)) return true;
+        }
+        
+        // Check published assignments
+        if (lesson.assignments && Array.isArray(lesson.assignments)) {
+          if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) return true;
+        }
+        
+        // Check published quizzes
+        if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
+          if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) return true;
+        }
+        
+        return false;
+      });
+    }
+    
+    // Check if content has a lessons property that is an array
+    if (content.lessons && Array.isArray(content.lessons)) {
+      // Check if any lesson is published
+      const hasPublishedLessons = content.lessons.some(lesson => lesson.isPublished === true);
+      if (hasPublishedLessons) return true;
+      
+      // Check for published content items within lessons
+      return content.lessons.some(lesson => {
+        // Check published contents
+        if (lesson.contents && Array.isArray(lesson.contents)) {
+          if (lesson.contents.some(item => item && item.isPublished === true)) return true;
+        }
+        
+        // Check published assignments
+        if (lesson.assignments && Array.isArray(lesson.assignments)) {
+          if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) return true;
+        }
+        
+        // Check published quizzes
+        if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
+          if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) return true;
+        }
+        
+        return false;
+      });
+    }
+    
+    // Check if content has units with lessons
+    if (content.units && Array.isArray(content.units)) {
+      return content.units.some(unit => 
+        unit.lessons && Array.isArray(unit.lessons) && 
+        unit.lessons.some(lesson => {
+          // Check if lesson itself is published
+          if (lesson.isPublished === true) return true;
+          
+          // Check published contents
+          if (lesson.contents && Array.isArray(lesson.contents)) {
+            if (lesson.contents.some(item => item && item.isPublished === true)) return true;
+          }
+          
+          // Check published assignments
+          if (lesson.assignments && Array.isArray(lesson.assignments)) {
+            if (lesson.assignments.some(assignment => assignment && assignment.isPublished === true)) return true;
+          }
+          
+          // Check published quizzes
+          if (lesson.quizzes && Array.isArray(lesson.quizzes)) {
+            if (lesson.quizzes.some(quiz => quiz && quiz.isPublished === true)) return true;
+          }
+          
+          return false;
+        })
+      );
+    }
+    
+    return false;
   }
 
+  // Method for students to get published curriculum
+  async getPublishedCurriculum(classId: string): Promise<any> {
+    console.log(`Getting published curriculum for class ${classId}`);
+    
+    try {
+      // First try to get from Firestore
+      try {
+        const curriculumRef = doc(db, 'curricula', classId);
+        const curriculumSnapshot = await getDoc(curriculumRef);
+        
+        if (curriculumSnapshot.exists()) {
+          const data = curriculumSnapshot.data();
+          console.log(`Found curriculum in Firestore for class ${classId}`);
+          
+          // Filter for published content only
+          return this.filterPublishedContent(data);
+        }
+      } catch (firestoreError) {
+        console.error("Error getting curriculum from Firestore:", firestoreError);
+      }
+      
+      // Then check localStorage for published version
+      try {
+        const publishedData = localStorage.getItem(`published-curriculum-${classId}`);
+        if (publishedData) {
+          return JSON.parse(publishedData);
+        }
+      } catch (localStorageError) {
+        console.error("Error reading from localStorage:", localStorageError);
+      }
+      
+      // Fall back to regular curriculum and filter it
+      try {
+        const regularCurriculum = localStorage.getItem(`curriculum_${classId}`);
+        if (regularCurriculum) {
+          const data = JSON.parse(regularCurriculum);
+          return this.filterPublishedContent(data);
+        }
+      } catch (fallbackError) {
+        console.error("Error with curriculum fallback:", fallbackError);
+      }
+      
+      return null;
+  } catch (error) {
+      console.error("Error in getPublishedCurriculum:", error);
+      return null;
+    }
+  }
+  
   async updateCurriculum(classId: string, curriculum: Partial<Curriculum>): Promise<boolean> {
     try {
       console.log(`Updating curriculum for class ${classId} in Firestore`);
@@ -1228,7 +1498,7 @@ class StorageService {
   } catch (error) {
       console.error(`Error uploading file ${file.name}:`, error);
     throw error;
-    }
+  }
   }
 
   async deleteFile(path: string): Promise<boolean> {

@@ -115,99 +115,81 @@ export default function StudentCurriculum() {
           foundClass.enrolledStudents.includes(user.id)) {
         setCurrentClass(foundClass)
 
-        // Try to load published curriculum data
-        if (typeof window !== "undefined") {
-          const publishedCurriculumKey = `published-curriculum-${classId}`
-          const publishedData = localStorage.getItem(publishedCurriculumKey)
-
-          if (publishedData) {
-            try {
-              const publishedCurriculum = JSON.parse(publishedData)
-
-              // Get the full curriculum from the class
-              const fullCurriculum = foundClass.curriculum || { lessons: [] }
-
-              // Create a new curriculum with only published content
-              const studentCurriculum = { lessons: [...fullCurriculum.lessons] }
-
-              // For each lesson with published content
-              Object.keys(publishedCurriculum).forEach((lessonIndex) => {
-                const lessonContents = publishedCurriculum[lessonIndex]
-
-                // Make sure this lesson exists in our curriculum
-                if (studentCurriculum.lessons[lessonIndex]) {
-                  // Initialize contents array if it doesn't exist
-                  if (!studentCurriculum.lessons[lessonIndex].contents) {
-                    studentCurriculum.lessons[lessonIndex].contents = []
-                  }
-
-                  // For each published content in this lesson
-                  Object.keys(lessonContents).forEach((contentIndex) => {
-                    const publishedContent = lessonContents[contentIndex]
-
-                    // Add the published content
-                    studentCurriculum.lessons[lessonIndex].contents[contentIndex] = {
-                      ...publishedContent,
-                      isPublished: true,
-                    }
-                  })
-
-                  // Filter out any unpublished content
-                  studentCurriculum.lessons[lessonIndex].contents = studentCurriculum.lessons[
-                    lessonIndex
-                  ].contents.filter((content) => content && content.isPublished)
-                }
-              })
-
-              setCurriculum(studentCurriculum)
+        // Load curriculum data using the getCurriculum method
+        const loadCurriculum = async () => {
+          try {
+            const curriculumData = await storage.getCurriculum(classId, user);
+            
+            if (curriculumData && curriculumData.content) {
+              setCurriculum(curriculumData.content);
               
               // Extract lessons with content
-              const filteredLessons = studentCurriculum.lessons.filter(
-                lesson => lesson && lesson.contents && lesson.contents.length > 0
-              )
-              setLessonsWithContent(filteredLessons)
+              let filteredLessons = [];
               
-            } catch (error) {
-              console.error("Error loading published curriculum:", error)
-              setCurriculum({ lessons: [] })
-              setLessonsWithContent([])
-            }
-          } else {
-            // If no published curriculum, check if there's one in the class
-            if (foundClass.curriculum) {
-              // Filter to only include published content
-              const studentCurriculum = {
-                lessons: foundClass.curriculum.lessons
-                  .map((lesson) => ({
-                    ...lesson,
-                    contents: (lesson.contents || []).filter((content) => content.isPublished),
-                  }))
-                  .filter((lesson) => lesson.contents.length > 0),
+              // Handle different curriculum structures
+              if (Array.isArray(curriculumData.content)) {
+                // If content is directly an array of lessons
+                filteredLessons = curriculumData.content.filter(
+                  lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
+                );
+              } else if (curriculumData.content.lessons && Array.isArray(curriculumData.content.lessons)) {
+                // If content has a lessons property
+                filteredLessons = curriculumData.content.lessons.filter(
+                  lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
+                );
+              } else if (curriculumData.content.units && Array.isArray(curriculumData.content.units)) {
+                // If content has units with lessons
+                // Flatten units into lessons for display
+                filteredLessons = curriculumData.content.units.flatMap(unit => {
+                  return (unit.lessons || []).filter(
+                    lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
+                  );
+                });
               }
-              setCurriculum(studentCurriculum)
-              setLessonsWithContent(studentCurriculum.lessons || [])
+              
+              setLessonsWithContent(filteredLessons);
+              setLastUpdateTimestamp(curriculumData.lastUpdated);
+              
+              // If there are lessons with content, set the first one as active
+              if (filteredLessons.length > 0) {
+                setActiveLesson(0);
+              }
             } else {
-              setCurriculum({ lessons: [] })
-              setLessonsWithContent([])
+              console.log("No published curriculum available for this student");
+              setCurriculum({ lessons: [] });
+              setLessonsWithContent([]);
+              toast({
+                title: "No content available",
+                description: "There is no published curriculum content available for this class yet.",
+                variant: "warning",
+              });
             }
+          } catch (error) {
+            console.error("Error loading curriculum:", error);
+            setCurriculum({ lessons: [] });
+            setLessonsWithContent([]);
+            toast({
+              title: "Error loading curriculum",
+              description: "There was a problem loading the curriculum content.",
+              variant: "destructive",
+            });
           }
+        };
+        
+        loadCurriculum();
 
-          // Load any previously graded content
-          if (user) {
-            // Load attempt counts
-            const attemptCountsKey = `attempt-counts-${classId}-${user.id}`
-            const attemptCountsData = localStorage.getItem(attemptCountsKey)
-            if (attemptCountsData) {
-              try {
-                setAttemptCounts(JSON.parse(attemptCountsData))
-              } catch (error) {
-                console.error("Error loading attempt counts:", error)
-              }
+        // Load any previously graded content
+        if (user) {
+          // Load attempt counts
+          const attemptCountsKey = `attempt-counts-${classId}-${user.id}`;
+          const attemptCountsData = localStorage.getItem(attemptCountsKey);
+          if (attemptCountsData) {
+            try {
+              setAttemptCounts(JSON.parse(attemptCountsData));
+            } catch (error) {
+              console.error("Error loading attempt counts:", error);
             }
           }
-        } else {
-          setCurriculum({ lessons: [] })
-          setLessonsWithContent([])
         }
       } else {
         toast({

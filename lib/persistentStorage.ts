@@ -1017,6 +1017,125 @@ export class PersistentStorage {
     }
   }
 
+  // Save published curriculum for a class
+  public async savePublishedCurriculum(classId: string, publishedContent: any): Promise<boolean> {
+    try {
+      console.log(`PersistentStorage: Saving published curriculum for class ${classId}`);
+      
+      if (!classId) {
+        console.error("PersistentStorage: Invalid classId for savePublishedCurriculum");
+        return false;
+      }
+      
+      // Prepare curriculum data with timestamps
+      const curriculumData = {
+        ...publishedContent,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      // 1. Try to update in Firebase
+      let firebaseSuccess = false;
+      try {
+        const publishedRef = collection(db, "published_curricula");
+        const q = query(publishedRef, where("classId", "==", classId));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
+          const docRef = doc(db, "published_curricula", querySnapshot.docs[0].id);
+          await updateDoc(docRef, {
+            content: curriculumData.content,
+            lastUpdated: new Date().toISOString()
+          });
+          firebaseSuccess = true;
+        } else {
+          await addDoc(publishedRef, {
+            classId,
+            content: curriculumData.content,
+            lastUpdated: new Date().toISOString()
+          });
+          firebaseSuccess = true;
+        }
+        console.log(`PersistentStorage: Successfully saved published curriculum to Firebase for class ${classId}`);
+      } catch (firestoreError) {
+        console.error("PersistentStorage: Error saving published curriculum to Firebase:", firestoreError);
+        // Continue with other storage methods
+      }
+      
+      // 2. Always save to localStorage
+      try {
+        const publishedKey = `published-curriculum-${classId}`;
+        localStorage.setItem(publishedKey, JSON.stringify(curriculumData.content));
+        console.log(`PersistentStorage: Saved published curriculum to localStorage for class ${classId}`);
+        return true;
+      } catch (localError) {
+        console.error("PersistentStorage: Error saving published curriculum to localStorage:", localError);
+        // Return true if we at least saved to Firebase
+        return firebaseSuccess;
+      }
+    } catch (error) {
+      console.error("PersistentStorage: Critical error in savePublishedCurriculum:", error);
+      
+      // Last resort - try direct localStorage
+      try {
+        const publishedKey = `published-curriculum-${classId}`;
+        localStorage.setItem(publishedKey, JSON.stringify(publishedContent.content));
+        return true;
+      } catch (e) {
+        console.error("PersistentStorage: All published curriculum save methods failed");
+        return false;
+      }
+    }
+  }
+
+  // Get published curriculum for a class
+  public async getPublishedCurriculum(classId: string): Promise<any> {
+    try {
+      console.log(`PersistentStorage: Getting published curriculum for class ${classId}`);
+      
+      if (!classId) {
+        console.error("PersistentStorage: Invalid classId for getPublishedCurriculum");
+        return null;
+      }
+      
+      // 1. First try to get from Firebase
+      try {
+        const publishedRef = collection(db, "published_curricula");
+        const q = query(publishedRef, where("classId", "==", classId));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
+          const data = querySnapshot.docs[0].data();
+          if (data && data.content) {
+            console.log(`PersistentStorage: Found published curriculum in Firebase for class ${classId}`);
+            return data.content;
+          }
+        }
+      } catch (firestoreError) {
+        console.warn("PersistentStorage: Error fetching published curriculum from Firebase:", firestoreError);
+      }
+      
+      // 2. Try localStorage
+      try {
+        const publishedKey = `published-curriculum-${classId}`;
+        const publishedData = localStorage.getItem(publishedKey);
+        
+        if (publishedData) {
+          const parsedData = JSON.parse(publishedData);
+          console.log(`PersistentStorage: Found published curriculum in localStorage for class ${classId}`);
+          return parsedData;
+        }
+      } catch (localError) {
+        console.warn("PersistentStorage: Error fetching published curriculum from localStorage:", localError);
+      }
+      
+      console.log(`PersistentStorage: No published curriculum found for class ${classId}`);
+      return null;
+    } catch (error) {
+      console.error("PersistentStorage: Critical error in getPublishedCurriculum:", error);
+      return null;
+    }
+  }
+
   // Get current user from session
   public getCurrentUser(): any {
     if (typeof window === "undefined") return null
