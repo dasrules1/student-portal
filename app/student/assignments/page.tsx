@@ -21,6 +21,8 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { toast } from "@/components/ui/use-toast"
 import { PersistentStorage } from "@/lib/persistentStorage"
 import { sessionManager } from "@/lib/session"
+import { getDoc, doc, collection, query, where, getDocs } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 
 // Define interfaces for data structures
 interface User {
@@ -357,13 +359,28 @@ export default function StudentAssignments() {
     if (!studentId) return;
     
     setLoading(true);
+    console.log(`Loading assignments for student ${studentId}`);
     
     // First check if we have any published assignments directly, regardless of enrollment
     const directAssignments = await checkForDirectPublishedAssignments(studentId);
     if (directAssignments && directAssignments.length > 0) {
       console.log(`Found ${directAssignments.length} direct published assignments`);
       setAssignments(directAssignments);
+      
+      // Calculate pending assignments
+      const now = new Date();
+      const oneWeekFromNow = new Date();
+      oneWeekFromNow.setDate(now.getDate() + 7);
+      
+      const pendingAssignments = directAssignments.filter(assignment => {
+        if (!assignment.dueDate) return false;
+        const dueDate = new Date(assignment.dueDate);
+        return dueDate > now && dueDate <= oneWeekFromNow;
+      });
+      
+      setPendingAssignments(pendingAssignments);
       setLoading(false);
+      
       return;
     }
     
@@ -453,20 +470,175 @@ export default function StudentAssignments() {
     try {
       if (typeof window === 'undefined') return [];
       
-      // Check for direct assignment publications in localStorage
+      console.log("Checking for direct published assignments");
       const allAssignments: EnrichedAssignment[] = [];
       
-      // Get all items from localStorage that might be published assignments
+      // NEW: First try the specialized published_assignments collection
+      try {
+        console.log("Checking published_assignments collection");
+        if (db) {
+          // Get classes student is enrolled in
+          let enrolledClassIds: string[] = [];
+          
+          // Try getting direct enrollment record from localStorage first
+          const enrollmentsKey = `student-enrollments-${studentId}`;
+          const enrollmentsJson = localStorage.getItem(enrollmentsKey);
+          
+          if (enrollmentsJson) {
+            try {
+              const parsedEnrollments = JSON.parse(enrollmentsJson);
+              if (Array.isArray(parsedEnrollments)) {
+                enrolledClassIds = parsedEnrollments;
+                console.log(`Found ${enrolledClassIds.length} enrolled classes in direct localStorage record`);
+              }
+            } catch (parseError) {
+              console.warn("Error parsing enrollments from localStorage:", parseError);
+            }
+          }
+          
+          // If we have enrolled classes, search for published assignments for those classes
+          if (enrolledClassIds.length > 0) {
+            for (const classId of enrolledClassIds) {
+              // Query for all published assignments for this class
+              try {
+                const assignmentsCollectionRef = collection(db, 'published_assignments');
+                const q = query(
+                  assignmentsCollectionRef, 
+                  where('classId', '==', classId),
+                  where('isPublished', '==', true)
+                );
+                
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                  querySnapshot.forEach((docSnapshot) => {
+                    const assignmentData = docSnapshot.data();
+                    console.log(`Found published assignment: ${assignmentData.title}`);
+                    
+                    // Convert to EnrichedAssignment format
+                    allAssignments.push({
+                      id: assignmentData.contentId,
+                      title: assignmentData.title,
+                      description: assignmentData.description,
+                      type: assignmentData.type,
+                      isPublished: true,
+                      dueDate: assignmentData.dueDate,
+                      classId: assignmentData.classId,
+                      className: assignmentData.className,
+                      lessonId: assignmentData.lessonId,
+                      lessonTitle: assignmentData.lessonTitle,
+                      problems: assignmentData.problems,
+                      points: assignmentData.points
+                    });
+                  });
+                  
+                  console.log(`Found ${querySnapshot.size} published assignments for class ${classId}`);
+                }
+              } catch (queryError) {
+                console.error(`Error querying published assignments for class ${classId}:`, queryError);
+              }
+            }
+          } else {
+            console.log("No enrolled classes found for published assignments query");
+          }
+        }
+      } catch (publishedAssignmentsError) {
+        console.warn("Error checking published_assignments collection:", publishedAssignmentsError);
+      }
+      
+      // 2. Next try Firestore published_curricula collection
+      try {
+        console.log("Checking Firestore published_curricula collection");
+        if (db) {
+          // Get classes the student is enrolled in to check each one
+          let enrolledClassIds: string[] = [];
+          
+          // Try getting direct enrollment record from localStorage first
+          const enrollmentsKey = `student-enrollments-${studentId}`;
+          const enrollmentsJson = localStorage.getItem(enrollmentsKey);
+          
+          if (enrollmentsJson) {
+            try {
+              const parsedEnrollments = JSON.parse(enrollmentsJson);
+              if (Array.isArray(parsedEnrollments)) {
+                enrolledClassIds = parsedEnrollments;
+                console.log(`Found ${enrolledClassIds.length} enrolled classes in direct localStorage record`);
+              }
+            } catch (parseError) {
+              console.warn("Error parsing enrollments from localStorage:", parseError);
+            }
+          }
+          
+          // If no direct record, try getting the user to see their classes
+          if (enrolledClassIds.length === 0) {
+            const user = await storage.getUserById(studentId);
+            if (user && Array.isArray(user.classes)) {
+              enrolledClassIds = user.classes;
+              console.log(`Found ${enrolledClassIds.length} enrolled classes from user record`);
+            }
+          }
+          
+          // For each class, check for published curriculum in Firestore
+          for (const classId of enrolledClassIds) {
+            try {
+              const publishedRef = doc(db, 'published_curricula', classId);
+              const publishedSnap = await getDoc(publishedRef);
+              
+              if (publishedSnap.exists()) {
+                const publishedData = publishedSnap.data();
+                console.log(`Found published curriculum for class ${classId} in Firestore`);
+                
+                if (publishedData && publishedData.content) {
+                  // Process this published curriculum to extract assignments
+                  const classDetails = await storage.getClassById(classId);
+                  const className = classDetails?.name || 'Class';
+                  
+                  // Extract assignments from lessons
+                  if (publishedData.content.lessons && Array.isArray(publishedData.content.lessons)) {
+                    publishedData.content.lessons.forEach((lesson: any) => {
+                      if (lesson.contents && Array.isArray(lesson.contents)) {
+                        lesson.contents.forEach((content: any) => {
+                          if (content.isPublished === true && 
+                              (content.type === 'assignment' || content.type === 'quiz')) {
+                            allAssignments.push({
+                              ...content,
+                              classId,
+                              className,
+                              lessonId: lesson.id,
+                              lessonTitle: lesson.title
+                            });
+                          }
+                        });
+                      }
+                    });
+                  }
+                }
+              }
+            } catch (classError) {
+              console.warn(`Error checking published curriculum for class ${classId}:`, classError);
+            }
+          }
+        }
+      } catch (firestoreError) {
+        console.warn("Error checking Firestore for published content:", firestoreError);
+      }
+      
+      // 3. Then check localStorage including new direct keys
+      // Check for direct assignment publications in localStorage
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (!key) continue;
         
-        // Check if it's a published content key
-        if (key.startsWith('published-contents-')) {
+        // Check if it's a published content key (check all formats)
+        if (key.startsWith('published-contents-') || 
+            key.startsWith('published-curriculum-') ||
+            key.startsWith('assignment-')) {
           try {
             const content = localStorage.getItem(key);
             if (content) {
               const parsedContent = JSON.parse(content);
+              
+              // Handle array format (published-contents)
               if (Array.isArray(parsedContent)) {
                 // Filter for assignment and quiz type content
                 const assignments = parsedContent.filter(item => 
@@ -478,6 +650,39 @@ export default function StudentAssignments() {
                   console.log(`Found ${assignments.length} assignments in ${key}`);
                   allAssignments.push(...assignments);
                 }
+              } 
+              // Handle single assignment format (assignment-classId-contentId)
+              else if (key.startsWith('assignment-') && 
+                      parsedContent.isPublished === true &&
+                      (parsedContent.type === 'assignment' || parsedContent.type === 'quiz')) {
+                console.log(`Found direct assignment in ${key}`);
+                allAssignments.push(parsedContent);
+              }
+              // Handle nested format (published-curriculum)
+              else if (parsedContent.lessons && Array.isArray(parsedContent.lessons)) {
+                const extractedAssignments: EnrichedAssignment[] = [];
+                
+                parsedContent.lessons.forEach((lesson: any) => {
+                  if (lesson.contents && Array.isArray(lesson.contents)) {
+                    lesson.contents.forEach((content: any) => {
+                      if (content.isPublished === true && 
+                         (content.type === 'assignment' || content.type === 'quiz')) {
+                        extractedAssignments.push({
+                          ...content,
+                          classId: content.classId || lesson.classId || '',
+                          className: content.className || lesson.className || 'Class',
+                          lessonId: lesson.id,
+                          lessonTitle: lesson.title
+                        });
+                      }
+                    });
+                  }
+                });
+                
+                if (extractedAssignments.length > 0) {
+                  console.log(`Found ${extractedAssignments.length} assignments in nested curriculum format`);
+                  allAssignments.push(...extractedAssignments);
+                }
               }
             }
           } catch (keyError) {
@@ -486,9 +691,19 @@ export default function StudentAssignments() {
         }
       }
       
-      // If we found assignments, sort them by due date
+      // If we found assignments, deduplicate and sort them by due date
       if (allAssignments.length > 0) {
-        return allAssignments.sort((a, b) => {
+        console.log(`Found a total of ${allAssignments.length} published assignments`);
+        
+        // Deduplicate assignments based on id
+        const deduplicatedAssignments = Array.from(
+          new Map(allAssignments.map(assignment => [assignment.id, assignment])).values()
+        );
+        
+        console.log(`After deduplication: ${deduplicatedAssignments.length} unique assignments`);
+        
+        // Sort by due date
+        return deduplicatedAssignments.sort((a, b) => {
           if (!a.dueDate) return 1;
           if (!b.dueDate) return -1;
           return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
@@ -593,7 +808,7 @@ export default function StudentAssignments() {
         if (!foundPublishedContent) {
           // 2. Try the published curriculum structure from storage API
           try {
-            const curriculum = await storage.getCurriculum(classItem.id, { id: studentId, role: "student" } as User);
+            const curriculum = await storage.getCurriculum(classItem.id, 'student');
             
             if (curriculum && curriculum.content) {
               console.log("Loaded curriculum structure from API:", JSON.stringify(curriculum).substring(0, 200) + "...");
@@ -745,6 +960,7 @@ export default function StudentAssignments() {
   // Helper function to extract assignments from content
   const extractAssignmentsFromContent = (content: any, classItem: any): EnrichedAssignment[] => {
     let extractedAssignments: EnrichedAssignment[] = [];
+    console.log(`Extracting assignments from content for class ${classItem.name}`);
     
     // Direct assignments array at top level
     if (content.assignments && Array.isArray(content.assignments)) {

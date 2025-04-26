@@ -644,6 +644,36 @@ export class PersistentStorage {
     return true // Not being enrolled is considered a success for unenrollment
   }
 
+  // Get classes by student ID
+  public getClassesByStudentId(studentId: string): Class[] {
+    this.ensureInitialized()
+    
+    console.log(`PersistentStorage: Getting classes for student ID ${studentId}`)
+    
+    // Get the student to verify they exist
+    const student = this.getUserById(studentId)
+    if (!student) {
+      console.warn(`PersistentStorage: Student ${studentId} not found`)
+      return []
+    }
+    
+    // Filter classes where student is enrolled
+    const enrolledClasses = this.classes.filter(cls => {
+      // Check if class has enrolledStudents property and it includes the studentId
+      if (cls.enrolledStudents && Array.isArray(cls.enrolledStudents)) {
+        const isEnrolled = cls.enrolledStudents.includes(studentId)
+        if (isEnrolled) {
+          console.log(`PersistentStorage: Student ${studentId} is enrolled in class ${cls.id}: ${cls.name}`)
+        }
+        return isEnrolled
+      }
+      return false
+    })
+    
+    console.log(`PersistentStorage: Found ${enrolledClasses.length} classes for student ${studentId}`)
+    return enrolledClasses
+  }
+
   // Get activity logs - completely safe, always returns an immutable array
   public getActivityLogs(): ActivityLog[] {
     try {

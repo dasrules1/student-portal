@@ -3,7 +3,7 @@
 
 // Type declarations for external modules to suppress errors
 // @ts-ignore
-import { persistentStorage } from "@/lib/persistentStorage"
+import { PersistentStorage } from "@/lib/persistentStorage"
 // @ts-ignore
 import { 
   ref, 
@@ -15,7 +15,7 @@ import {
   FirebaseStorage
 } from 'firebase/storage';
 // @ts-ignore
-import { storage as firebaseStorage, db } from './firebase';
+import { storage as firebaseStorage, db, auth } from './firebase';
 // @ts-ignore
 import { 
   collection, 
@@ -32,12 +32,12 @@ import {
   setDoc,
   QueryDocumentSnapshot,
   DocumentReference,
-  writeBatch
+  writeBatch,
+  getFirestore
 } from 'firebase/firestore';
 // Import Firebase Auth functionality
 import { firebaseAuth } from './firebase-auth';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from './firebase';
+import { createUserWithEmailAndPassword, updateProfile, getAuth } from 'firebase/auth';
 
 // Types
 export interface User {
@@ -1075,213 +1075,211 @@ class StorageService {
   }
 
   // Get curriculum data for a class
-  async getCurriculum(classId: string, user?: User): Promise<{classId: string, content: any, lastUpdated: string} | null> {
-    console.log(`Getting curriculum for class ${classId}`);
-    
-    let curriculumData = null;
-    const isStudent = user?.role === 'student';
-    
-    // If requesting as a student, try to get published version first
-    if (isStudent) {
-      console.log(`Getting curriculum for student. Will filter for published content.`);
-      
-      // 1. First try to get from published_curricula in Firestore
-      try {
-        const auth = getAuth();
-        if (auth.currentUser) {
-          const db = getFirestore();
-          const publishedRef = doc(db, 'published_curricula', classId);
-          const publishedSnap = await getDoc(publishedRef);
+  async getCurriculum(classId: string, userRole?: 'student' | 'teacher' | 'admin'): Promise<Curriculum | null> {
+    console.log(`Getting curriculum for class ${classId}`)
+    let curriculum: Curriculum | null = null
+
+    // Attempt to fetch from Firestore
+    try {
+      // First attempt: Firestore
+      console.log(`Attempting to fetch curriculum for class ${classId} from Firestore`)
+      const db = getFirestore();
+      if (!db) {
+        console.error("Firestore instance not available")
+        throw new Error("Firestore instance not available")
+      }
+
+      const classDocRef = doc(db, 'classes', classId)
+      const classDocSnap = await getDoc(classDocRef)
+
+      if (classDocSnap.exists()) {
+        const classData = classDocSnap.data()
+        
+        if (classData.curriculum) {
+          console.log(`Found curriculum for class ${classId} in Firestore`)
           
-          if (publishedSnap.exists()) {
-            const data = publishedSnap.data();
-            console.log("Published curriculum retrieved from Firestore successfully");
-            return {
+          // For students, only return curriculum if it has published content
+          if (userRole === 'student') {
+            if (this.hasPublishedContent(classData.curriculum)) {
+              curriculum = {
+                classId,
+                content: classData.curriculum,
+                lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
+              }
+              console.log(`Returning published curriculum for student`)
+            } else {
+              console.log(`No published content found for student`)
+              return null
+            }
+          } else {
+            // For teachers and admins, return the full curriculum
+            curriculum = {
               classId,
-              content: data.content,
-              lastUpdated: data.lastUpdated || new Date().toISOString()
+              content: classData.curriculum,
+              lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching curriculum from Firestore: ${error}`)
+      // Continue to next attempt
+    }
+
+    // If not in Firestore, try persistent storage
+    if (!curriculum) {
+      try {
+        // Second attempt: Persistent Storage
+        console.log(`Attempting to fetch curriculum for class ${classId} from persistent storage`)
+        
+        // Get persistent storage instance safely
+        let persistentStorage;
+        try {
+          const PersistentStorage = (await import('./persistentStorage')).default;
+          persistentStorage = new PersistentStorage();
+          await persistentStorage.initStorage();
+        } catch (error) {
+          console.error(`Error initializing PersistentStorage: ${error}`);
+          throw new Error("Failed to initialize persistent storage");
+        }
+        
+        if (persistentStorage && persistentStorage.getCurriculumByClassId) {
+          const storedCurriculum = await persistentStorage.getCurriculumByClassId(classId);
+          
+          if (storedCurriculum) {
+            console.log(`Found curriculum for class ${classId} in persistent storage`);
+            
+            // For students, only return curriculum if it has published content
+            if (userRole === 'student') {
+              if (this.hasPublishedContent(storedCurriculum.content)) {
+                curriculum = storedCurriculum;
+                console.log(`Returning published curriculum for student from persistent storage`);
+              } else {
+                console.log(`No published content found for student in persistent storage`);
+                return null;
+              }
+            } else {
+              // For teachers and admins, return the full curriculum
+              curriculum = storedCurriculum;
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching curriculum from persistent storage: ${error}`);
+        // Continue to next attempt
+      }
+    }
+
+    // If not in persistent storage, try localStorage
+    if (!curriculum && typeof window !== 'undefined') {
+      try {
+        // Third attempt: Local Storage
+        console.log(`Attempting to fetch curriculum for class ${classId} from localStorage`);
+        const localCurriculumStr = localStorage.getItem(`curriculum_${classId}`);
+        
+        if (localCurriculumStr) {
+          const localCurriculum = JSON.parse(localCurriculumStr);
+          console.log(`Found curriculum for class ${classId} in localStorage`);
+          
+          // For students, only return curriculum if it has published content
+          if (userRole === 'student') {
+            if (this.hasPublishedContent(localCurriculum.content)) {
+              curriculum = localCurriculum;
+              console.log(`Returning published curriculum for student from localStorage`);
+            } else {
+              console.log(`No published content found for student in localStorage`);
+              return null;
+            }
+          } else {
+            // For teachers and admins, return the full curriculum
+            curriculum = localCurriculum;
+          }
+        }
+      } catch (error) {
+        console.error(`Error fetching curriculum from localStorage: ${error}`);
+        // Continue to next attempt
+      }
+    }
+
+    // If not in any storage, check embedded class data
+    if (!curriculum) {
+      try {
+        // Fourth attempt: Embedded Class Data
+        console.log(`Attempting to fetch curriculum for class ${classId} from embedded class data`);
+        
+        // Get auth safely
+        let currentUser = null;
+        try {
+          const authInstance = getAuth();
+          if (authInstance) {
+            currentUser = authInstance.currentUser;
+          }
+        } catch (error) {
+          console.error(`Error getting auth: ${error}`);
+        }
+        
+        // Fallback to firebaseAuth if getAuth fails
+        if (!currentUser && firebaseAuth) {
+          currentUser = firebaseAuth.currentUser;
+        }
+        
+        // Try to get classes from storage or alternative method
+        let classes = [];
+        try {
+          // Try to get from storage
+          classes = await getClasses();
+        } catch (error) {
+          console.error(`Error getting classes from storage: ${error}`);
+          
+          // Fallback to persistent storage
+          try {
+            const persistentStorage = new PersistentStorage();
+            await persistentStorage.initStorage();
+            classes = persistentStorage.getClasses();
+          } catch (persistentError) {
+            console.error(`Error getting classes from persistent storage: ${persistentError}`);
+          }
+        }
+        
+        const classData = classes.find(c => c.id === classId);
+        
+        if (classData && classData.curriculum) {
+          console.log(`Found curriculum for class ${classId} in embedded class data`);
+          
+          // For students, only return curriculum if it has published content
+          if (userRole === 'student') {
+            if (this.hasPublishedContent(classData.curriculum)) {
+              curriculum = {
+                classId,
+                content: classData.curriculum,
+                lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
+              };
+              console.log(`Returning published curriculum for student from embedded class data`);
+            } else {
+              console.log(`No published content found for student in embedded class data`);
+              return null;
+            }
+          } else {
+            // For teachers and admins, return the full curriculum
+            curriculum = {
+              classId,
+              content: classData.curriculum,
+              lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
             };
           }
         }
-      } catch (firestoreError) {
-        console.error("Error retrieving published curriculum from Firestore:", firestoreError);
-      }
-      
-      // 2. Try to get from persistent storage's published curriculum
-      try {
-        const persistentStorage = new PersistentStorage();
-        const publishedData = await persistentStorage.getPublishedCurriculum(classId);
-        
-        if (publishedData) {
-          console.log("Published curriculum retrieved from persistent storage successfully");
-          return {
-            classId,
-            content: publishedData,
-            lastUpdated: new Date().toISOString()
-          };
-        }
-      } catch (persistentError) {
-        console.error("Error retrieving published curriculum from persistent storage:", persistentError);
-      }
-      
-      // 3. Check localStorage for special published curriculum format
-      try {
-        const publishedKey = `published-curriculum-${classId}`;
-        const publishedData = localStorage.getItem(publishedKey);
-        
-        if (publishedData) {
-          try {
-            const parsedData = JSON.parse(publishedData);
-            console.log("Published curriculum retrieved from localStorage successfully");
-            
-            // If the data is in the special format (object with lesson/content indices as keys)
-            // Convert it to the standard curriculum format
-            if (typeof parsedData === 'object' && !Array.isArray(parsedData) && Object.keys(parsedData).length > 0) {
-              const lessons = [];
-              
-              // Process each lesson
-              for (const lessonIdx in parsedData) {
-                const contents = [];
-                
-                // Process each content in the lesson
-                for (const contentIdx in parsedData[lessonIdx]) {
-                  contents.push(parsedData[lessonIdx][contentIdx]);
-                }
-                
-                // Only add the lesson if it has contents
-                if (contents.length > 0) {
-                  // Get lesson details from the first content if available
-                  const firstContent = contents[0];
-                  lessons.push({
-                    id: firstContent.lessonId || `lesson-${lessonIdx}`,
-                    title: firstContent.lessonTitle || `Lesson ${parseInt(lessonIdx) + 1}`,
-                    contents: contents
-                  });
-                }
-              }
-              
-              if (lessons.length > 0) {
-                return {
-                  classId,
-                  content: { lessons },
-                  lastUpdated: new Date().toISOString()
-                };
-              }
-            } else {
-              // It's already in a standard format
-              return {
-                classId,
-                content: parsedData,
-                lastUpdated: new Date().toISOString()
-              };
-            }
-          } catch (parseError) {
-            console.error("Error parsing published curriculum from localStorage:", parseError);
-          }
-        }
-      } catch (localStorageError) {
-        console.error("Error accessing localStorage for published curriculum:", localStorageError);
+      } catch (error) {
+        console.error(`Error fetching curriculum from embedded class data: ${error}`);
       }
     }
-    
-    // Try to get from Firestore first
-    try {
-      const auth = getAuth();
-      if (auth.currentUser) {
-        const db = getFirestore();
-        const curriculumRef = doc(db, 'curricula', classId);
-        const curriculumSnap = await getDoc(curriculumRef);
-        
-        if (curriculumSnap.exists()) {
-          const data = curriculumSnap.data();
-          curriculumData = {
-            classId,
-            content: data.content,
-            lastUpdated: data.lastUpdated || new Date().toISOString()
-          };
-          console.log("Curriculum retrieved from Firestore successfully");
-          
-          // Filter content for students
-          if (isStudent) {
-            return this.filterPublishedContent(curriculumData);
-          }
-          
-          return curriculumData;
-        }
-      }
-    } catch (firestoreError) {
-      console.error("Error retrieving curriculum from Firestore:", firestoreError);
+
+    if (curriculum) {
+      console.log(`Successfully retrieved curriculum for class ${classId}`);
+      return curriculum;
+    } else {
+      console.log(`No curriculum found for class ${classId}`);
+      return null;
     }
-    
-    // Try to get from persistent storage
-    try {
-      const persistentStorage = new PersistentStorage();
-      curriculumData = persistentStorage.getCurriculumByClassId(classId);
-      
-      if (curriculumData) {
-        console.log("Curriculum retrieved from persistent storage successfully");
-        
-        // Filter content for students
-        if (isStudent) {
-          return this.filterPublishedContent(curriculumData);
-        }
-        
-        return curriculumData;
-      }
-    } catch (persistentStorageError) {
-      console.error("Error retrieving curriculum from persistent storage:", persistentStorageError);
-    }
-    
-    // Try to get from local storage
-    try {
-      const localStorageKey = `curriculum_${classId}`;
-      const storedData = localStorage.getItem(localStorageKey);
-      
-      if (storedData) {
-        try {
-          curriculumData = JSON.parse(storedData);
-          console.log("Curriculum retrieved from localStorage successfully");
-          
-          // Filter content for students
-          if (isStudent) {
-            return this.filterPublishedContent(curriculumData);
-          }
-          
-          return curriculumData;
-        } catch (parseError) {
-          console.error("Error parsing curriculum data from localStorage:", parseError);
-        }
-      }
-    } catch (localStorageError) {
-      console.error("Error accessing localStorage:", localStorageError);
-    }
-    
-    // If we still don't have data, try to get from embedded class data
-    try {
-      const persistentStorage = new PersistentStorage();
-      const classData = persistentStorage.getClassById(classId);
-      
-      if (classData && classData.curriculum) {
-        curriculumData = {
-          classId,
-          content: classData.curriculum,
-          lastUpdated: classData.updatedAt || new Date().toISOString()
-        };
-        console.log("Curriculum retrieved from embedded class data successfully");
-        
-        // Filter content for students
-        if (isStudent) {
-          return this.filterPublishedContent(curriculumData);
-        }
-        
-        return curriculumData;
-      }
-    } catch (embeddedDataError) {
-      console.error("Error retrieving curriculum from embedded class data:", embeddedDataError);
-    }
-    
-    console.log(`No curriculum data found for class ${classId}`);
-    return null;
   }
 
   // Save curriculum for a class

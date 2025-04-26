@@ -51,7 +51,8 @@ import {
   collection, 
   query, 
   where,
-  onSnapshot
+  onSnapshot,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -365,6 +366,9 @@ export default function TeacherCurriculum() {
     console.log(`Publishing status for ${content.title}: ${newPublishedStatus}`);
     console.log(`Content after toggle:`, JSON.stringify(updatedCurriculum.lessons[lessonIndex].contents[contentIndex]).substring(0, 200));
 
+    // Get the current lesson
+    const currentLesson = updatedCurriculum.lessons[lessonIndex];
+    
     // 1. Save to Firebase/Firestore directly using the curriculum API
     try {
       // Structure for saving to curriculum
@@ -389,10 +393,36 @@ export default function TeacherCurriculum() {
         return;
       }
       
-      // If we're publishing content, also save to the published_curricula collection for direct student access
+      // ENHANCED: Save the specific content as a separate published item for easier discovery
       if (newPublishedStatus) {
         try {
-          // Use the imported db directly
+          // Create a special collection for easily finding all published assignments
+          // This makes it easier for students to find published assignments
+          const publishedAssignmentRef = doc(db, 'published_assignments', `${classId}_${content.id}`);
+          
+          await setDoc(publishedAssignmentRef, {
+            contentId: content.id,
+            classId: classId,
+            className: currentClass?.name || 'Class',
+            lessonId: currentLesson.id,
+            lessonTitle: currentLesson.title,
+            title: content.title,
+            description: content.description || '',
+            type: content.type || 'assignment',
+            dueDate: content.dueDate || null,
+            points: content.points || 0,
+            problems: content.problems || [],
+            isPublished: true,
+            publishedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          console.log("Successfully saved to published_assignments collection for easier discovery");
+        } catch (assignmentPublishError) {
+          console.error("Error saving to published_assignments collection:", assignmentPublishError);
+        }
+        
+        // Use the imported db directly to save to the published_curricula collection
+        try {
           const publishedRef = doc(db, 'published_curricula', classId);
           
           // Create a direct published format with the explicit published flag for each item
@@ -414,6 +444,15 @@ export default function TeacherCurriculum() {
           console.log("Successfully saved to published_curricula collection");
         } catch (publishError) {
           console.error("Error saving to published curricula collection:", publishError);
+        }
+      } else {
+        // If we're unpublishing, delete from the published_assignments collection
+        try {
+          const publishedAssignmentRef = doc(db, 'published_assignments', `${classId}_${content.id}`);
+          await deleteDoc(publishedAssignmentRef);
+          console.log("Removed from published_assignments collection");
+        } catch (unpublishError) {
+          console.error("Error removing from published_assignments collection:", unpublishError);
         }
       }
     } catch (saveError) {
@@ -462,6 +501,30 @@ export default function TeacherCurriculum() {
         
         localStorage.setItem(`published-contents-${classId}`, JSON.stringify(publishedContents));
         console.log(`Saved ${publishedContents.length} flattened published contents to localStorage`);
+        
+        // ENHANCED: Save individual content directly with improved naming
+        // This makes it much easier for students to find it
+        if (content.type === 'assignment' || content.type === 'quiz') {
+          const assignmentKey = `assignment-${classId}-${content.id}`;
+          
+          const assignmentData = {
+            ...content,
+            isPublished: newPublishedStatus,
+            classId: classId,
+            className: currentClass?.name || 'Class',
+            lessonId: currentLesson.id,
+            lessonTitle: currentLesson.title,
+            updatedAt: new Date().toISOString()
+          };
+          
+          if (newPublishedStatus) {
+            localStorage.setItem(assignmentKey, JSON.stringify(assignmentData));
+            console.log(`Saved individual assignment to localStorage with key ${assignmentKey}`);
+          } else {
+            localStorage.removeItem(assignmentKey);
+            console.log(`Removed unpublished assignment from localStorage with key ${assignmentKey}`);
+          }
+        }
         
         // 2c. For backwards compatibility, also save in the legacy indexed format
         let legacyFormat = {};
