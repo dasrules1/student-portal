@@ -18,6 +18,7 @@ import { storage } from "@/lib/storage"
 import { Badge } from "@/components/ui/badge"
 import { persistentStorage } from '@/lib/persistentStorage'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { toast } from "@/components/ui/use-toast"
 
 // Define interfaces for data structures
 interface User {
@@ -192,7 +193,7 @@ export default function StudentAssignments() {
     try {
       // Try specialized method if available
       if (typeof persistentStorage.getClassesByStudentId === 'function') {
-        return await persistentStorage.getClassesByStudentId(studentId);
+        return persistentStorage.getClassesByStudentId(studentId);
       }
       
       // Fallback to getting all classes and filtering
@@ -225,77 +226,148 @@ export default function StudentAssignments() {
       if (!enrolledClasses || enrolledClasses.length === 0) {
         console.log('Student is not enrolled in any classes');
         setLoading(false);
+        
+        // Try one more approach to get ALL classes
+        try {
+          console.log("Last attempt: Getting ALL classes and checking manually");
+          const syncClasses = storage.getAllClasses(); 
+          
+          if (syncClasses && syncClasses.length > 0) {
+            console.log(`Found ${syncClasses.length} total classes, checking if student ${studentId} is in any`);
+            
+            // Manually check each class's enrolledStudents, with very loose filtering
+            const manuallyEnrolledClasses = syncClasses.filter(cls => {
+              if (!cls) return false;
+              
+              // Check if class has enrolledStudents property (could be undefined or null)
+              if (!cls.enrolledStudents) {
+                console.log(`Class ${cls.id} has no enrolledStudents property`);
+                return false;
+              }
+              
+              // Check if it's an array
+              if (!Array.isArray(cls.enrolledStudents)) {
+                console.log(`Class ${cls.id} enrolledStudents is not an array:`, cls.enrolledStudents);
+                return false;
+              }
+              
+              // Check if student is in the array
+              if (cls.enrolledStudents.includes(studentId)) {
+                console.log(`Found student ${studentId} enrolled in class ${cls.id} with manual checking`);
+                return true;
+              }
+              
+              return false;
+            });
+            
+            if (manuallyEnrolledClasses.length > 0) {
+              console.log(`Found ${manuallyEnrolledClasses.length} enrolled classes with manual checking`);
+              // Continue with these classes
+              processEnrolledClasses(manuallyEnrolledClasses, studentId);
+              return;
+            }
+          }
+          
+          toast({
+            title: "Not enrolled in any classes",
+            description: "You are not currently enrolled in any classes. Please contact your teacher if this is an error.",
+            variant: "default"
+          });
+        } catch (finalError) {
+          console.error("Final attempt to find classes failed:", finalError);
+          toast({
+            title: "Error loading classes",
+            description: "There was a problem loading your enrolled classes. Please try refreshing the page.",
+            variant: "destructive"
+          });
+        }
         return;
       }
 
       console.log(`Found ${enrolledClasses.length} enrolled classes for student ${studentId}`);
-      const allAssignments: EnrichedAssignment[] = [];
-      const dueAssignments: EnrichedAssignment[] = [];
+      await processEnrolledClasses(enrolledClasses, studentId);
+      
+    } catch (error) {
+      console.error('Error loading assignments:', error);
+      toast({
+        title: "Error loading assignments",
+        description: "There was a problem loading your assignments. Please try refreshing the page.",
+        variant: "destructive"
+      });
+      setLoading(false);
+    }
+  };
+  
+  // Separate function to process enrolled classes and extract assignments
+  const processEnrolledClasses = async (enrolledClasses: any[], studentId: string) => {
+    const allAssignments: EnrichedAssignment[] = [];
+    const dueAssignments: EnrichedAssignment[] = [];
+    let foundAnyPublishedContent = false;
 
-      // For each class, load the curriculum and extract assignments
-      for (const classItem of enrolledClasses) {
-        try {
-          console.log(`Loading curriculum for class: ${classItem.id}`);
-          let foundPublishedContent = false;
+    // For each class, load the curriculum and extract assignments
+    for (const classItem of enrolledClasses) {
+      try {
+        console.log(`Loading curriculum for class: ${classItem.id}`);
+        let foundPublishedContent = false;
+        
+        // 1. First try to get filtered curriculum with published content
+        const curriculum = await storage.getCurriculum(classItem.id, { id: studentId, role: "student" } as User);
+        
+        if (curriculum && curriculum.content) {
+          console.log("Loaded curriculum structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
           
-          // 1. First try to get filtered curriculum with published content
-          const curriculum = await storage.getCurriculum(classItem.id, { id: studentId, role: "student" } as User);
-          
-          if (curriculum && curriculum.content) {
-            console.log("Loaded curriculum structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
+          // Handle different curriculum structures
+          const extractAssignmentsFromContent = (content: any) => {
+            let extractedAssignments: EnrichedAssignment[] = [];
             
-            // Handle different curriculum structures
-            const assignments = curriculum.content?.assignments || curriculum.content?.assignments;
-            const lessons = curriculum.content?.lessons || curriculum.content?.lessons;
-            
-            // Process assignments from curriculum
-            if (assignments && Array.isArray(assignments)) {
-              // Make sure to log what we're finding to debug
-              console.log(`Found ${assignments.length} assignments in class ${classItem.name}`);
-              
-              // Filter for published assignments only and add class details
-              const classAssignments = assignments
-                .filter((item: Content) => {
-                  // Explicit check for isPublished being true
-                  const isPublished = item.isPublished === true;
-                  console.log(`Assignment ${item.title}: isPublished=${isPublished}`);
-                  return isPublished;
-                })
+            // Direct assignments array at top level
+            if (content.assignments && Array.isArray(content.assignments)) {
+              const assignments = content.assignments
+                .filter((item: Content) => item && item.isPublished === true)
                 .map((assignment: Content) => ({
                   ...assignment,
                   className: classItem.name,
                   classId: classItem.id
                 }));
               
-              if (classAssignments.length > 0) {
+              if (assignments.length > 0) {
+                console.log(`Found ${assignments.length} published assignments in class ${classItem.name}`);
+                extractedAssignments.push(...assignments);
                 foundPublishedContent = true;
-                allAssignments.push(...classAssignments);
-                
-                // Check for assignments due soon or overdue
-                const now = new Date();
-                const oneWeekFromNow = new Date();
-                oneWeekFromNow.setDate(now.getDate() + 7);
-                
-                const pendingAssignments = classAssignments.filter((assignment: EnrichedAssignment) => {
-                  if (!assignment.dueDate) return false;
-                  
-                  const dueDate = new Date(assignment.dueDate);
-                  return dueDate > now && dueDate <= oneWeekFromNow;
-                });
-                
-                dueAssignments.push(...pendingAssignments);
+                foundAnyPublishedContent = true;
               }
             }
             
-            // Process quizzes and assignments from lessons
-            if (lessons && Array.isArray(lessons)) {
-              for (const lesson of lessons) {
-                // Extract published content from each lesson
-                const lessonContent = lesson.content || lesson.contents;
-                if (lessonContent && Array.isArray(lessonContent)) {
-                  const publishedContent = lessonContent
+            // Process lessons array
+            if (content.lessons && Array.isArray(content.lessons)) {
+              console.log(`Processing ${content.lessons.length} lessons in class ${classItem.name}`);
+              
+              content.lessons.forEach((lesson: any) => {
+                // Extract direct assignments from lesson
+                if (lesson.assignments && Array.isArray(lesson.assignments)) {
+                  const assignments = lesson.assignments
+                    .filter((item: Content) => item && item.isPublished === true)
+                    .map((assignment: Content) => ({
+                      ...assignment,
+                      className: classItem.name,
+                      classId: classItem.id,
+                      lessonId: lesson.id,
+                      lessonTitle: lesson.title
+                    }));
+                  
+                  if (assignments.length > 0) {
+                    extractedAssignments.push(...assignments);
+                    foundPublishedContent = true;
+                    foundAnyPublishedContent = true;
+                  }
+                }
+                
+                // Extract from lesson contents array
+                if (lesson.contents && Array.isArray(lesson.contents)) {
+                  const assignmentContents = lesson.contents
                     .filter((content: Content) => 
-                      content && content.isPublished === true && 
+                      content && 
+                      content.isPublished === true && 
                       (content.type === 'assignment' || content.type === 'quiz')
                     )
                     .map((content: Content) => ({
@@ -306,105 +378,126 @@ export default function StudentAssignments() {
                       lessonTitle: lesson.title
                     }));
                   
-                  if (publishedContent.length > 0) {
+                  if (assignmentContents.length > 0) {
+                    extractedAssignments.push(...assignmentContents);
                     foundPublishedContent = true;
-                    allAssignments.push(...publishedContent);
-                    
-                    // Check for lesson content due soon
-                    const now = new Date();
-                    const oneWeekFromNow = new Date();
-                    oneWeekFromNow.setDate(now.getDate() + 7);
-                    
-                    const pendingContent = publishedContent.filter((content: EnrichedAssignment) => {
-                      if (!content.dueDate) return false;
-                      
-                      const dueDate = new Date(content.dueDate);
-                      return dueDate > now && dueDate <= oneWeekFromNow;
-                    });
-                    
-                    dueAssignments.push(...pendingContent);
+                    foundAnyPublishedContent = true;
                   }
                 }
-              }
-            }
-          }
-          
-          // 2. If no published content was found, try to get published curriculum directly
-          if (!foundPublishedContent) {
-            console.log(`No published content found through regular method for class ${classItem.id}, trying published curriculum directly`);
-            
-            // Try to get from localStorage
-            try {
-              const publishedKey = `published-curriculum-${classItem.id}`;
-              const publishedData = localStorage.getItem(publishedKey);
-              
-              if (publishedData) {
-                const parsedData = JSON.parse(publishedData);
-                console.log("Found published curriculum in localStorage:", JSON.stringify(parsedData).substring(0, 200) + "...");
                 
-                // If it's the special indexed format
-                if (typeof parsedData === 'object' && !Array.isArray(parsedData)) {
-                  // Extract lesson indices
-                  for (const lessonIdx in parsedData) {
-                    // Extract content indices for this lesson
-                    for (const contentIdx in parsedData[lessonIdx]) {
-                      const content = parsedData[lessonIdx][contentIdx];
-                      
-                      // Check if it's an assignment or quiz
-                      if (content && (content.type === 'assignment' || content.type === 'quiz')) {
-                        console.log(`Found published ${content.type}: ${content.title}`);
-                        
-                        // Add enriched assignment
-                        const enrichedAssignment: EnrichedAssignment = {
+                // Handle content property as well (some data models use this)
+                if (lesson.content && Array.isArray(lesson.content)) {
+                  const assignmentContents = lesson.content
+                    .filter((content: Content) => 
+                      content && 
+                      content.isPublished === true && 
+                      (content.type === 'assignment' || content.type === 'quiz')
+                    )
+                    .map((content: Content) => ({
+                      ...content,
+                      classId: classItem.id,
+                      className: classItem.name,
+                      lessonId: lesson.id,
+                      lessonTitle: lesson.title
+                    }));
+                  
+                  if (assignmentContents.length > 0) {
+                    extractedAssignments.push(...assignmentContents);
+                    foundPublishedContent = true;
+                    foundAnyPublishedContent = true;
+                  }
+                }
+              });
+            }
+            
+            // Process units with lessons
+            if (content.units && Array.isArray(content.units)) {
+              content.units.forEach((unit: any) => {
+                if (unit.lessons && Array.isArray(unit.lessons)) {
+                  unit.lessons.forEach((lesson: any) => {
+                    // Extract from lesson contents array
+                    if (lesson.contents && Array.isArray(lesson.contents)) {
+                      const assignmentContents = lesson.contents
+                        .filter((content: Content) => 
+                          content && 
+                          content.isPublished === true && 
+                          (content.type === 'assignment' || content.type === 'quiz')
+                        )
+                        .map((content: Content) => ({
                           ...content,
                           classId: classItem.id,
                           className: classItem.name,
-                          lessonId: content.lessonId || `lesson-${lessonIdx}`,
-                          lessonTitle: content.lessonTitle || `Lesson ${parseInt(lessonIdx) + 1}`
-                        };
-                        
-                        allAssignments.push(enrichedAssignment);
-                        
-                        // Check if it's due soon
-                        if (content.dueDate) {
-                          const now = new Date();
-                          const oneWeekFromNow = new Date();
-                          oneWeekFromNow.setDate(now.getDate() + 7);
-                          const dueDate = new Date(content.dueDate);
-                          
-                          if (dueDate > now && dueDate <= oneWeekFromNow) {
-                            dueAssignments.push(enrichedAssignment);
-                          }
-                        }
+                          lessonId: lesson.id,
+                          lessonTitle: lesson.title,
+                          unitId: unit.id,
+                          unitTitle: unit.title
+                        }));
+                      
+                      if (assignmentContents.length > 0) {
+                        extractedAssignments.push(...assignmentContents);
+                        foundPublishedContent = true;
+                        foundAnyPublishedContent = true;
                       }
                     }
-                  }
+                  });
                 }
-              }
-            } catch (localStorageError) {
-              console.warn("Error accessing published curriculum from localStorage:", localStorageError);
+              });
             }
+            
+            return extractedAssignments;
+          };
+          
+          // Extract assignments from curriculum content
+          const extractedAssignments = extractAssignmentsFromContent(curriculum.content);
+          
+          if (extractedAssignments.length > 0) {
+            allAssignments.push(...extractedAssignments);
+            
+            // Check for assignments due soon or overdue
+            const now = new Date();
+            const oneWeekFromNow = new Date();
+            oneWeekFromNow.setDate(now.getDate() + 7);
+            
+            const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
+              if (!assignment.dueDate) return false;
+              
+              const dueDate = new Date(assignment.dueDate);
+              return dueDate > now && dueDate <= oneWeekFromNow;
+            });
+            
+            dueAssignments.push(...pendingAssignments);
           }
-        } catch (error) {
-          console.error(`Error loading curriculum for class ${classItem.id}:`, error);
+        } else {
+          console.log(`No curriculum content found for class ${classItem.name} (${classItem.id})`);
         }
+        
+      } catch (error) {
+        console.error(`Error loading assignments for class ${classItem.id}:`, error);
       }
-
-      // Sort assignments by due date
-      allAssignments.sort((a, b) => {
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      });
-
-      console.log(`Total published assignments found: ${allAssignments.length}`);
-      setAssignments(allAssignments);
-      setPendingAssignments(dueAssignments);
-    } catch (error) {
-      console.error('Error loading assignments:', error);
     }
+
+    console.log(`Found a total of ${allAssignments.length} published assignments across all classes`);
     
+    // Sort assignments by due date
+    const sortedAssignments = allAssignments.sort((a, b) => {
+      if (!a.dueDate) return 1; // Push items without due dates to the end
+      if (!b.dueDate) return -1;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+    
+    // Update state
+    setAssignments(sortedAssignments);
+    setPendingAssignments(dueAssignments);
     setLoading(false);
+    
+    // Show message if no published content was found
+    if (!foundAnyPublishedContent) {
+      toast({
+        title: "No assignments available",
+        description: "There are no published assignments available for your enrolled classes.",
+        variant: "default"
+      });
+    }
   };
 
   const navigation = [

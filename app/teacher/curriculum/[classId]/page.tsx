@@ -45,8 +45,46 @@ import { Switch } from "@/components/ui/switch"
 import { Slider } from "@/components/ui/slider"
 import { storage } from "@/lib/storage"
 import { sessionManager } from "@/lib/session"
-import { onSnapshot, collection, query, where } from 'firebase/firestore';
+import { 
+  doc, 
+  setDoc, 
+  collection, 
+  query, 
+  where,
+  onSnapshot
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+
+// Add interface definitions for types
+interface Class {
+  id: string;
+  name: string;
+  teacher: string;
+  teacher_id?: string;
+  enrolledStudents?: string[];
+  curriculum?: any;
+  [key: string]: any; // For other properties that might exist
+}
+
+interface SessionUser {
+  user: {
+    uid?: string;
+    id?: string;
+    displayName?: string;
+    name?: string;
+    [key: string]: any;
+  } | null;
+  role: string | null;
+  [key: string]: any;
+}
+
+interface User {
+  id: string;
+  name: string;
+  role: string;
+  classes: string[];
+  [key: string]: any; // For other properties
+}
 
 // Content types for curriculum
 const contentTypes = [
@@ -64,28 +102,28 @@ export default function TeacherCurriculum() {
   const { toast } = useToast()
   const classId = params.classId as string
 
-  const [currentClass, setCurrentClass] = useState(null)
-  const [curriculum, setCurriculum] = useState(null)
+  const [currentClass, setCurrentClass] = useState<Class | null>(null)
+  const [curriculum, setCurriculum] = useState<any>(null)
   const [activeLesson, setActiveLesson] = useState(1)
-  const [activeContent, setActiveContent] = useState(null)
+  const [activeContent, setActiveContent] = useState<any>(null)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
-  const [contentToPublish, setContentToPublish] = useState(null)
+  const [contentToPublish, setContentToPublish] = useState<any>(null)
   const [activeTab, setActiveTab] = useState("content")
-  const [studentFeedback, setStudentFeedback] = useState({})
+  const [studentFeedback, setStudentFeedback] = useState<Record<string, any>>({})
   const [gradeOverrideDialogOpen, setGradeOverrideDialogOpen] = useState(false)
-  const [studentToGrade, setStudentToGrade] = useState(null)
+  const [studentToGrade, setStudentToGrade] = useState<any>(null)
   const [overrideScore, setOverrideScore] = useState("")
   const [overrideFeedback, setOverrideFeedback] = useState("")
   const [halfCredit, setHalfCredit] = useState(false)
   const [manualGradingDialogOpen, setManualGradingDialogOpen] = useState(false)
-  const [studentSubmission, setStudentSubmission] = useState(null)
-  const [problemGrades, setProblemGrades] = useState({})
-  const [students, setStudents] = useState([])
+  const [studentSubmission, setStudentSubmission] = useState<any>(null)
+  const [problemGrades, setProblemGrades] = useState<Record<string, any>>({})
+  const [students, setStudents] = useState<User[]>([])
 
   // Load class and curriculum data
   useEffect(() => {
     // Check if user is a teacher
-    const user = sessionManager.getCurrentUser()
+    const user = sessionManager.getCurrentUser() as SessionUser;
     if (!user || user.role !== "teacher") {
       toast({
         title: "Access denied",
@@ -110,11 +148,11 @@ export default function TeacherCurriculum() {
           return
         }
 
-        setCurrentClass(foundClass)
+        setCurrentClass(foundClass as Class)
 
         // Check if this teacher is assigned to this class
-        const teacherName = user.user?.displayName || user.user?.name || user.name
-        const teacherId = user.user?.uid || user.user?.id || user.id
+        const teacherName = user.user?.displayName || user.user?.name || "";
+        const teacherId = user.user?.uid || user.user?.id || "";
         
         if (foundClass.teacher !== teacherName && foundClass.teacher_id !== teacherId) {
           toast({
@@ -292,7 +330,7 @@ export default function TeacherCurriculum() {
     )
   }
 
-  // Handle publishing content to students
+  // Handle publishing content
   const handlePublishContent = (content, lessonIndex, contentIndex) => {
     setContentToPublish({ content, lessonIndex, contentIndex })
     setPublishDialogOpen(true)
@@ -326,9 +364,17 @@ export default function TeacherCurriculum() {
     // 1. Save to Firebase/Firestore directly using the curriculum API
     try {
       console.log(`Saving curriculum with ${newPublishedStatus ? "published" : "unpublished"} assignment to storage...`);
+      
+      // Structure for saving to curriculum
+      const curriculumData = {
+        classId,
+        content: updatedCurriculum,
+        lastUpdated: new Date().toISOString()
+      };
+      
       // Save the entire curriculum to ensure it's properly stored
-      console.log("Curriculum data being saved:", JSON.stringify(updatedCurriculum).substring(0, 200) + "...");
-      const saveCurriculumResult = await storage.saveCurriculum(classId, updatedCurriculum);
+      console.log("Curriculum data being saved:", JSON.stringify(curriculumData).substring(0, 200) + "...");
+      const saveCurriculumResult = await storage.saveCurriculum(classId, curriculumData);
       
       if (!saveCurriculumResult) {
         console.error("Failed to save curriculum to primary storage");
@@ -339,6 +385,22 @@ export default function TeacherCurriculum() {
         });
         setPublishDialogOpen(false);
         return;
+      }
+      
+      // If we're publishing content, also save to the published_curricula collection
+      if (newPublishedStatus) {
+        try {
+          // Use the imported db directly
+          const publishedRef = doc(db, 'published_curricula', classId);
+          await setDoc(publishedRef, {
+            content: updatedCurriculum,
+            lastUpdated: new Date().toISOString()
+          }, { merge: true });
+          
+          console.log("Successfully saved to published_curricula collection");
+        } catch (publishError) {
+          console.error("Error saving to published curricula collection:", publishError);
+        }
       }
     } catch (saveError) {
       console.error("Error saving curriculum:", saveError);
@@ -352,38 +414,64 @@ export default function TeacherCurriculum() {
         
         // Also save the published curriculum separately - this is a special format used by student views
         const publishedCurriculumKey = `published-curriculum-${classId}`;
-        let publishedCurriculum = {};
-
-        const existingData = localStorage.getItem(publishedCurriculumKey);
-        if (existingData) {
-          try {
-            publishedCurriculum = JSON.parse(existingData);
-          } catch (e) {
-            console.warn("Error parsing existing published curriculum, creating new one");
-          }
-        }
-
-        // Update the specific content's published status
-        if (!publishedCurriculum[lessonIndex]) {
-          publishedCurriculum[lessonIndex] = {};
-        }
-
-        if (newPublishedStatus) {
-          // If publishing, add the content - ensure we preserve all fields including problems and correct answers
-          publishedCurriculum[lessonIndex][contentIndex] = content;
-          
-          // Double-check that content is properly copied with correct answers
-          if (content.problems && Array.isArray(content.problems)) {
-            publishedCurriculum[lessonIndex][contentIndex].problems = content.problems.map(p => ({...p}));
-          }
-        } else {
-          // If unpublishing, remove the content
-          delete publishedCurriculum[lessonIndex][contentIndex];
-        }
-
-        // Save back to localStorage
+        
+        // For the published version, create a simplified structure that's easily parsed by student views
+        // This uses the same structure as the main curriculum but includes only published content
+        const publishedCurriculum = {
+          lessons: updatedCurriculum.lessons.map(lesson => {
+            // Create a copy of the lesson with only published contents
+            return {
+              ...lesson,
+              contents: lesson.contents
+                .filter(item => item.isPublished === true)
+                .map(item => ({...item})) // Deep copy to avoid reference issues
+            };
+          }).filter(lesson => lesson.contents && lesson.contents.length > 0) // Only keep lessons with published content
+        };
+        
+        // Save the published version to localStorage
         localStorage.setItem(publishedCurriculumKey, JSON.stringify(publishedCurriculum));
         console.log(`Saved published curriculum to localStorage for class ${classId}`);
+        
+        // For backwards compatibility, also save in the legacy format
+        try {
+          let legacyFormat = {};
+          const existingData = localStorage.getItem(publishedCurriculumKey + '-legacy');
+          if (existingData) {
+            try {
+              legacyFormat = JSON.parse(existingData);
+            } catch (e) {
+              console.warn("Error parsing existing legacy published curriculum, creating new one");
+            }
+          }
+
+          // Update the specific content's published status in legacy format
+          if (!legacyFormat[lessonIndex]) {
+            legacyFormat[lessonIndex] = {};
+          }
+
+          if (newPublishedStatus) {
+            // If publishing, add the content with extra metadata to help student views
+            const enhancedContent = {
+              ...content,
+              lessonId: updatedCurriculum.lessons[lessonIndex].id,
+              lessonTitle: updatedCurriculum.lessons[lessonIndex].title,
+              isPublished: true, // Explicitly set this flag
+              classId: classId,
+              className: currentClass?.name || 'Class'
+            };
+            
+            legacyFormat[lessonIndex][contentIndex] = enhancedContent;
+          } else {
+            // If unpublishing, remove the content
+            delete legacyFormat[lessonIndex][contentIndex];
+          }
+
+          // Save back to localStorage as legacy format
+          localStorage.setItem(publishedCurriculumKey + '-legacy', JSON.stringify(legacyFormat));
+        } catch (legacyError) {
+          console.warn("Error saving legacy format:", legacyError);
+        }
       } catch (error) {
         console.error("Error saving published curriculum to localStorage:", error);
       }
