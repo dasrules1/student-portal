@@ -419,6 +419,29 @@ class StorageService {
       return [];
     }
   }
+  
+  // Add a synchronous version for compatibility
+  getAllClasses(): Class[] {
+    console.log("getAllClasses called - providing cached classes");
+    // Return cached classes if available
+    if (this.classes && Array.isArray(this.classes) && this.classes.length > 0) {
+      return [...this.classes];
+    }
+    
+    // Try to get from persistent storage as fallback
+    try {
+      const localClasses = persistentStorage.getAllClasses();
+      if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
+        this.classes = [...localClasses];
+        return [...localClasses];
+      }
+    } catch (error) {
+      console.error("Error in getAllClasses from persistent storage:", error);
+    }
+    
+    console.warn("No classes available in cache, returning empty array");
+    return [];
+  }
 
   // Safe wrapper for UI components
   async getSafeClasses(): Promise<Class[]> {
