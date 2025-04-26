@@ -16,13 +16,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { storage } from "@/lib/storage"
 import { Badge } from "@/components/ui/badge"
-import { persistentStorage } from '@/lib/persistentStorage'
+import { PersistentStorage } from '@/lib/persistentStorage'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { toast } from "@/components/ui/use-toast"
-import { PersistentStorage } from "@/lib/persistentStorage"
 import { sessionManager } from "@/lib/session"
 import { getDoc, doc, collection, query, where, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+
+// Initialize persistentStorage as a global instance to avoid reference errors
+const persistentStorage = new PersistentStorage();
 
 // Define interfaces for data structures
 interface User {
@@ -72,6 +74,18 @@ export default function StudentAssignments() {
   const [pendingAssignments, setPendingAssignments] = useState<EnrichedAssignment[]>([])
 
   useEffect(() => {
+    // Initialize persistent storage
+    const initPersistentStorage = async () => {
+      try {
+        // This will properly initialize the PersistentStorage module
+        await storage.getUsers();
+      } catch (error) {
+        console.error("Error initializing persistent storage:", error);
+      }
+    };
+    
+    initPersistentStorage();
+    
     // Load current user and check authorization
     const checkAuth = async () => {
       try {
@@ -210,6 +224,27 @@ export default function StudentAssignments() {
         }
       } catch (directError) {
         console.error("Error using direct getClassesByStudentId method:", directError);
+      }
+      
+      // Try persistent storage but using storage service as a proxy
+      try {
+        console.log("Trying to get classes via storage service proxy to persistent storage");
+        const enrolledClasses = await storage.getClasses();
+        
+        if (enrolledClasses && Array.isArray(enrolledClasses)) {
+          const filteredClasses = enrolledClasses.filter(cls => 
+            cls && cls.enrolledStudents && 
+            Array.isArray(cls.enrolledStudents) && 
+            cls.enrolledStudents.includes(studentId)
+          );
+          
+          if (filteredClasses.length > 0) {
+            console.log(`Found ${filteredClasses.length} classes via storage service with enrollment check`);
+            return filteredClasses;
+          }
+        }
+      } catch (proxyError) {
+        console.error("Error getting classes via storage service proxy:", proxyError);
       }
       
       // Try specialized method from persistentStorage if available
@@ -962,6 +997,58 @@ export default function StudentAssignments() {
     let extractedAssignments: EnrichedAssignment[] = [];
     console.log(`Extracting assignments from content for class ${classItem.name}`);
     
+    // Log the full structure to debug
+    console.log("Content structure:", JSON.stringify(content).substring(0, 500) + "...");
+    
+    // Handle indexed/numeric lesson structure (content.0, content.1, etc.)
+    // This needs to be checked first for the format from the API
+    if (typeof content === 'object' && content !== null) {
+      // Check for numeric keys that might be lessons
+      const numericKeys = Object.keys(content).filter(key => !isNaN(Number(key)));
+      
+      if (numericKeys.length > 0) {
+        console.log(`Found indexed structure with ${numericKeys.length} potential lessons`);
+        
+        for (const lessonIdx of numericKeys) {
+          const lesson = content[lessonIdx];
+          
+          if (lesson && typeof lesson === 'object') {
+            const lessonId = lesson.id || `lesson_${lessonIdx}`;
+            const lessonTitle = lesson.title || `Lesson ${lessonIdx}`;
+            
+            console.log(`Processing indexed lesson: ${lessonTitle}`);
+            
+            // Check for contents array
+            if (lesson.contents && Array.isArray(lesson.contents)) {
+              for (const item of lesson.contents) {
+                if (item && 
+                    item.isPublished === true && 
+                    (item.type === 'assignment' || item.type === 'quiz' || 
+                     item.type === 'homework' || item.type === 'test')) {
+                  
+                  console.log(`Found published ${item.type}: ${item.title}`);
+                  
+                  extractedAssignments.push({
+                    ...item,
+                    classId: classItem.id,
+                    className: classItem.name,
+                    lessonId: lessonId,
+                    lessonTitle: lessonTitle
+                  });
+                }
+              }
+            }
+          }
+        }
+        
+        // If we've found assignments in the indexed structure, return them
+        if (extractedAssignments.length > 0) {
+          console.log(`Successfully extracted ${extractedAssignments.length} assignments from indexed structure`);
+          return extractedAssignments;
+        }
+      }
+    }
+    
     // Direct assignments array at top level
     if (content.assignments && Array.isArray(content.assignments)) {
       const assignments = content.assignments
@@ -996,6 +1083,7 @@ export default function StudentAssignments() {
             }));
           
           if (assignments.length > 0) {
+            console.log(`Found ${assignments.length} published assignments in lesson ${lesson.title}`);
             extractedAssignments.push(...assignments);
           }
         }
@@ -1006,7 +1094,8 @@ export default function StudentAssignments() {
             .filter((content: Content) => 
               content && 
               content.isPublished === true && 
-              (content.type === 'assignment' || content.type === 'quiz')
+              (content.type === 'assignment' || content.type === 'quiz' || 
+               content.type === 'homework' || content.type === 'test')
             )
             .map((content: Content) => ({
               ...content,
@@ -1017,6 +1106,7 @@ export default function StudentAssignments() {
             }));
           
           if (assignmentContents.length > 0) {
+            console.log(`Found ${assignmentContents.length} published assignment contents in lesson ${lesson.title}`);
             extractedAssignments.push(...assignmentContents);
           }
         }
@@ -1027,7 +1117,8 @@ export default function StudentAssignments() {
             .filter((content: Content) => 
               content && 
               content.isPublished === true && 
-              (content.type === 'assignment' || content.type === 'quiz')
+              (content.type === 'assignment' || content.type === 'quiz' || 
+               content.type === 'homework' || content.type === 'test')
             )
             .map((content: Content) => ({
               ...content,
@@ -1038,6 +1129,7 @@ export default function StudentAssignments() {
             }));
           
           if (assignmentContents.length > 0) {
+            console.log(`Found ${assignmentContents.length} published assignment contents in lesson ${lesson.title}`);
             extractedAssignments.push(...assignmentContents);
           }
         }
@@ -1055,7 +1147,8 @@ export default function StudentAssignments() {
                 .filter((content: Content) => 
                   content && 
                   content.isPublished === true && 
-                  (content.type === 'assignment' || content.type === 'quiz')
+                  (content.type === 'assignment' || content.type === 'quiz' || 
+                   content.type === 'homework' || content.type === 'test')
                 )
                 .map((content: Content) => ({
                   ...content,
@@ -1074,6 +1167,12 @@ export default function StudentAssignments() {
           });
         }
       });
+    }
+    
+    if (extractedAssignments.length > 0) {
+      console.log(`Successfully extracted ${extractedAssignments.length} assignments from class ${classItem.name}`);
+    } else {
+      console.log(`No published content found for class ${classItem.name} (${classItem.id})`);
     }
     
     return extractedAssignments;
