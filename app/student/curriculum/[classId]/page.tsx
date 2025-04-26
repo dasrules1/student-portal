@@ -118,9 +118,18 @@ export default function StudentCurriculum() {
         // Load curriculum data using the getCurriculum method
         const loadCurriculum = async () => {
           try {
+            // First try the regular curriculum with filtering
             const curriculumData = await storage.getCurriculum(classId, user);
             
-            if (curriculumData && curriculumData.content) {
+            // Check if we have usable curriculum content
+            const hasCurriculumContent = curriculumData && 
+                                      curriculumData.content && 
+                                      (Array.isArray(curriculumData.content) || 
+                                       curriculumData.content.lessons || 
+                                       curriculumData.content.units);
+            
+            if (hasCurriculumContent) {
+              console.log("Found filtered curriculum data for student:", JSON.stringify(curriculumData).substring(0, 200) + "...");
               setCurriculum(curriculumData.content);
               
               // Extract lessons with content
@@ -147,23 +156,89 @@ export default function StudentCurriculum() {
                 });
               }
               
-              setLessonsWithContent(filteredLessons);
-              setLastUpdateTimestamp(curriculumData.lastUpdated);
-              
-              // If there are lessons with content, set the first one as active
+              // Check if we actually have lessons with content after filtering
               if (filteredLessons.length > 0) {
+                setLessonsWithContent(filteredLessons);
+                setLastUpdateTimestamp(curriculumData.lastUpdated);
                 setActiveLesson(0);
+                return; // Success! We have content to show
               }
-            } else {
-              console.log("No published curriculum available for this student");
-              setCurriculum({ lessons: [] });
-              setLessonsWithContent([]);
-              toast({
-                title: "No content available",
-                description: "There is no published curriculum content available for this class yet.",
-                variant: "warning",
-              });
             }
+            
+            // If we reach here, we didn't find usable content through the regular method
+            // Try to get published curriculum directly
+            console.log("No filtered curriculum content found, trying published curriculum directly");
+            
+            // Check localStorage directly for backward compatibility
+            try {
+              const publishedKey = `published-curriculum-${classId}`;
+              const localData = localStorage.getItem(publishedKey);
+              
+              if (localData) {
+                const parsedData = JSON.parse(localData);
+                console.log("Found published curriculum in localStorage:", JSON.stringify(parsedData).substring(0, 200) + "...");
+                
+                // Convert the special format to standard curriculum format if needed
+                if (typeof parsedData === 'object' && !Array.isArray(parsedData) && Object.keys(parsedData).length > 0) {
+                  // This is the special indexed format, convert it
+                  const lessons = [];
+                  
+                  // Extract lesson indices
+                  Object.keys(parsedData).forEach(lessonIdx => {
+                    const lessonContents = [];
+                    
+                    // Extract content indices for this lesson
+                    Object.keys(parsedData[lessonIdx]).forEach(contentIdx => {
+                      lessonContents.push(parsedData[lessonIdx][contentIdx]);
+                    });
+                    
+                    if (lessonContents.length > 0) {
+                      // Use the first content's lesson properties if available
+                      const firstContent = lessonContents[0];
+                      lessons.push({
+                        id: firstContent.lessonId || `lesson-${lessonIdx}`,
+                        title: firstContent.lessonTitle || `Lesson ${parseInt(lessonIdx) + 1}`,
+                        contents: lessonContents
+                      });
+                    }
+                  });
+                  
+                  if (lessons.length > 0) {
+                    const formattedCurriculum = { lessons };
+                    setCurriculum(formattedCurriculum);
+                    setLessonsWithContent(lessons);
+                    setLastUpdateTimestamp(new Date().toISOString());
+                    setActiveLesson(0);
+                    return; // Success with converted data
+                  }
+                } else if (Array.isArray(parsedData)) {
+                  // It's already in array format
+                  const filteredLessons = parsedData.filter(
+                    lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
+                  );
+                  
+                  if (filteredLessons.length > 0) {
+                    setCurriculum({ lessons: filteredLessons });
+                    setLessonsWithContent(filteredLessons);
+                    setLastUpdateTimestamp(new Date().toISOString());
+                    setActiveLesson(0);
+                    return; // Success with array data
+                  }
+                }
+              }
+            } catch (localStorageError) {
+              console.warn("Error accessing published curriculum from localStorage:", localStorageError);
+            }
+            
+            // If we reach here, we couldn't find any content
+            console.log("No published curriculum available for this student");
+            setCurriculum({ lessons: [] });
+            setLessonsWithContent([]);
+            toast({
+              title: "No content available",
+              description: "There is no published curriculum content available for this class yet.",
+              variant: "warning",
+            });
           } catch (error) {
             console.error("Error loading curriculum:", error);
             setCurriculum({ lessons: [] });

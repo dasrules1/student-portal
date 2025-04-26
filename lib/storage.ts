@@ -958,6 +958,109 @@ class StorageService {
     let curriculumData = null;
     const isStudent = user?.role === 'student';
     
+    // If requesting as a student, try to get published version first
+    if (isStudent) {
+      console.log(`Getting curriculum for student. Will filter for published content.`);
+      
+      // 1. First try to get from published_curricula in Firestore
+      try {
+        const auth = getAuth();
+        if (auth.currentUser) {
+          const db = getFirestore();
+          const publishedRef = doc(db, 'published_curricula', classId);
+          const publishedSnap = await getDoc(publishedRef);
+          
+          if (publishedSnap.exists()) {
+            const data = publishedSnap.data();
+            console.log("Published curriculum retrieved from Firestore successfully");
+            return {
+              classId,
+              content: data.content,
+              lastUpdated: data.lastUpdated || new Date().toISOString()
+            };
+          }
+        }
+      } catch (firestoreError) {
+        console.error("Error retrieving published curriculum from Firestore:", firestoreError);
+      }
+      
+      // 2. Try to get from persistent storage's published curriculum
+      try {
+        const persistentStorage = new PersistentStorage();
+        const publishedData = await persistentStorage.getPublishedCurriculum(classId);
+        
+        if (publishedData) {
+          console.log("Published curriculum retrieved from persistent storage successfully");
+          return {
+            classId,
+            content: publishedData,
+            lastUpdated: new Date().toISOString()
+          };
+        }
+      } catch (persistentError) {
+        console.error("Error retrieving published curriculum from persistent storage:", persistentError);
+      }
+      
+      // 3. Check localStorage for special published curriculum format
+      try {
+        const publishedKey = `published-curriculum-${classId}`;
+        const publishedData = localStorage.getItem(publishedKey);
+        
+        if (publishedData) {
+          try {
+            const parsedData = JSON.parse(publishedData);
+            console.log("Published curriculum retrieved from localStorage successfully");
+            
+            // If the data is in the special format (object with lesson/content indices as keys)
+            // Convert it to the standard curriculum format
+            if (typeof parsedData === 'object' && !Array.isArray(parsedData) && Object.keys(parsedData).length > 0) {
+              const lessons = [];
+              
+              // Process each lesson
+              for (const lessonIdx in parsedData) {
+                const contents = [];
+                
+                // Process each content in the lesson
+                for (const contentIdx in parsedData[lessonIdx]) {
+                  contents.push(parsedData[lessonIdx][contentIdx]);
+                }
+                
+                // Only add the lesson if it has contents
+                if (contents.length > 0) {
+                  // Get lesson details from the first content if available
+                  const firstContent = contents[0];
+                  lessons.push({
+                    id: firstContent.lessonId || `lesson-${lessonIdx}`,
+                    title: firstContent.lessonTitle || `Lesson ${parseInt(lessonIdx) + 1}`,
+                    contents: contents
+                  });
+                }
+              }
+              
+              if (lessons.length > 0) {
+                return {
+                  classId,
+                  content: { lessons },
+                  lastUpdated: new Date().toISOString()
+                };
+              }
+            } else {
+              // It's already in a standard format
+              return {
+                classId,
+                content: parsedData,
+                lastUpdated: new Date().toISOString()
+              };
+            }
+          } catch (parseError) {
+            console.error("Error parsing published curriculum from localStorage:", parseError);
+          }
+        }
+      } catch (localStorageError) {
+        console.error("Error accessing localStorage for published curriculum:", localStorageError);
+      }
+    }
+    
     // Try to get from Firestore first
     try {
       const auth = getAuth();

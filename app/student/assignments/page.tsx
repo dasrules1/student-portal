@@ -236,14 +236,17 @@ export default function StudentAssignments() {
       for (const classItem of enrolledClasses) {
         try {
           console.log(`Loading curriculum for class: ${classItem.id}`);
-          const curriculum = await storage.getCurriculum(classItem.id);
+          let foundPublishedContent = false;
           
-          if (curriculum) {
+          // 1. First try to get filtered curriculum with published content
+          const curriculum = await storage.getCurriculum(classItem.id, { id: studentId, role: "student" } as User);
+          
+          if (curriculum && curriculum.content) {
             console.log("Loaded curriculum structure:", JSON.stringify(curriculum).substring(0, 200) + "...");
             
             // Handle different curriculum structures
-            const assignments = curriculum.content?.assignments || curriculum.assignments;
-            const lessons = curriculum.content?.lessons || curriculum.lessons;
+            const assignments = curriculum.content?.assignments || curriculum.content?.assignments;
+            const lessons = curriculum.content?.lessons || curriculum.content?.lessons;
             
             // Process assignments from curriculum
             if (assignments && Array.isArray(assignments)) {
@@ -264,21 +267,24 @@ export default function StudentAssignments() {
                   classId: classItem.id
                 }));
               
-              allAssignments.push(...classAssignments);
-              
-              // Check for assignments due soon or overdue
-              const now = new Date();
-              const oneWeekFromNow = new Date();
-              oneWeekFromNow.setDate(now.getDate() + 7);
-              
-              const pendingAssignments = classAssignments.filter((assignment: EnrichedAssignment) => {
-                if (!assignment.dueDate) return false;
+              if (classAssignments.length > 0) {
+                foundPublishedContent = true;
+                allAssignments.push(...classAssignments);
                 
-                const dueDate = new Date(assignment.dueDate);
-                return dueDate > now && dueDate <= oneWeekFromNow;
-              });
-              
-              dueAssignments.push(...pendingAssignments);
+                // Check for assignments due soon or overdue
+                const now = new Date();
+                const oneWeekFromNow = new Date();
+                oneWeekFromNow.setDate(now.getDate() + 7);
+                
+                const pendingAssignments = classAssignments.filter((assignment: EnrichedAssignment) => {
+                  if (!assignment.dueDate) return false;
+                  
+                  const dueDate = new Date(assignment.dueDate);
+                  return dueDate > now && dueDate <= oneWeekFromNow;
+                });
+                
+                dueAssignments.push(...pendingAssignments);
+              }
             }
             
             // Process quizzes and assignments from lessons
@@ -301,6 +307,7 @@ export default function StudentAssignments() {
                     }));
                   
                   if (publishedContent.length > 0) {
+                    foundPublishedContent = true;
                     allAssignments.push(...publishedContent);
                     
                     // Check for lesson content due soon
@@ -319,6 +326,63 @@ export default function StudentAssignments() {
                   }
                 }
               }
+            }
+          }
+          
+          // 2. If no published content was found, try to get published curriculum directly
+          if (!foundPublishedContent) {
+            console.log(`No published content found through regular method for class ${classItem.id}, trying published curriculum directly`);
+            
+            // Try to get from localStorage
+            try {
+              const publishedKey = `published-curriculum-${classItem.id}`;
+              const publishedData = localStorage.getItem(publishedKey);
+              
+              if (publishedData) {
+                const parsedData = JSON.parse(publishedData);
+                console.log("Found published curriculum in localStorage:", JSON.stringify(parsedData).substring(0, 200) + "...");
+                
+                // If it's the special indexed format
+                if (typeof parsedData === 'object' && !Array.isArray(parsedData)) {
+                  // Extract lesson indices
+                  for (const lessonIdx in parsedData) {
+                    // Extract content indices for this lesson
+                    for (const contentIdx in parsedData[lessonIdx]) {
+                      const content = parsedData[lessonIdx][contentIdx];
+                      
+                      // Check if it's an assignment or quiz
+                      if (content && (content.type === 'assignment' || content.type === 'quiz')) {
+                        console.log(`Found published ${content.type}: ${content.title}`);
+                        
+                        // Add enriched assignment
+                        const enrichedAssignment: EnrichedAssignment = {
+                          ...content,
+                          classId: classItem.id,
+                          className: classItem.name,
+                          lessonId: content.lessonId || `lesson-${lessonIdx}`,
+                          lessonTitle: content.lessonTitle || `Lesson ${parseInt(lessonIdx) + 1}`
+                        };
+                        
+                        allAssignments.push(enrichedAssignment);
+                        
+                        // Check if it's due soon
+                        if (content.dueDate) {
+                          const now = new Date();
+                          const oneWeekFromNow = new Date();
+                          oneWeekFromNow.setDate(now.getDate() + 7);
+                          const dueDate = new Date(content.dueDate);
+                          
+                          if (dueDate > now && dueDate <= oneWeekFromNow) {
+                            dueAssignments.push(enrichedAssignment);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (localStorageError) {
+              console.warn("Error accessing published curriculum from localStorage:", localStorageError);
             }
           }
         } catch (error) {
