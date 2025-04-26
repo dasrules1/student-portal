@@ -199,25 +199,36 @@ export default function CurriculumEditor({ params }: { params: { classId: string
 
     try {
       console.log("Saving curriculum for class:", classId);
-      console.log("Curriculum data structure:", JSON.stringify(curriculum));
       
-      // First, create the curriculum object with proper format
+      // Ensure curriculum has the correct structure with lessons array
+      const structuredCurriculum = {
+        ...curriculum,
+        lessons: Array.isArray(curriculum.lessons) ? curriculum.lessons : []
+      };
+      
+      // Format for better compatibility with teacher portal
       const curriculumData = {
         classId: classId,
-        content: curriculum, 
+        content: structuredCurriculum, 
         lastUpdated: new Date().toISOString()
       };
       
-      // Save it to localStorage directly first as a backup
+      console.log("Curriculum data being saved:", JSON.stringify(curriculumData).substring(0, 200) + "...");
+      
+      // Save to multiple storage locations for redundancy
+      
+      // 1. Save to localStorage directly as a backup
       try {
         console.log("Saving to localStorage");
         localStorage.setItem(`curriculum_${classId}`, JSON.stringify(curriculumData));
+        // Also save directly to published curriculum for immediate access by students/teachers
+        localStorage.setItem(`published-curriculum-${classId}`, JSON.stringify(curriculumData.content));
         console.log("Successfully saved to localStorage");
       } catch (localStorageError) {
         console.error("Error saving to localStorage:", localStorageError);
       }
       
-      // Try using our dedicated curriculum methods
+      // 2. Save with dedicated curriculum API 
       let result = false;
       try {
         console.log("Attempting to save curriculum with dedicated API...");
@@ -233,48 +244,71 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         console.error("Error with curriculum API methods:", apiError);
       }
       
-      // ALWAYS update the class directly to hold curriculum as well
-      // This ensures both storage methods have the curriculum
+      // 3. ALWAYS update the class object with curriculum as well
       try {
         console.log("Also updating the class object with curriculum");
         const updatedClass = {
           ...classData,
-          curriculum: curriculum,
+          curriculum: structuredCurriculum,
           updatedAt: new Date().toISOString()
         };
         
-        await storage.updateClass(classId, updatedClass);
-        console.log("Curriculum saved via class update");
-        result = true;
+        const classUpdateResult = await storage.updateClass(classId, updatedClass);
+        console.log("Class update result:", classUpdateResult);
+        result = result || classUpdateResult;
       } catch (classUpdateError) {
         console.error("Error updating class:", classUpdateError);
-        // We already tried storage.saveCurriculum, so we can still count this as a partial success
-        if (result) {
-          console.log("Class update failed but curriculum was saved via API");
-        }
       }
       
-      console.log("Curriculum successfully saved");
+      // 4. Create a special published version for teachers and students
+      try {
+        // Convert the curriculum format to a lesson-indexed form for the teacher/student portal
+        const publishedFormat = {};
+        
+        if (structuredCurriculum.lessons && Array.isArray(structuredCurriculum.lessons)) {
+          structuredCurriculum.lessons.forEach((lesson, lessonIndex) => {
+            if (lesson.contents && Array.isArray(lesson.contents)) {
+              publishedFormat[lessonIndex] = {};
+              
+              lesson.contents.forEach((content, contentIndex) => {
+                if (content.isPublished) {
+                  publishedFormat[lessonIndex][contentIndex] = content;
+                }
+              });
+            }
+          });
+        }
+        
+        console.log("Saving published curriculum format");
+        localStorage.setItem(`published-curriculum-${classId}`, JSON.stringify(publishedFormat));
+      } catch (publishError) {
+        console.error("Error creating published version:", publishError);
+      }
       
-      toast({
-        title: "Curriculum saved",
-        description: "The curriculum has been saved successfully",
-      });
+      if (result) {
+        console.log("Curriculum successfully saved");
+        
+        toast({
+          title: "Curriculum saved",
+          description: "The curriculum has been saved successfully",
+        });
 
-      // Add activity log
-      await storage.addActivityLog({
-        action: "Curriculum Updated",
-        details: `Curriculum for ${classData.name} has been updated`,
-        timestamp: new Date().toLocaleString(),
-        category: "Curriculum Management",
-      });
-      
-      // Update the local class data with the curriculum
-      setClassData({
-        ...classData,
-        curriculum: curriculum
-      });
-      
+        // Add activity log
+        await storage.addActivityLog({
+          action: "Curriculum Updated",
+          details: `Curriculum for ${classData.name} has been updated`,
+          timestamp: new Date().toLocaleString(),
+          category: "Curriculum Management",
+        });
+        
+        // Update the local class data with the curriculum
+        setClassData({
+          ...classData,
+          curriculum: structuredCurriculum
+        });
+      } else {
+        throw new Error("Failed to save curriculum to any storage location");
+      }
     } catch (error) {
       console.error("Error saving curriculum:", error);
       toast({
@@ -296,19 +330,34 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       return
     }
 
+    // Generate a unique ID for the new lesson
     const newLessonId = generateId("lesson_")
+    
+    // Create the new lesson object
     const newLesson = {
       id: newLessonId,
       title: newLessonTitle,
       description: newLessonDescription,
       contents: [],
     }
+    
+    // Ensure curriculum.lessons is properly initialized
+    const currentLessons = curriculum.lessons && Array.isArray(curriculum.lessons) 
+      ? curriculum.lessons 
+      : [];
+    
+    console.log("Adding new lesson:", newLesson);
+    console.log("Current lessons:", currentLessons);
 
+    // Create the updated curriculum with the new lesson
     const updatedCurriculum = {
       ...curriculum,
-      lessons: [...curriculum.lessons, newLesson],
+      lessons: [...currentLessons, newLesson],
     }
+    
+    console.log("Updated curriculum:", updatedCurriculum);
 
+    // Update state
     setCurriculum(updatedCurriculum)
     setActiveLesson(newLessonId)
     setActiveContent(null)
@@ -318,12 +367,14 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setNewLessonDescription("")
 
     // Save to storage
-    saveCurriculum()
-
-    toast({
-      title: "Lesson added",
-      description: "New lesson has been added to the curriculum",
-    })
+    setTimeout(() => {
+      saveCurriculum();
+      
+      toast({
+        title: "Lesson added",
+        description: "New lesson has been added to the curriculum",
+      });
+    }, 100);
   }
 
   // Add new content to a lesson
