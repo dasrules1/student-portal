@@ -1771,24 +1771,10 @@ class StorageService {
       console.error("Storage: Error getting classes from Firestore:", firestoreError);
     }
     
-    // 3. Try persistent storage
-    try {
-      const persistentClasses = persistentStorage.getClassesByStudentId(studentId);
-      if (persistentClasses && persistentClasses.length > 0) {
-        console.log(`Storage: Found ${persistentClasses.length} classes in persistent storage for student ${studentId}`);
-        
-        // Merge with existing classes, avoiding duplicates
-        persistentClasses.forEach(cls => {
-          if (!enrolledClasses.some(existingCls => existingCls.id === cls.id)) {
-            enrolledClasses.push(cls);
-          }
-        });
-      }
-    } catch (persistentError) {
-      console.error("Storage: Error getting classes from persistent storage:", persistentError);
-    }
+    // 3. Skip persistent storage step - it's causing reference errors
+    // Instead, go directly to localStorage
     
-    // 4. Last resort - check localStorage directly
+    // 4. Check localStorage directly
     if (typeof window !== "undefined") {
       try {
         // First check for a direct enrollment record
