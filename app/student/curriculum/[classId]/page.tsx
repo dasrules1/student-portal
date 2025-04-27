@@ -276,16 +276,23 @@ export default function StudentCurriculum() {
                       
                       // Find the content within this lesson
                       const lesson = filteredLessons[lessonIndex];
-                      if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                        const content = lesson.contents.find(
-                          content => content && content.id === paramContentId
-                        );
-                        
-                        if (content) {
-                          console.log("Found content:", content.title);
-                          // Set active content directly
-                          setActiveContent(content);
-                        }
+                      const contentType = queryParams.type || 'content';
+                      
+                      // Determine which array to look in based on content type
+                      let content = null;
+                      if (contentType === 'quiz' && lesson.quizzes && Array.isArray(lesson.quizzes)) {
+                        content = lesson.quizzes.find(quiz => quiz && quiz.id === paramContentId);
+                      } else if (contentType === 'assignment' && lesson.assignments && Array.isArray(lesson.assignments)) {
+                        content = lesson.assignments.find(assignment => assignment && assignment.id === paramContentId);
+                      } else if (lesson.contents && Array.isArray(lesson.contents)) {
+                        content = lesson.contents.find(content => content && content.id === paramContentId);
+                      }
+                      
+                      if (content) {
+                        console.log("Found content:", content.title, "of type:", contentType);
+                        // Set active content directly
+                        setActiveContent(content);
+                      }
                       }
                     } else {
                       // Fallback to lesson 1
