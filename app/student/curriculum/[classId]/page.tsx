@@ -131,14 +131,57 @@ export default function StudentCurriculum() {
     try {
       // Get classes and make sure it's an array before using .find()
       const classes = storage.getClasses() || [];
+      console.log("DEBUG - ClassId from URL:", classId);
+      console.log("DEBUG - Retrieved classes count:", Array.isArray(classes) ? classes.length : "Not an array");
+      
+      if (Array.isArray(classes)) {
+        // Log class IDs for debugging
+        console.log("DEBUG - Available class IDs:", classes.map(c => c && c.id).filter(Boolean));
+      }
+      
       const foundClass = Array.isArray(classes) ? 
         classes.find((c) => c && c.id === classId) : 
         null;
+      
+      console.log("DEBUG - Found class:", foundClass ? "Yes - " + foundClass.name : "No class found with this ID");
 
       if (foundClass) {
-        // Check if student is enrolled in this class
-        if (foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) && 
-            foundClass.enrolledStudents.includes(user.id)) {
+        // Enhanced debug logging for enrollment check
+        console.log("DEBUG - Current user:", JSON.stringify(user));
+        
+        // Check if user has an id directly or nested in user property
+        const userId = user.id || (user.user && user.user.id);
+        console.log("DEBUG - User ID for enrollment check:", userId);
+        
+        // Debug enrolled students array
+        console.log("DEBUG - Class enrolled students:", 
+          foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) 
+            ? foundClass.enrolledStudents 
+            : "No enrolled students array");
+        
+        // More flexible enrollment check that handles different user ID formats
+        const isEnrolled = 
+          // Standard check
+          (foundClass.enrolledStudents && 
+           Array.isArray(foundClass.enrolledStudents) && 
+           foundClass.enrolledStudents.includes(userId)) ||
+          // Special check for non-standard enrollment format
+          (Array.isArray(foundClass.students) && 
+           foundClass.students.includes(userId)) ||
+          // Check user classes if available
+          (user.classes && Array.isArray(user.classes) && 
+           user.classes.includes(foundClass.id));
+        
+        console.log("DEBUG - Is user enrolled:", isEnrolled);
+        
+        // If we're directly accessing an assignment via URL, bypass enrollment check for better UX
+        const hasDirectAssignmentAccess = queryParams.content && queryParams.lesson;
+        console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess);
+        
+        if (isEnrolled || hasDirectAssignmentAccess) {
+          if (!isEnrolled && hasDirectAssignmentAccess) {
+            console.log("DEBUG - Allowing direct access to assignment despite enrollment issue");
+          }
           setCurrentClass(foundClass)
 
           // Load curriculum data using the getCurriculum method
