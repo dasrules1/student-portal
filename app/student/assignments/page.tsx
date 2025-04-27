@@ -1033,6 +1033,40 @@ export default function StudentAssignments() {
       }
     }
     
+    // Check for numeric keys directly in content.contents
+    if (content.contents && typeof content.contents === 'object' && content.contents !== null) {
+      const numericContentKeys = Object.keys(content.contents).filter(key => !isNaN(Number(key)));
+      
+      if (numericContentKeys.length > 0) {
+        console.log(`Found indexed structure with ${numericContentKeys.length} potential content items`);
+        
+        for (const contentIdx of numericContentKeys) {
+          const item = content.contents[contentIdx];
+          
+          if (item && 
+              item.isPublished === true && 
+              (item.type === 'assignment' || item.type === 'quiz' || 
+               item.type === 'homework' || item.type === 'test')) {
+            
+            console.log(`Found published ${item.type} in content.contents: ${item.title}`);
+            
+            extractedAssignments.push({
+              ...item,
+              classId: classItem.id,
+              className: classItem.name,
+              lessonId: item.lessonId || '',
+              lessonTitle: item.lessonTitle || ''
+            });
+          }
+        }
+        
+        if (extractedAssignments.length > 0) {
+          console.log(`Successfully extracted ${extractedAssignments.length} assignments from content.contents structure`);
+          return extractedAssignments;
+        }
+      }
+    }
+    
     // Direct assignments array at top level
     if (content.assignments && Array.isArray(content.assignments)) {
       const assignments = content.assignments
