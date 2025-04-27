@@ -175,8 +175,23 @@ export default function StudentCurriculum() {
         console.log("DEBUG - Is user enrolled:", isEnrolled);
         
         // If we're directly accessing an assignment via URL, bypass enrollment check for better UX
-        const hasDirectAssignmentAccess = queryParams.content && queryParams.lesson;
-        console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess);
+        // Get URL parameters directly in case our state hasn't updated yet
+        let directLessonParam, directContentParam;
+        if (typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search);
+          directLessonParam = urlParams.get('lesson');
+          directContentParam = urlParams.get('content');
+          console.log("DEBUG - Direct URL parameters check:", { directLessonParam, directContentParam });
+        }
+        
+        // Check both the state-based params and direct URL params
+        const hasDirectAssignmentAccess = 
+          (queryParams.content && queryParams.lesson) || 
+          (directLessonParam && directContentParam);
+        
+        console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess, 
+          "State params:", queryParams, 
+          "URL params:", { lesson: directLessonParam, content: directContentParam });
         
         if (isEnrolled || hasDirectAssignmentAccess) {
           if (!isEnrolled && hasDirectAssignmentAccess) {
@@ -230,13 +245,24 @@ export default function StudentCurriculum() {
                   setLessonsWithContent(filteredLessons);
                   setLastUpdateTimestamp(curriculumData.lastUpdated);
                   
+                  // Get URL parameters directly in case our state hasn't updated yet
+                  let paramLessonId = queryParams.lesson;
+                  let paramContentId = queryParams.content;
+                  
+                  if ((!paramLessonId || !paramContentId) && typeof window !== 'undefined') {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    paramLessonId = paramLessonId || urlParams.get('lesson');
+                    paramContentId = paramContentId || urlParams.get('content');
+                    console.log("DEBUG - Using direct URL params for content lookup:", { paramLessonId, paramContentId });
+                  }
+                  
                   // Find the index of the lesson and content from URL params
-                  if (queryParams.lesson && queryParams.content) {
-                    console.log("Trying to find lesson and content from URL params:", queryParams);
+                  if (paramLessonId && paramContentId) {
+                    console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
                     
                     // Find lesson index
                     let lessonIndex = filteredLessons.findIndex(
-                      lesson => lesson && lesson.id === queryParams.lesson
+                      lesson => lesson && lesson.id === paramLessonId
                     );
                     
                     // If lesson index is found, set active lesson
@@ -249,7 +275,7 @@ export default function StudentCurriculum() {
                       const lesson = filteredLessons[lessonIndex];
                       if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
                         const content = lesson.contents.find(
-                          content => content && content.id === queryParams.content
+                          content => content && content.id === paramContentId
                         );
                         
                         if (content) {
@@ -315,13 +341,24 @@ export default function StudentCurriculum() {
                       setLessonsWithContent(lessons);
                       setLastUpdateTimestamp(new Date().toISOString());
                       
+                      // Get URL parameters directly in case our state hasn't updated yet
+                      let paramLessonId = queryParams.lesson;
+                      let paramContentId = queryParams.content;
+                      
+                      if ((!paramLessonId || !paramContentId) && typeof window !== 'undefined') {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        paramLessonId = paramLessonId || urlParams.get('lesson');
+                        paramContentId = paramContentId || urlParams.get('content');
+                        console.log("DEBUG - Using direct URL params for content lookup:", { paramLessonId, paramContentId });
+                      }
+                      
                       // Find the index of the lesson and content from URL params
-                      if (queryParams.lesson && queryParams.content) {
-                        console.log("Trying to find lesson and content from localStorage data:", queryParams);
+                      if (paramLessonId && paramContentId) {
+                        console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
                         
                         // Find lesson index
                         let lessonIndex = lessons.findIndex(
-                          lesson => lesson && lesson.id === queryParams.lesson
+                          lesson => lesson && lesson.id === paramLessonId
                         );
                         
                         // If lesson index is found, set active lesson
@@ -334,7 +371,7 @@ export default function StudentCurriculum() {
                           const lesson = lessons[lessonIndex];
                           if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
                             const content = lesson.contents.find(
-                              content => content && content.id === queryParams.content
+                              content => content && content.id === paramContentId
                             );
                             
                             if (content) {
@@ -365,13 +402,24 @@ export default function StudentCurriculum() {
                       setLessonsWithContent(filteredLessons);
                       setLastUpdateTimestamp(new Date().toISOString());
                       
+                      // Get URL parameters directly in case our state hasn't updated yet
+                      let paramLessonId = queryParams.lesson;
+                      let paramContentId = queryParams.content;
+                      
+                      if ((!paramLessonId || !paramContentId) && typeof window !== 'undefined') {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        paramLessonId = paramLessonId || urlParams.get('lesson');
+                        paramContentId = paramContentId || urlParams.get('content');
+                        console.log("DEBUG - Using direct URL params for content lookup:", { paramLessonId, paramContentId });
+                      }
+                      
                       // Find the index of the lesson and content from URL params
-                      if (queryParams.lesson && queryParams.content) {
-                        console.log("Trying to find lesson and content from array format:", queryParams);
+                      if (paramLessonId && paramContentId) {
+                        console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
                         
                         // Find lesson index
                         let lessonIndex = filteredLessons.findIndex(
-                          lesson => lesson && lesson.id === queryParams.lesson
+                          lesson => lesson && lesson.id === paramLessonId
                         );
                         
                         // If lesson index is found, set active lesson
@@ -384,7 +432,7 @@ export default function StudentCurriculum() {
                           const lesson = filteredLessons[lessonIndex];
                           if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
                             const content = lesson.contents.find(
-                              content => content && content.id === queryParams.content
+                              content => content && content.id === paramContentId
                             );
                             
                             if (content) {
