@@ -121,7 +121,7 @@ export default function StudentCurriculum() {
         description: "You must be logged in as a student to view this page",
         variant: "destructive",
       })
-      router.push("/student-portal")
+      router.push("/student")
       return
     }
 
