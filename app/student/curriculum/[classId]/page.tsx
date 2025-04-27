@@ -75,6 +75,28 @@ export default function StudentCurriculum() {
   const params = useParams()
   const { toast } = useToast()
   const classId = params.classId as string
+  
+  // Read query parameters
+  const [queryParams, setQueryParams] = useState<{
+    lesson?: string;
+    content?: string;
+  }>({})
+  
+  // Get query parameters on client side
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const lessonParam = urlParams.get('lesson')
+      const contentParam = urlParams.get('content')
+      
+      console.log("URL Parameters:", { lessonParam, contentParam })
+      
+      setQueryParams({
+        lesson: lessonParam || undefined,
+        content: contentParam || undefined
+      })
+    }
+  }, [])
 
   const [currentClass, setCurrentClass] = useState(null)
   const [curriculum, setCurriculum] = useState(null)
@@ -164,7 +186,44 @@ export default function StudentCurriculum() {
                 if (filteredLessons.length > 0) {
                   setLessonsWithContent(filteredLessons);
                   setLastUpdateTimestamp(curriculumData.lastUpdated);
-                  setActiveLesson(0);
+                  
+                  // Find the index of the lesson and content from URL params
+                  if (queryParams.lesson && queryParams.content) {
+                    console.log("Trying to find lesson and content from URL params:", queryParams);
+                    
+                    // Find lesson index
+                    let lessonIndex = filteredLessons.findIndex(
+                      lesson => lesson && lesson.id === queryParams.lesson
+                    );
+                    
+                    // If lesson index is found, set active lesson
+                    if (lessonIndex !== -1) {
+                      console.log(`Found lesson at index ${lessonIndex}`);
+                      // Set active lesson (add 1 because activeLesson is 1-indexed)
+                      setActiveLesson(lessonIndex + 1);
+                      
+                      // Find the content within this lesson
+                      const lesson = filteredLessons[lessonIndex];
+                      if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
+                        const content = lesson.contents.find(
+                          content => content && content.id === queryParams.content
+                        );
+                        
+                        if (content) {
+                          console.log("Found content:", content.title);
+                          // Set active content directly
+                          setActiveContent(content);
+                        }
+                      }
+                    } else {
+                      // Fallback to lesson 1
+                      setActiveLesson(1);
+                    }
+                  } else {
+                    // Default to first lesson if no query params
+                    setActiveLesson(1);
+                  }
+                  
                   return; // Success! We have content to show
                 }
               }
@@ -212,7 +271,44 @@ export default function StudentCurriculum() {
                       setCurriculum(formattedCurriculum);
                       setLessonsWithContent(lessons);
                       setLastUpdateTimestamp(new Date().toISOString());
-                      setActiveLesson(0);
+                      
+                      // Find the index of the lesson and content from URL params
+                      if (queryParams.lesson && queryParams.content) {
+                        console.log("Trying to find lesson and content from localStorage data:", queryParams);
+                        
+                        // Find lesson index
+                        let lessonIndex = lessons.findIndex(
+                          lesson => lesson && lesson.id === queryParams.lesson
+                        );
+                        
+                        // If lesson index is found, set active lesson
+                        if (lessonIndex !== -1) {
+                          console.log(`Found lesson at index ${lessonIndex}`);
+                          // Set active lesson (add 1 because activeLesson is 1-indexed)
+                          setActiveLesson(lessonIndex + 1);
+                          
+                          // Find the content within this lesson
+                          const lesson = lessons[lessonIndex];
+                          if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
+                            const content = lesson.contents.find(
+                              content => content && content.id === queryParams.content
+                            );
+                            
+                            if (content) {
+                              console.log("Found content:", content.title);
+                              // Set active content directly
+                              setActiveContent(content);
+                            }
+                          }
+                        } else {
+                          // Fallback to lesson 1
+                          setActiveLesson(1);
+                        }
+                      } else {
+                        // Default to first lesson if no query params
+                        setActiveLesson(1);
+                      }
+                      
                       return; // Success with converted data
                     }
                   } else if (Array.isArray(parsedData)) {
@@ -225,7 +321,44 @@ export default function StudentCurriculum() {
                       setCurriculum({ lessons: filteredLessons });
                       setLessonsWithContent(filteredLessons);
                       setLastUpdateTimestamp(new Date().toISOString());
-                      setActiveLesson(0);
+                      
+                      // Find the index of the lesson and content from URL params
+                      if (queryParams.lesson && queryParams.content) {
+                        console.log("Trying to find lesson and content from array format:", queryParams);
+                        
+                        // Find lesson index
+                        let lessonIndex = filteredLessons.findIndex(
+                          lesson => lesson && lesson.id === queryParams.lesson
+                        );
+                        
+                        // If lesson index is found, set active lesson
+                        if (lessonIndex !== -1) {
+                          console.log(`Found lesson at index ${lessonIndex}`);
+                          // Set active lesson (add 1 because activeLesson is 1-indexed)
+                          setActiveLesson(lessonIndex + 1);
+                          
+                          // Find the content within this lesson
+                          const lesson = filteredLessons[lessonIndex];
+                          if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
+                            const content = lesson.contents.find(
+                              content => content && content.id === queryParams.content
+                            );
+                            
+                            if (content) {
+                              console.log("Found content:", content.title);
+                              // Set active content directly
+                              setActiveContent(content);
+                            }
+                          }
+                        } else {
+                          // Fallback to lesson 1
+                          setActiveLesson(1);
+                        }
+                      } else {
+                        // Default to first lesson if no query params
+                        setActiveLesson(1);
+                      }
+                      
                       return; // Success with array data
                     }
                   }
