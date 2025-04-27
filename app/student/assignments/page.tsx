@@ -1369,7 +1369,7 @@ export default function StudentAssignments() {
                       asChild 
                       className="w-full"
                     >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
                         Start Assignment
                       </Link>
                     </Button>
@@ -1414,7 +1414,7 @@ export default function StudentAssignments() {
                       className="w-full"
                       variant="outline"
                     >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
                         Submit Late
                       </Link>
                     </Button>
@@ -1452,7 +1452,7 @@ export default function StudentAssignments() {
                       className="w-full"
                       variant="secondary"
                     >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
                         View Submission
                       </Link>
                     </Button>
@@ -1502,7 +1502,7 @@ export default function StudentAssignments() {
                       asChild 
                       className="w-full"
                     >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
                         View Assignment
                       </Link>
                     </Button>

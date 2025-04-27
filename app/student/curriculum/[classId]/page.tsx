@@ -80,6 +80,7 @@ export default function StudentCurriculum() {
   const [queryParams, setQueryParams] = useState<{
     lesson?: string;
     content?: string;
+    type?: string;
   }>({})
   
   // Get query parameters on client side
@@ -88,12 +89,14 @@ export default function StudentCurriculum() {
       const urlParams = new URLSearchParams(window.location.search)
       const lessonParam = urlParams.get('lesson')
       const contentParam = urlParams.get('content')
+      const typeParam = urlParams.get('type')
       
-      console.log("URL Parameters:", { lessonParam, contentParam })
+      console.log("URL Parameters:", { lessonParam, contentParam, typeParam })
       
       setQueryParams({
         lesson: lessonParam || undefined,
-        content: contentParam || undefined
+        content: contentParam || undefined,
+        type: typeParam || undefined
       })
     }
   }, [])
