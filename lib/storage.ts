@@ -186,37 +186,120 @@ class StorageService {
   }
 
   getUserById(id: string): User | undefined {
-    // Try to find in the local cache first
-    const localUser = this.users.find(user => user.id === id);
-    if (localUser) return localUser;
-    
-    // If not found in cache, return from persistent storage
-    return persistentStorage.getUserById(id);
+    try {
+      // Try to find in the local cache first
+      const localUser = this.users.find(user => user.id === id);
+      if (localUser) return localUser;
+      
+      // Try to get from persistent storage
+      try {
+        // Only use persistentStorage if it's available
+        if (typeof persistentStorage !== 'undefined') {
+          const user = persistentStorage.getUserById(id);
+          if (user) return user;
+        }
+      } catch (error) {
+        console.error('Error getting user from persistentStorage:', error);
+      }
+      
+      // Fallback to localStorage
+      if (typeof window !== 'undefined') {
+        try {
+          // Try to get from localStorage
+          const usersJson = localStorage.getItem('users');
+          if (usersJson) {
+            const users = JSON.parse(usersJson);
+            if (Array.isArray(users)) {
+              const user = users.find(u => u.id === id);
+              if (user) return user;
+            }
+          }
+          
+          // Also check for individual user in localStorage
+          const userJson = localStorage.getItem(`user-${id}`);
+          if (userJson) {
+            return JSON.parse(userJson);
+          }
+          
+          // Check for currentUser if the ID matches
+          const currentUserJson = localStorage.getItem('currentUser');
+          if (currentUserJson) {
+            const currentUser = JSON.parse(currentUserJson);
+            if (currentUser && currentUser.id === id) {
+              return currentUser;
+            }
+          }
+        } catch (localStorageError) {
+          console.error('Error getting user from localStorage:', localStorageError);
+        }
+      }
+      
+      console.warn(`User with ID ${id} not found in any storage`);
+      return undefined;
+    } catch (error) {
+      console.error('Error getting user from storage:', error);
+      return undefined;
+    }
   }
 
   getUserByEmail(email: string): User | undefined {
-    // Try to find in the local cache first
-    const localUser = this.users.find(user => user.email === email);
-    if (localUser) return localUser;
-    
-    // If not found in cache, return from persistent storage
-    return persistentStorage.getUserByEmail(email);
+    try {
+      console.log(`Getting user by email: ${email}`);
+      
+      // Try to find in the local cache first
+      const localUser = this.users.find(user => user.email === email);
+      if (localUser) {
+        console.log(`User found in cache: ${localUser.id}`);
+        return localUser;
+      }
+      
+      // If not found in cache, try localStorage
+      try {
+        console.log('Checking localStorage for user by email');
+        const localStorageUsers = localStorage.getItem('users');
+        if (localStorageUsers) {
+          const users = JSON.parse(localStorageUsers);
+          if (Array.isArray(users)) {
+            const user = users.find(u => u.email === email);
+            if (user) {
+              console.log(`User found in localStorage: ${user.id}`);
+              // Update the cache
+              this.users.push(user);
+              return user;
+            }
+          }
+        }
+      } catch (localStorageError) {
+        console.warn('Error getting user from localStorage:', localStorageError);
+      }
+      
+      console.warn(`User with email ${email} not found in any storage`);
+      return undefined;
+    } catch (error) {
+      console.error('Error getting user by email from storage:', error);
+      return undefined;
+    }
   }
 
   // Add a synchronous version for compatibility with UI components
   getAllUsers(): User[] {
     console.log("getAllUsers called - providing cached users");
     
-    // If we don't have users in cache, try to load them from persistent storage first
+    // If we don't have users in cache, try to load them from localStorage
     if (!this.users || this.users.length === 0) {
       try {
-        const localUsers = persistentStorage.getAllUsers();
-        if (localUsers && Array.isArray(localUsers) && localUsers.length > 0) {
-          this.users = [...localUsers];
-          return [...localUsers];
+        console.log("No users in cache, attempting to retrieve from localStorage");
+        const localStorageUsers = localStorage.getItem('users');
+        if (localStorageUsers) {
+          const parsedUsers = JSON.parse(localStorageUsers);
+          if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
+            console.log(`Found ${parsedUsers.length} users in localStorage`);
+            this.users = [...parsedUsers];
+            return [...parsedUsers];
+          }
         }
       } catch (error) {
-        console.error("Error in getAllUsers from persistent storage:", error);
+        console.error("Error in getAllUsers from localStorage:", error);
       }
     }
     
@@ -225,7 +308,7 @@ class StorageService {
       return [...this.users];
     }
     
-    console.warn("No users available in cache, returning empty array");
+    console.warn("No users available in cache or localStorage, returning empty array");
     return [];
   }
 
@@ -278,7 +361,7 @@ class StorageService {
       let firestoreId = authUserId;
       if (!firestoreId) {
         // If Firebase Auth creation failed, generate a new ID for Firestore
-      const usersRef = collection(db, 'users');
+        const usersRef = collection(db, 'users');
         const docRef = await addDoc(usersRef, enhancedUserData);
         firestoreId = docRef.id;
       } else {
@@ -293,31 +376,81 @@ class StorageService {
       // Update local cache
       this.users.push(newUser);
       
-      // Also add to persistent storage as backup
+      // Also add to localStorage as backup
       try {
-        persistentStorage.addUser(enhancedUserData);
+        // Get existing users from localStorage
+        const localStorageUsers = localStorage.getItem('users');
+        let users = [];
+        if (localStorageUsers) {
+          users = JSON.parse(localStorageUsers);
+        }
+        
+        // Make sure it's an array
+        if (!Array.isArray(users)) {
+          users = [];
+        }
+        
+        // Add the new user
+        users.push(newUser);
+        
+        // Save back to localStorage
+        localStorage.setItem('users', JSON.stringify(users));
+        console.log('User added to localStorage as backup');
       } catch (e) {
-        console.log('User already exists in persistent storage or other error:', e);
+        console.log('Error adding user to localStorage:', e);
       }
       
       console.log('User added successfully:', newUser);
       return newUser;
     } catch (error) {
       console.error('Error adding user to Firestore:', error);
-      // Try to add to persistent storage as fallback
+      // Try to add to localStorage as fallback
       try {
-        const localUser = persistentStorage.addUser(userData);
+        // Generate a local ID
+        const localId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Create the user with generated ID
+        const localUser = { 
+          id: localId, 
+          ...userData,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString() 
+        } as User;
+        
+        // Get existing users from localStorage
+        const localStorageUsers = localStorage.getItem('users');
+        let users = [];
+        if (localStorageUsers) {
+          users = JSON.parse(localStorageUsers);
+        }
+        
+        // Make sure it's an array
+        if (!Array.isArray(users)) {
+          users = [];
+        }
+        
+        // Add the new user
+        users.push(localUser);
+        
+        // Save back to localStorage
+        localStorage.setItem('users', JSON.stringify(users));
+        
+        // Update local cache
+        this.users.push(localUser);
+        
         console.log('User added to local storage as fallback:', localUser);
         return localUser;
       } catch (e) {
         console.error('Failed to add user to local storage too:', e);
-      throw error;
+        throw error;
       }
     }
   }
 
   async updateUser(id: string, userData: Partial<User>): Promise<User | undefined> {
     try {
+      console.log(`Updating user ${id} with data:`, userData);
+      
       // Update in Firestore
       const userRef = doc(db, 'users', id);
       
@@ -335,19 +468,80 @@ class StorageService {
         this.users[index] = { ...this.users[index], ...updatedData };
       }
       
-      // Also update in persistent storage
-      persistentStorage.updateUser(id, updatedData);
+      // Also update in localStorage
+      try {
+        // Get users from localStorage
+        const localStorageUsers = localStorage.getItem('users');
+        if (localStorageUsers) {
+          const users = JSON.parse(localStorageUsers);
+          if (Array.isArray(users)) {
+            // Find and update the user
+            const userIndex = users.findIndex(u => u.id === id);
+            if (userIndex !== -1) {
+              users[userIndex] = { ...users[userIndex], ...updatedData };
+              // Save back to localStorage
+              localStorage.setItem('users', JSON.stringify(users));
+              console.log(`User ${id} updated in localStorage`);
+            }
+          }
+        }
+      } catch (localStorageError) {
+        console.warn('Error updating user in localStorage:', localStorageError);
+      }
       
       console.log('User updated successfully:', id);
-      return this.users[index];
+      return index !== -1 ? this.users[index] : undefined;
     } catch (error) {
-      console.error('Error updating user:', error);
-      return persistentStorage.updateUser(id, userData);
+      console.error('Error updating user in Firestore:', error);
+      
+      // Try to update in localStorage as fallback
+      try {
+        // Get users from localStorage
+        const localStorageUsers = localStorage.getItem('users');
+        if (localStorageUsers) {
+          const users = JSON.parse(localStorageUsers);
+          if (Array.isArray(users)) {
+            // Find and update the user
+            const userIndex = users.findIndex(u => u.id === id);
+            if (userIndex !== -1) {
+              // Add updatedAt timestamp
+              const updatedData = {
+                ...userData,
+                updatedAt: new Date().toISOString()
+              };
+              
+              // Update the user
+              users[userIndex] = { ...users[userIndex], ...updatedData };
+              
+              // Save back to localStorage
+              localStorage.setItem('users', JSON.stringify(users));
+              
+              // Update local cache
+              const cacheIndex = this.users.findIndex(user => user.id === id);
+              if (cacheIndex !== -1) {
+                this.users[cacheIndex] = { ...this.users[cacheIndex], ...updatedData };
+                console.log(`User ${id} updated in cache and localStorage`);
+                return this.users[cacheIndex];
+              } else {
+                console.log(`User ${id} updated in localStorage only`);
+                return users[userIndex] as User;
+              }
+            }
+          }
+        }
+        console.warn(`User ${id} not found in localStorage`);
+        return undefined;
+      } catch (localStorageError) {
+        console.error('Failed to update user in localStorage too:', localStorageError);
+        return undefined;
+      }
     }
   }
 
   async deleteUser(id: string): Promise<boolean> {
     try {
+      console.log(`Deleting user with ID: ${id}`);
+      
       // Delete from Firestore
       const userRef = doc(db, 'users', id);
       await deleteDoc(userRef);
@@ -356,14 +550,62 @@ class StorageService {
       const initialLength = this.users.length;
       this.users = this.users.filter(user => user.id !== id);
       
-      // Also delete from persistent storage
-      persistentStorage.deleteUser(id);
+      // Also delete from localStorage
+      try {
+        // Get users from localStorage
+        const localStorageUsers = localStorage.getItem('users');
+        if (localStorageUsers) {
+          let users = JSON.parse(localStorageUsers);
+          if (Array.isArray(users)) {
+            // Filter out the user
+            const initialLocalLength = users.length;
+            users = users.filter(u => u.id !== id);
+            
+            // Save back to localStorage
+            localStorage.setItem('users', JSON.stringify(users));
+            
+            console.log(`User ${id} ${initialLocalLength > users.length ? 'deleted from' : 'not found in'} localStorage`);
+          }
+        }
+      } catch (localStorageError) {
+        console.warn('Error deleting user from localStorage:', localStorageError);
+      }
       
       console.log('User deleted successfully:', id);
       return this.users.length < initialLength;
     } catch (error) {
-      console.error('Error deleting user:', error);
-      return persistentStorage.deleteUser(id);
+      console.error('Error deleting user from Firestore:', error);
+      
+      // Try to delete from localStorage as fallback
+      try {
+        // Get users from localStorage
+        const localStorageUsers = localStorage.getItem('users');
+        if (localStorageUsers) {
+          let users = JSON.parse(localStorageUsers);
+          if (Array.isArray(users)) {
+            // Check if user exists
+            const initialLocalLength = users.length;
+            
+            // Filter out the user
+            users = users.filter(u => u.id !== id);
+            
+            // Save back to localStorage
+            localStorage.setItem('users', JSON.stringify(users));
+            
+            // Also remove from cache
+            const initialCacheLength = this.users.length;
+            this.users = this.users.filter(user => user.id !== id);
+            
+            const wasDeleted = initialLocalLength > users.length || initialCacheLength > this.users.length;
+            console.log(`User ${id} ${wasDeleted ? 'deleted from' : 'not found in'} localStorage or cache`);
+            return wasDeleted;
+          }
+        }
+        return false;
+      } catch (localStorageError) {
+        console.error('Failed to delete user from localStorage too:', localStorageError);
+        return false;
+      }
     }
   }
 
