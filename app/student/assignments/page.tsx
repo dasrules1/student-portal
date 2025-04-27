@@ -1319,6 +1319,13 @@ export default function StudentAssignments() {
     assignment => !assignment.completed && assignment.dueDate && new Date(assignment.dueDate) < new Date()
   );
 
+  // Debug all assignments
+  console.log("DEBUG - All assignments before filtering:", assignments);
+  console.log("DEBUG - Pending assignments count:", pendingAssignments.length);
+  console.log("DEBUG - Upcoming assignments count:", upcomingAssignments.length);
+  console.log("DEBUG - Overdue assignments count:", overdueAssignments.length);
+  console.log("DEBUG - Completed assignments count:", completedAssignments.length);
+
   return (
     <div className="flex min-h-screen">
       <Sidebar navigation={navigation} user={currentUser} />
@@ -1348,7 +1355,7 @@ export default function StudentAssignments() {
                       <div>
                         <CardTitle className="text-lg">{assignment.title}</CardTitle>
                         <CardDescription>
-                          {assignment.className} • Due: {new Date(assignment.dueDate || "").toLocaleDateString()}
+                          {assignment.className} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
                         </CardDescription>
                       </div>
                       <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
@@ -1419,7 +1426,7 @@ export default function StudentAssignments() {
         )}
 
         {/* Completed Assignments */}
-        <section>
+        <section className="mb-8">
           <h2 className="text-xl font-semibold mb-4">Completed Assignments</h2>
           <div className="space-y-4">
             {completedAssignments.length > 0 ? (
@@ -1457,6 +1464,56 @@ export default function StudentAssignments() {
                 <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                   <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
                   <p className="text-muted-foreground">No completed assignments</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </section>
+        
+        {/* All Assignments (for debugging) */}
+        <section>
+          <h2 className="text-xl font-semibold mb-4">All Available Assignments</h2>
+          <div className="space-y-4">
+            {assignments.length > 0 ? (
+              assignments.map((assignment) => (
+                <Card key={assignment.id}>
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                        <CardDescription>
+                          {assignment.className} • {assignment.lessonTitle ? `Lesson: ${assignment.lessonTitle}` : ''} 
+                          {assignment.dueDate ? ` • Due: ${new Date(assignment.dueDate).toLocaleDateString()}` : ' • No due date'}
+                        </CardDescription>
+                      </div>
+                      <Badge variant="secondary">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
+                    <p className="text-sm mt-2">
+                      <strong>Debug info:</strong> ID: {assignment.id} • Type: {assignment.type} • 
+                      Published: {assignment.isPublished ? 'Yes' : 'No'} • 
+                      Completed: {assignment.completed ? 'Yes' : 'No'}
+                    </p>
+                  </CardContent>
+                  <CardFooter>
+                    <Button 
+                      asChild 
+                      className="w-full"
+                    >
+                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}`}>
+                        View Assignment
+                      </Link>
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">No assignments found at all</p>
                 </CardContent>
               </Card>
             )}
