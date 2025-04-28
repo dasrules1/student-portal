@@ -5,11 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { auth } from "@/lib/firebase"
-import { signInWithEmailAndPassword } from "firebase/auth"
+import { signInWithEmailAndPassword, getAuth } from "firebase/auth"
 import { Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
@@ -62,6 +62,9 @@ export default function LoginPage() {
     try {
       console.log(`Attempting to log in as ${activeTab} with email: ${email}`)
       
+      // Get fresh auth instance
+      const auth = getAuth()
+      
       // Use Firebase authentication
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
       const user = userCredential.user
@@ -109,6 +112,10 @@ export default function LoginPage() {
         errorMessage = "Too many failed attempts. Please try again later."
       } else if (error.code === 'auth/network-request-failed') {
         errorMessage = "Network error. Please check your connection."
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email format."
+      } else if (error.code === 'auth/operation-not-allowed') {
+        errorMessage = "Email/password accounts are not enabled. Please contact support."
       }
       
       setError(errorMessage)
