@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { auth } from "@/lib/firebase"
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth"
+import { signInWithEmailAndPassword } from "firebase/auth"
 import { Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
@@ -24,8 +24,6 @@ export default function LoginPage() {
   const defaultRole = searchParams.get("role") || "student"
   const [activeTab, setActiveTab] = useState(defaultRole)
   const [showPassword, setShowPassword] = useState(false)
-  const [retryCount, setRetryCount] = useState(0)
-  const [lastAttemptTime, setLastAttemptTime] = useState(0)
 
   // Check if the user is already logged in
   useEffect(() => {
@@ -50,15 +48,6 @@ export default function LoginPage() {
     return () => unsubscribe()
   }, [router, redirectUrl])
 
-  // Reset retry count after 5 minutes
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setRetryCount(0)
-    }, 5 * 60 * 1000) // 5 minutes
-
-    return () => clearInterval(timer)
-  }, [])
-
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError("")
@@ -70,140 +59,42 @@ export default function LoginPage() {
       return
     }
 
-    // Check rate limiting
-    const now = Date.now()
-    const timeSinceLastAttempt = now - lastAttemptTime
-    
-    if (retryCount >= 5) {
-      setError("Too many failed attempts. Please wait 5 minutes before trying again.")
-      setLoading(false)
-      return
-    }
-
-    if (timeSinceLastAttempt < 2000) { // 2 seconds between attempts
-      setError("Please wait a moment before trying again.")
-      setLoading(false)
-      return
-    }
-
     try {
       console.log(`Attempting to log in as ${activeTab} with email: ${email}`)
       
-      // For demo accounts, create them if they don't exist
-      if (email === `${activeTab}@example.com` && password === "password") {
-        try {
-          // Try to sign in first
-          const userCredential = await signInWithEmailAndPassword(auth, email, password)
-          const user = userCredential.user
-          
-          if (user) {
-            console.log("Login successful:", user)
-            setRetryCount(0)
-            
-            // Store user data
-            const userData = {
-              id: user.uid,
-              name: activeTab === "student" ? "John Student" : 
-                    activeTab === "teacher" ? "Jane Teacher" : "Admin User",
-              email: user.email,
-              role: activeTab
-            }
-            
-            localStorage.setItem("currentUser", JSON.stringify(userData))
-            sessionStorage.setItem("currentUser", JSON.stringify(userData))
-            
-            setLoginSuccess(true)
-            
-            // Redirect after a short delay 
-            setTimeout(() => {
-              const destination = activeTab === "student" 
-                ? "/student/dashboard" 
-                : activeTab === "teacher" 
-                  ? "/teacher/dashboard" 
-                  : "/admin/dashboard"
-                  
-              router.push(redirectUrl || destination)
-            }, 1000)
-          }
-        } catch (error: any) {
-          if (error.code === 'auth/user-not-found') {
-            // Create the demo account
-            const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-            const user = userCredential.user
-            
-            if (user) {
-              console.log("Demo account created:", user)
-              setRetryCount(0)
-              
-              // Store user data
-              const userData = {
-                id: user.uid,
-                name: activeTab === "student" ? "John Student" : 
-                      activeTab === "teacher" ? "Jane Teacher" : "Admin User",
-                email: user.email,
-                role: activeTab
-              }
-              
-              localStorage.setItem("currentUser", JSON.stringify(userData))
-              sessionStorage.setItem("currentUser", JSON.stringify(userData))
-              
-              setLoginSuccess(true)
-              
-              // Redirect after a short delay 
-              setTimeout(() => {
-                const destination = activeTab === "student" 
-                  ? "/student/dashboard" 
-                  : activeTab === "teacher" 
-                    ? "/teacher/dashboard" 
-                    : "/admin/dashboard"
-                    
-                router.push(redirectUrl || destination)
-              }, 1000)
-            }
-          } else {
-            throw error
-          }
-        }
-      } else {
-        // Regular login attempt
-        const userCredential = await signInWithEmailAndPassword(auth, email, password)
-        const user = userCredential.user
+      // Use Firebase authentication
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const user = userCredential.user
+      
+      if (user) {
+        console.log("Login successful:", user)
         
-        if (user) {
-          console.log("Login successful:", user)
-          setRetryCount(0)
-          
-          // Store user data
-          const userData = {
-            id: user.uid,
-            name: user.displayName || email.split('@')[0],
-            email: user.email,
-            role: activeTab
-          }
-          
-          localStorage.setItem("currentUser", JSON.stringify(userData))
-          sessionStorage.setItem("currentUser", JSON.stringify(userData))
-          
-          setLoginSuccess(true)
-          
-          // Redirect after a short delay 
-          setTimeout(() => {
-            const destination = activeTab === "student" 
-              ? "/student/dashboard" 
-              : activeTab === "teacher" 
-                ? "/teacher/dashboard" 
-                : "/admin/dashboard"
-                
-            router.push(redirectUrl || destination)
-          }, 1000)
+        // Store user data
+        const userData = {
+          id: user.uid,
+          name: user.displayName || email.split('@')[0],
+          email: user.email,
+          role: activeTab
         }
+        
+        localStorage.setItem("currentUser", JSON.stringify(userData))
+        sessionStorage.setItem("currentUser", JSON.stringify(userData))
+        
+        setLoginSuccess(true)
+        
+        // Redirect after a short delay 
+        setTimeout(() => {
+          const destination = activeTab === "student" 
+            ? "/student/dashboard" 
+            : activeTab === "teacher" 
+              ? "/teacher/dashboard" 
+              : "/admin/dashboard"
+              
+          router.push(redirectUrl || destination)
+        }, 1000)
       }
     } catch (error: any) {
       console.error("Login error:", error)
-      
-      // Update retry count and last attempt time
-      setRetryCount(prev => prev + 1)
-      setLastAttemptTime(Date.now())
       
       // Handle specific Firebase auth errors
       let errorMessage = "Error during login. Please try again."
@@ -215,7 +106,7 @@ export default function LoginPage() {
       } else if (error.code === 'auth/wrong-password') {
         errorMessage = "Incorrect password. Please try again."
       } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = `Too many failed attempts. Please wait ${Math.ceil((5 * 60 * 1000 - timeSinceLastAttempt) / 1000 / 60)} minutes before trying again.`
+        errorMessage = "Too many failed attempts. Please try again later."
       } else if (error.code === 'auth/network-request-failed') {
         errorMessage = "Network error. Please check your connection."
       }
@@ -271,7 +162,7 @@ export default function LoginPage() {
                     <Input
                       id={`${role}-email`}
                       type="email"
-                      placeholder={`${role}@example.com`}
+                      placeholder="Enter your email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -308,7 +199,7 @@ export default function LoginPage() {
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={loading || retryCount >= 5}
+                    disabled={loading}
                   >
                     {loading ? "Signing in..." : "Sign In"}
                   </Button>
@@ -317,17 +208,6 @@ export default function LoginPage() {
             ))}
           </Tabs>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-4">
-          <div className="text-sm text-center text-gray-500">
-            Demo accounts available:
-            <br />
-            student@example.com / password
-            <br />
-            teacher@example.com / password
-            <br />
-            admin@example.com / password
-          </div>
-        </CardFooter>
       </Card>
     </div>
   )
