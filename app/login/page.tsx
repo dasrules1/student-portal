@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/auth-context"
 import { Eye, EyeOff } from "lucide-react"
 import { User } from "firebase/auth"
+import { firebaseAuth } from "@/lib/firebase-auth"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -69,26 +70,40 @@ export default function LoginPage() {
     } catch (error: any) {
       console.error("Login error:", error)
       
-      // Handle specific Firebase auth errors
-      let errorMessage = "Error during login. Please try again."
-      
+      // Try to create a test user if login fails
       if (error.message.includes('auth/invalid-credential')) {
-        errorMessage = "Invalid email or password. Please check your credentials."
-      } else if (error.message.includes('auth/user-not-found')) {
-        errorMessage = "No account found with this email."
-      } else if (error.message.includes('auth/wrong-password')) {
-        errorMessage = "Incorrect password. Please try again."
-      } else if (error.message.includes('auth/too-many-requests')) {
-        errorMessage = "Too many failed attempts. Please try again later."
-      } else if (error.message.includes('auth/network-request-failed')) {
-        errorMessage = "Network error. Please check your connection."
-      } else if (error.message.includes('auth/invalid-email')) {
-        errorMessage = "Invalid email format."
-      } else if (error.message.includes('auth/operation-not-allowed')) {
-        errorMessage = "Email/password accounts are not enabled. Please contact support."
+        try {
+          console.log('Attempting to create test user...')
+          const result = await firebaseAuth.createTestUser()
+          if (result.success) {
+            setError("Test user created. Please try logging in with test@example.com / test123")
+          } else {
+            setError("Failed to create test user: " + result.error)
+          }
+        } catch (createError: any) {
+          console.error('Error creating test user:', createError)
+          setError("Failed to create test user: " + createError.message)
+        }
+      } else {
+        // Handle other Firebase auth errors
+        let errorMessage = "Error during login. Please try again."
+        
+        if (error.message.includes('auth/user-not-found')) {
+          errorMessage = "No account found with this email."
+        } else if (error.message.includes('auth/wrong-password')) {
+          errorMessage = "Incorrect password. Please try again."
+        } else if (error.message.includes('auth/too-many-requests')) {
+          errorMessage = "Too many failed attempts. Please try again later."
+        } else if (error.message.includes('auth/network-request-failed')) {
+          errorMessage = "Network error. Please check your connection."
+        } else if (error.message.includes('auth/invalid-email')) {
+          errorMessage = "Invalid email format."
+        } else if (error.message.includes('auth/operation-not-allowed')) {
+          errorMessage = "Email/password accounts are not enabled. Please contact support."
+        }
+        
+        setError(errorMessage)
       }
-      
-      setError(errorMessage)
     }
     
     setLoading(false)

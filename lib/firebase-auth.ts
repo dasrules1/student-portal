@@ -21,19 +21,27 @@ export const firebaseAuth = {
   // Sign in with email and password
   async signIn(email: string, password: string): Promise<UserSession> {
     try {
+      console.log('Attempting to sign in with email:', email);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      console.log('Sign in successful, user:', user);
       
       // Get user role from Firestore
+      console.log('Fetching user role from Firestore for user:', user.uid);
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       const userData = userDoc.data();
+      console.log('User data from Firestore:', userData);
       
       return {
         user,
         role: userData?.role || null
       };
     } catch (error: any) {
-      console.error('Sign in error:', error);
+      console.error('Sign in error details:', {
+        code: error.code,
+        message: error.message,
+        fullError: error
+      });
       return {
         user: null,
         role: null,
@@ -130,6 +138,45 @@ export const firebaseAuth = {
       return { success: true };
     } catch (error: any) {
       console.error('Update profile error:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Create test user if it doesn't exist
+  async createTestUser(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const testEmail = 'test@example.com';
+      const testPassword = 'test123';
+      
+      // Try to sign in first to check if user exists
+      try {
+        await signInWithEmailAndPassword(auth, testEmail, testPassword);
+        console.log('Test user already exists');
+        return { success: true };
+      } catch (error: any) {
+        if (error.code === 'auth/user-not-found') {
+          // Create the user if it doesn't exist
+          console.log('Creating test user...');
+          const userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
+          const user = userCredential.user;
+          
+          // Create user document in Firestore
+          await setDoc(doc(db, 'users', user.uid), {
+            id: user.uid,
+            email: testEmail,
+            name: 'Test User',
+            role: 'student',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          
+          console.log('Test user created successfully');
+          return { success: true };
+        }
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Error creating test user:', error);
       return { success: false, error: error.message };
     }
   }
