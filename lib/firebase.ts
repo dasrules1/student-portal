@@ -31,6 +31,10 @@ let realtimeDb: Database;
 try {
   // Initialize Firebase
   if (getApps().length === 0) {
+    console.log("Initializing Firebase with config:", {
+      ...firebaseConfig,
+      apiKey: "***" // Hide API key in logs
+    });
     app = initializeApp(firebaseConfig);
     console.log("Firebase initialized successfully");
   } else {
@@ -40,8 +44,11 @@ try {
 
   // Initialize services
   auth = getAuth(app);
+  console.log("Firebase Auth initialized");
   db = getFirestore(app);
+  console.log("Firestore initialized");
   storage = getStorage(app);
+  console.log("Storage initialized");
   
   // Only initialize these in browser context
   if (!isServerSideRendering) {

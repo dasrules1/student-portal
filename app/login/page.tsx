@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { auth } from "@/lib/firebase"
-import { signInWithEmailAndPassword, getAuth } from "firebase/auth"
+import { useAuth } from "@/contexts/auth-context"
 import { Eye, EyeOff } from "lucide-react"
+import { User } from "firebase/auth"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,28 +24,31 @@ export default function LoginPage() {
   const defaultRole = searchParams.get("role") || "student"
   const [activeTab, setActiveTab] = useState(defaultRole)
   const [showPassword, setShowPassword] = useState(false)
+  const { signIn } = useAuth()
 
   // Check if the user is already logged in
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        console.log("User already logged in:", user)
+    const storedAuth = localStorage.getItem('authUser')
+    if (storedAuth) {
+      try {
+        const userData = JSON.parse(storedAuth)
+        console.log("User already logged in:", userData)
         setLoginSuccess(true)
         
         // Redirect after a short delay
         setTimeout(() => {
-          const destination = user.role === "student" 
+          const destination = userData.role === "student" 
             ? "/student/dashboard" 
-            : user.role === "teacher" 
+            : userData.role === "teacher" 
               ? "/teacher/dashboard" 
               : "/admin/dashboard"
               
           router.push(redirectUrl || destination)
         }, 1000)
+      } catch (error) {
+        console.error("Error parsing stored auth:", error)
       }
-    })
-
-    return () => unsubscribe()
+    }
   }, [router, redirectUrl])
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -61,60 +64,27 @@ export default function LoginPage() {
 
     try {
       console.log(`Attempting to log in as ${activeTab} with email: ${email}`)
-      
-      // Get fresh auth instance
-      const auth = getAuth()
-      
-      // Use Firebase authentication
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
-      
-      if (user) {
-        console.log("Login successful:", user)
-        
-        // Store user data
-        const userData = {
-          id: user.uid,
-          name: user.displayName || email.split('@')[0],
-          email: user.email,
-          role: activeTab
-        }
-        
-        localStorage.setItem("currentUser", JSON.stringify(userData))
-        sessionStorage.setItem("currentUser", JSON.stringify(userData))
-        
-        setLoginSuccess(true)
-        
-        // Redirect after a short delay 
-        setTimeout(() => {
-          const destination = activeTab === "student" 
-            ? "/student/dashboard" 
-            : activeTab === "teacher" 
-              ? "/teacher/dashboard" 
-              : "/admin/dashboard"
-              
-          router.push(redirectUrl || destination)
-        }, 1000)
-      }
+      await signIn(email, password)
+      setLoginSuccess(true)
     } catch (error: any) {
       console.error("Login error:", error)
       
       // Handle specific Firebase auth errors
       let errorMessage = "Error during login. Please try again."
       
-      if (error.code === 'auth/invalid-credential') {
+      if (error.message.includes('auth/invalid-credential')) {
         errorMessage = "Invalid email or password. Please check your credentials."
-      } else if (error.code === 'auth/user-not-found') {
+      } else if (error.message.includes('auth/user-not-found')) {
         errorMessage = "No account found with this email."
-      } else if (error.code === 'auth/wrong-password') {
+      } else if (error.message.includes('auth/wrong-password')) {
         errorMessage = "Incorrect password. Please try again."
-      } else if (error.code === 'auth/too-many-requests') {
+      } else if (error.message.includes('auth/too-many-requests')) {
         errorMessage = "Too many failed attempts. Please try again later."
-      } else if (error.code === 'auth/network-request-failed') {
+      } else if (error.message.includes('auth/network-request-failed')) {
         errorMessage = "Network error. Please check your connection."
-      } else if (error.code === 'auth/invalid-email') {
+      } else if (error.message.includes('auth/invalid-email')) {
         errorMessage = "Invalid email format."
-      } else if (error.code === 'auth/operation-not-allowed') {
+      } else if (error.message.includes('auth/operation-not-allowed')) {
         errorMessage = "Email/password accounts are not enabled. Please contact support."
       }
       
