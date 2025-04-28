@@ -193,6 +193,8 @@ export default function StudentCurriculum() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<string | null>(null)
   const [lessonsWithContent, setLessonsWithContent] = useState<any[]>([])
+  const [problemScores, setProblemScores] = useState<{[key: string]: number}>({});
+  const [submittedProblems, setSubmittedProblems] = useState<{[key: string]: boolean}>({});
 
   // Load class and curriculum data
   useEffect(() => {
@@ -585,55 +587,78 @@ export default function StudentCurriculum() {
     }
   }
 
-  // Handle submitting answers
-  const handleSubmitAnswers = () => {
+  // Handle submitting a single problem
+  const handleSubmitProblem = (problemIndex: number) => {
     if (!activeContent?.problems) return;
 
-    let totalScore = 0;
-    let totalProblems = activeContent.problems.length;
-    let correctAnswers = 0;
+    const problem = activeContent.problems[problemIndex];
+    let result;
 
-    activeContent.problems.forEach((problem, index) => {
-      let result;
-      if (problem.type === "multiple-choice") {
-        const selectedOption = userAnswers[index];
-        result = selectedOption === problem.answer;
-      } else if (problem.type === "math-expression") {
-        result = gradeMathExpression(problem, mathExpressionInputs[index] || "");
-      } else if (problem.type === "open-ended") {
-        result = gradeOpenEnded(problem, openEndedAnswers[index] || "");
-      }
+    if (problem.type === "multiple-choice") {
+      const selectedOption = userAnswers[activeContent.id]?.[problemIndex];
+      result = selectedOption === problem.answer;
+    } else if (problem.type === "math-expression") {
+      result = gradeMathExpression(problem, mathExpressionInputs[activeContent.id]?.[problemIndex] || "");
+    } else if (problem.type === "open-ended") {
+      result = gradeOpenEnded(problem, openEndedAnswers[activeContent.id]?.[problemIndex] || "");
+    }
 
-      if (result?.correct) {
-        correctAnswers++;
-        totalScore += result.score;
-      }
-    });
+    // Update problem scores
+    setProblemScores(prev => ({
+      ...prev,
+      [`${activeContent.id}-${problemIndex}`]: result?.score || 0
+    }));
 
-    const percentage = (correctAnswers / totalProblems) * 100;
-    setShowResults(true);
+    // Mark problem as submitted
+    setSubmittedProblems(prev => ({
+      ...prev,
+      [`${activeContent.id}-${problemIndex}`]: true
+    }));
 
+    // Show feedback toast
     toast({
-      title: "Quiz submitted",
-      description: `You scored ${percentage.toFixed(1)}% (${correctAnswers}/${totalProblems} correct)`,
-      variant: "default",
+      title: result?.correct ? "Correct!" : "Incorrect",
+      description: `You scored ${result?.score || 0} points for this problem.`,
+      variant: result?.correct ? "default" : "destructive",
     });
+
+    // Send real-time update
+    if (currentUser) {
+      sendRealTimeUpdate(problemIndex, 
+        problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
+        problem.type === "math-expression" ? mathExpressionInputs[activeContent.id]?.[problemIndex] :
+        openEndedAnswers[activeContent.id]?.[problemIndex],
+        problem.type,
+        problem
+      );
+    }
   };
 
-  // Get remaining attempts for a problem
-  const getRemainingAttempts = (problemIndex) => {
-    if (!activeContent) return null
+  // Calculate total score
+  const calculateTotalScore = () => {
+    if (!activeContent?.problems) return 0;
+    return activeContent.problems.reduce((total, _, index) => {
+      return total + (problemScores[`${activeContent.id}-${index}`] || 0);
+    }, 0);
+  };
 
-    const problem = activeContent.problems[problemIndex]
-    if (!problem.maxAttempts) return null
+  // Calculate total possible points
+  const calculateTotalPossiblePoints = () => {
+    if (!activeContent?.problems) return 0;
+    return activeContent.problems.reduce((total, problem) => {
+      return total + (problem.points || 0);
+    }, 0);
+  };
 
-    const attemptKey = `${activeContent.id}`
-    const currentAttempts = attemptCounts[attemptKey] || {}
-    const problemKey = `problem-${problemIndex}`
-    const attempts = currentAttempts[problemKey] || 0
+  // Check if a problem is submitted
+  const isProblemSubmitted = (problemIndex: number) => {
+    return submittedProblems[`${activeContent?.id}-${problemIndex}`] || false;
+  };
 
-    return Math.max(0, problem.maxAttempts - attempts)
-  }
+  // Get problem score
+  const getProblemScore = (problemIndex: number) => {
+    return problemScores[`${activeContent?.id}-${problemIndex}`] || 0;
+  };
 
   // Render content type icon
   const renderContentTypeIcon = (type) => {
@@ -919,6 +944,9 @@ export default function StudentCurriculum() {
                     <div className="space-y-8">
                       {activeContent.problems.map((problem, problemIndex) => {
                         if (!problem) return null;
+                        const isSubmitted = isProblemSubmitted(problemIndex);
+                        const problemScore = getProblemScore(problemIndex);
+                        
                         return (
                           <div key={problemIndex} className="p-4 border rounded-lg">
                             <div className="flex items-start justify-between">
@@ -935,9 +963,9 @@ export default function StudentCurriculum() {
                                   <Badge variant="secondary" className="ml-2">
                                     {problem.points} {problem.points === 1 ? "point" : "points"}
                                   </Badge>
-                                  {problem.maxAttempts && (
-                                    <Badge variant="outline" className="ml-2">
-                                      Attempts: {getRemainingAttempts(problemIndex)} of {problem.maxAttempts} remaining
+                                  {isSubmitted && (
+                                    <Badge variant={problemScore === problem.points ? "success" : "destructive"} className="ml-2">
+                                      Score: {problemScore}/{problem.points}
                                     </Badge>
                                   )}
                                 </div>
@@ -950,18 +978,18 @@ export default function StudentCurriculum() {
                                     onValueChange={(value) =>
                                       handleMultipleChoiceSelect(problemIndex, Number.parseInt(value))
                                     }
-                                    disabled={showResults}
+                                    disabled={isSubmitted}
                                     className="space-y-3"
                                   >
                                     {problem.options.map((option, optionIndex) => (
                                       <div
                                         key={optionIndex}
                                         className={`flex items-center space-x-2 p-2 rounded-md ${
-                                          showResults && optionIndex === problem.correctAnswer
+                                          isSubmitted && optionIndex === problem.correctAnswer
                                             ? "bg-green-50 dark:bg-green-900/20"
-                                            : showResults &&
-                                                userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
-                                                optionIndex !== problem.correctAnswer
+                                            : isSubmitted &&
+                                              userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
+                                              optionIndex !== problem.correctAnswer
                                               ? "bg-red-50 dark:bg-red-900/20"
                                               : ""
                                         }`}
@@ -974,10 +1002,10 @@ export default function StudentCurriculum() {
                                           {renderLatex(option || '')}
                                         </Label>
 
-                                        {showResults && optionIndex === problem.correctAnswer && (
+                                        {isSubmitted && optionIndex === problem.correctAnswer && (
                                           <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
                                         )}
-                                        {showResults &&
+                                        {isSubmitted &&
                                           userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
                                           optionIndex !== problem.correctAnswer && (
                                             <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
@@ -997,32 +1025,23 @@ export default function StudentCurriculum() {
                                           value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
                                           onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
                                           placeholder="Enter your answer (e.g., 2x + 3 or 7)"
-                                          disabled={showResults}
+                                          disabled={isSubmitted}
                                           className="flex-1"
                                         />
                                       </div>
 
-                                      {showResults && (
+                                      {isSubmitted && (
                                         <div
                                           className={`p-2 mt-2 rounded-md ${
-                                            gradeMathExpression(
-                                              problem,
-                                              mathExpressionInputs[activeContent.id]?.[problemIndex],
-                                            ).correct
+                                            problemScore === problem.points
                                               ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
                                               : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
                                           }`}
                                         >
-                                          {gradeMathExpression(
-                                            problem,
-                                            mathExpressionInputs[activeContent.id]?.[problemIndex],
-                                          ).correct
+                                          {problemScore === problem.points
                                             ? "Correct!"
                                             : "Incorrect. The correct answer is:"}
-                                          {!gradeMathExpression(
-                                            problem,
-                                            mathExpressionInputs[activeContent.id]?.[problemIndex],
-                                          ).correct && (
+                                          {problemScore !== problem.points && (
                                             <div className="font-medium mt-1">
                                               {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
                                                 <div className="flex flex-col gap-1">
@@ -1050,11 +1069,11 @@ export default function StudentCurriculum() {
                                         value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
                                         onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
                                         placeholder="Type your answer here..."
-                                        disabled={showResults}
+                                        disabled={isSubmitted}
                                         rows={4}
                                       />
 
-                                      {showResults && (
+                                      {isSubmitted && (
                                         <div className="p-3 mt-2 bg-slate-50 dark:bg-slate-800 rounded-md">
                                           <p className="font-medium text-sm">Sample Correct Answer:</p>
                                           {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
@@ -1095,11 +1114,31 @@ export default function StudentCurriculum() {
                                   </div>
                                 )}
 
-                                {showResults && problem.explanation && (
+                                {isSubmitted && problem.explanation && (
                                   <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
                                     <p className="font-medium text-sm">Explanation:</p>
                                     <p className="text-sm">{renderLatex(problem.explanation)}</p>
                                   </div>
+                                )}
+
+                                {!isSubmitted && (
+                                  <Button
+                                    className="mt-4"
+                                    onClick={() => handleSubmitProblem(problemIndex)}
+                                    disabled={
+                                      (problem.type === "multiple-choice" && 
+                                       (userAnswers[activeContent.id]?.[problemIndex] === undefined || 
+                                        userAnswers[activeContent.id]?.[problemIndex] === -1)) ||
+                                      (problem.type === "math-expression" && 
+                                       (!mathExpressionInputs[activeContent.id]?.[problemIndex] || 
+                                        mathExpressionInputs[activeContent.id]?.[problemIndex] === "")) ||
+                                      (problem.type === "open-ended" && 
+                                       (!openEndedAnswers[activeContent.id]?.[problemIndex] || 
+                                        openEndedAnswers[activeContent.id]?.[problemIndex] === ""))
+                                    }
+                                  >
+                                    Submit Answer
+                                  </Button>
                                 )}
                               </div>
                             </div>
@@ -1107,55 +1146,19 @@ export default function StudentCurriculum() {
                         )
                       })}
 
-                      {!showResults && (
-                        <Button
-                          className="w-full"
-                          onClick={handleSubmitAnswers}
-                          disabled={
-                            !activeContent.problems.every((problem, index) => {
-                              if (problem.type === "multiple-choice") {
-                                return (
-                                  userAnswers[activeContent.id]?.[index] !== undefined &&
-                                  userAnswers[activeContent.id]?.[index] !== -1
-                                )
-                              } else if (problem.type === "math-expression") {
-                                return (
-                                  mathExpressionInputs[activeContent.id]?.[index] !== undefined &&
-                                  mathExpressionInputs[activeContent.id]?.[index] !== ""
-                                )
-                              } else if (problem.type === "open-ended") {
-                                return (
-                                  openEndedAnswers[activeContent.id]?.[index] !== undefined &&
-                                  openEndedAnswers[activeContent.id]?.[index] !== ""
-                                )
-                              }
-                              return false
-                            })
-                          }
-                        >
-                          <Send className="w-4 h-4 mr-2" />
-                          Submit Answers
-                        </Button>
-                      )}
-
-                      {showResults && activeContent.studentProgress?.score !== undefined && (
+                      {/* Show total score */}
+                      {Object.keys(submittedProblems).length > 0 && (
                         <div className="p-4 border rounded-lg">
-                          <p className="font-medium">Your Score</p>
+                          <p className="font-medium">Total Score</p>
                           <div className="flex items-center mt-2 space-x-4">
-                            <Progress value={activeContent.studentProgress.score} className="flex-1" />
-                            <span className="font-bold">{activeContent.studentProgress.score}%</span>
+                            <Progress 
+                              value={(calculateTotalScore() / calculateTotalPossiblePoints()) * 100} 
+                              className="flex-1" 
+                            />
+                            <span className="font-bold">
+                              {calculateTotalScore()}/{calculateTotalPossiblePoints()} points
+                            </span>
                           </div>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            Submitted on {new Date(activeContent.studentProgress.submittedAt).toLocaleDateString()} at{" "}
-                            {new Date(activeContent.studentProgress.submittedAt).toLocaleTimeString()}
-                          </p>
-
-                          {activeContent.studentProgress.feedback && (
-                            <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-md">
-                              <p className="font-medium text-sm">Teacher Feedback:</p>
-                              <p className="mt-1">{activeContent.studentProgress.feedback}</p>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
