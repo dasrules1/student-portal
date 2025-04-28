@@ -55,6 +55,8 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { ref, onValue } from 'firebase/database';
+import { realtimeDb } from '@/lib/firebase';
 
 // Add interface definitions for types
 interface Class {
@@ -120,6 +122,8 @@ export default function TeacherCurriculum() {
   const [studentSubmission, setStudentSubmission] = useState<any>(null)
   const [problemGrades, setProblemGrades] = useState<Record<string, any>>({})
   const [students, setStudents] = useState<User[]>([])
+  const [studentProgress, setStudentProgress] = useState<Record<string, any>>({})
+  const [realTimeUpdates, setRealTimeUpdates] = useState<Record<string, any>>({})
 
   // Load class and curriculum data
   useEffect(() => {
@@ -301,6 +305,24 @@ export default function TeacherCurriculum() {
     // Cleanup listener on unmount
     return () => unsubscribe();
   }, [classId, students]);
+
+  // Add real-time listener for student progress
+  useEffect(() => {
+    if (!activeContent?.id) return;
+
+    // Listen for real-time updates from Firebase
+    const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
+    const unsubscribe = onValue(answersRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setRealTimeUpdates(data);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeContent?.id, classId]);
 
   // Function to render LaTeX in the UI
   const renderLatex = (text) => {
@@ -958,6 +980,107 @@ export default function TeacherCurriculum() {
     );
   };
 
+  // Add student progress table component
+  const StudentProgressTable = () => {
+    if (!activeContent?.problems) return null;
+
+    return (
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold mb-4">Student Progress</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-100 dark:bg-slate-800">
+                <th className="p-2 text-left">Student</th>
+                {activeContent.problems.map((problem, index) => (
+                  <th key={index} className="p-2 text-left">
+                    Problem {index + 1}
+                  </th>
+                ))}
+                <th className="p-2 text-left">Total Score</th>
+                <th className="p-2 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((student) => {
+                const studentAnswers = realTimeUpdates[student.id] || {};
+                const totalScore = activeContent.problems.reduce((sum, problem, index) => {
+                  const answer = studentAnswers[`problem-${index}`];
+                  return sum + (answer?.score || 0);
+                }, 0);
+
+                return (
+                  <tr key={student.id} className="border-b">
+                    <td className="p-2">{student.name}</td>
+                    {activeContent.problems.map((problem, index) => {
+                      const answer = studentAnswers[`problem-${index}`];
+                      return (
+                        <td key={index} className="p-2">
+                          <div className="flex flex-col">
+                            <div className="text-sm">
+                              {answer ? (
+                                <>
+                                  <span className={answer.correct ? "text-green-600" : "text-red-600"}>
+                                    {answer.answer}
+                                  </span>
+                                  <span className="ml-2">
+                                    ({answer.score || 0}/{problem.points})
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-gray-500">Not attempted</span>
+                              )}
+                            </div>
+                            {answer && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="mt-1"
+                                onClick={() => {
+                                  setStudentToGrade(student);
+                                  setStudentSubmission({
+                                    problemIndex: index,
+                                    answer: answer.answer,
+                                    currentScore: answer.score,
+                                    maxPoints: problem.points
+                                  });
+                                  setManualGradingDialogOpen(true);
+                                }}
+                              >
+                                <Edit className="w-4 h-4 mr-1" />
+                                Grade
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                    <td className="p-2 font-semibold">
+                      {totalScore}/{activeContent.problems.reduce((sum, p) => sum + (p.points || 0), 0)}
+                    </td>
+                    <td className="p-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setStudentToGrade(student);
+                          setGradeOverrideDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="w-4 h-4 mr-1" />
+                        Override
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   if (!currentClass || !curriculum) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1157,58 +1280,36 @@ export default function TeacherCurriculum() {
                     </div>
                     <div className="flex items-center space-x-2">
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={() => {
-                          setActiveContent(null)
-                          setActiveTab("content")
-                        }}
+                        onClick={() => setActiveContent(null)}
                       >
                         <ArrowLeft className="w-4 h-4 mr-2" />
-                        Back to Lesson
+                        Back to Lessons
                       </Button>
-                      <Button
-                        variant={activeContent.isPublished ? "destructive" : "default"}
-                        size="sm"
-                        onClick={() =>
-                          handlePublishContent(
-                            activeContent,
-                            activeLesson - 1,
-                            curriculum.lessons[activeLesson - 1].contents.findIndex((c) => c.id === activeContent.id),
-                          )
-                        }
-                      >
-                        {activeContent.isPublished ? (
-                          <>
-                            <X className="w-4 h-4 mr-2" />
-                            Unpublish
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Publish
-                          </>
-                        )}
-                      </Button>
+                      {activeContent.isPublished && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            setContentToPublish(activeContent);
+                            setPublishDialogOpen(true);
+                          }}
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          Unpublish
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="mb-4">
+                    <TabsList>
                       <TabsTrigger value="content">Content</TabsTrigger>
-                      <TabsTrigger value="student-progress">
-                        Student Progress
-                        {activeContent.studentProgress?.submissions?.some((s) => s.status === "completed") && (
-                          <Badge variant="secondary" className="ml-2">
-                            {activeContent.studentProgress.submissions.filter((s) => s.status === "completed").length}
-                          </Badge>
-                        )}
-                      </TabsTrigger>
-                      <TabsTrigger value="analytics">Analytics</TabsTrigger>
+                      <TabsTrigger value="progress">Student Progress</TabsTrigger>
                     </TabsList>
-
-                    <TabsContent value="content" className="space-y-6">
+                    <TabsContent value="content">
                       {activeContent.problems && activeContent.problems.length > 0 ? (
                         <div className="space-y-4">
                           <h3 className="text-lg font-medium">Problems</h3>
@@ -1223,357 +1324,8 @@ export default function TeacherCurriculum() {
                         </div>
                       )}
                     </TabsContent>
-
-                    <TabsContent value="student-progress">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Student Progress</CardTitle>
-                          <CardDescription>Track student progress and manually grade submissions</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          {students.length > 0 ? (
-                            <div className="space-y-4">
-                              {students.map((student) => {
-                                const submission = activeContent.studentProgress?.submissions?.find(
-                                  (sub) => sub.studentId === student.id,
-                                ) || { status: "not-started" }
-
-                                return (
-                                  <div key={student.id} className="p-4 border rounded-lg">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center space-x-3">
-                                        <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
-                                          {student.avatar}
-                                        </div>
-                                        <div>
-                                          <p className="font-medium">{student.name}</p>
-                                          <p className="text-sm text-muted-foreground">{student.email}</p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center space-x-3">
-                                        {getStudentStatusBadge(submission.status, submission.score)}
-
-                                        <div className="flex space-x-2">
-                                          {submission.status === "completed" ? (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleGradeOverride(student, activeContent)}
-                                            >
-                                              <Edit className="w-4 h-4 mr-2" />
-                                              Update Grade
-                                            </Button>
-                                          ) : (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleGradeOverride(student, activeContent)}
-                                            >
-                                              <Edit className="w-4 h-4 mr-2" />
-                                              Grade
-                                            </Button>
-                                          )}
-
-                                          {activeContent.problems && activeContent.problems.length > 0 && (
-                                            <Button
-                                              variant="default"
-                                              size="sm"
-                                              onClick={() => openManualGrading(student, activeContent)}
-                                            >
-                                              <Check className="w-4 h-4 mr-2" />
-                                              Manual Grading
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {submission.status === "completed" && (
-                                      <div className="mt-3 pt-3 border-t">
-                                        <div className="grid grid-cols-2 gap-4">
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Submitted:</p>
-                                            <p className="text-sm">
-                                              {submission.submittedAt
-                                                ? new Date(submission.submittedAt).toLocaleString()
-                                                : "N/A"}
-                                            </p>
-                                          </div>
-                                          <div>
-                                            <p className="text-sm text-muted-foreground">Graded:</p>
-                                            <p className="text-sm">
-                                              {submission.gradedBy
-                                                ? `${submission.gradedBy === "auto" ? "Auto-graded" : "Teacher"} on ${new Date(submission.gradedAt).toLocaleString()}`
-                                                : "N/A"}
-                                            </p>
-                                          </div>
-                                        </div>
-
-                                        {submission.feedback && (
-                                          <div className="mt-2">
-                                            <p className="text-sm text-muted-foreground">Feedback:</p>
-                                            <p className="text-sm p-2 bg-slate-50 dark:bg-slate-800 rounded-md mt-1">
-                                              {submission.feedback}
-                                            </p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {submission.status === "in-progress" && submission.lastActive && (
-                                      <div className="mt-3 pt-3 border-t">
-                                        <p className="text-sm text-muted-foreground">
-                                          Last active: {new Date(submission.lastActive).toLocaleString()}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center p-8 text-center">
-                              <Users className="w-12 h-12 mb-4 text-muted-foreground" />
-                              <h3 className="text-lg font-medium">No students enrolled</h3>
-                              <p className="text-sm text-muted-foreground max-w-md">
-                                There are no students enrolled in this class yet. Contact an administrator to enroll
-                                students.
-                              </p>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-
-                    <TabsContent value="analytics">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Performance Analytics</CardTitle>
-                          <CardDescription>Insights into student performance on this content</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          {activeContent.studentProgress?.submissions?.some((s) => s.status === "completed") ? (
-                            <div className="space-y-6">
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <Card>
-                                  <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">Class Average</CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
-                                    <div className="text-2xl font-bold">{calculateClassAverage(activeContent)}%</div>
-                                    <Progress value={calculateClassAverage(activeContent)} className="h-2 mt-2" />
-                                  </CardContent>
-                                </Card>
-
-                                <Card>
-                                  <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">Completion Rate</CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
-                                    <div className="text-2xl font-bold">
-                                      {Math.round(
-                                        (activeContent.studentProgress.submissions.filter(
-                                          (s) => s.status === "completed",
-                                        ).length /
-                                          activeContent.studentProgress.submissions.length) *
-                                          100,
-                                      )}
-                                      %
-                                    </div>
-                                    <Progress
-                                      value={
-                                        (activeContent.studentProgress.submissions.filter(
-                                          (s) => s.status === "completed",
-                                        ).length /
-                                          activeContent.studentProgress.submissions.length) *
-                                        100
-                                      }
-                                      className="h-2 mt-2"
-                                    />
-                                  </CardContent>
-                                </Card>
-
-                                <Card>
-                                  <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">Highest Score</CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
-                                    <div className="text-2xl font-bold">
-                                      {Math.max(
-                                        ...activeContent.studentProgress.submissions
-                                          .filter((s) => s.status === "completed" && s.score !== undefined)
-                                          .map((s) => s.score),
-                                        0,
-                                      )}
-                                      %
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              </div>
-
-                              <Card>
-                                <CardHeader>
-                                  <CardTitle>Score Distribution</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <span>90-100%</span>
-                                      <div className="w-full mx-4">
-                                        <Progress
-                                          value={
-                                            (activeContent.studentProgress.submissions.filter(
-                                              (s) => s.status === "completed" && s.score >= 90,
-                                            ).length /
-                                              activeContent.studentProgress.submissions.filter(
-                                                (s) => s.status === "completed",
-                                              ).length) *
-                                            100
-                                          }
-                                          className="h-4"
-                                        />
-                                      </div>
-                                      <span>
-                                        {
-                                          activeContent.studentProgress.submissions.filter(
-                                            (s) => s.status === "completed" && s.score >= 90,
-                                          ).length
-                                        }
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span>80-89%</span>
-                                      <div className="w-full mx-4">
-                                        <Progress
-                                          value={
-                                            (activeContent.studentProgress.submissions.filter(
-                                              (s) => s.status === "completed" && s.score >= 80 && s.score < 90,
-                                            ).length /
-                                              activeContent.studentProgress.submissions.filter(
-                                                (s) => s.status === "completed",
-                                              ).length) *
-                                            100
-                                          }
-                                          className="h-4"
-                                        />
-                                      </div>
-                                      <span>
-                                        {
-                                          activeContent.studentProgress.submissions.filter(
-                                            (s) => s.status === "completed" && s.score >= 80 && s.score < 90,
-                                          ).length
-                                        }
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span>70-79%</span>
-                                      <div className="w-full mx-4">
-                                        <Progress
-                                          value={
-                                            (activeContent.studentProgress.submissions.filter(
-                                              (s) => s.status === "completed" && s.score >= 70 && s.score < 80,
-                                            ).length /
-                                              activeContent.studentProgress.submissions.filter(
-                                                (s) => s.status === "completed",
-                                              ).length) *
-                                            100
-                                          }
-                                          className="h-4"
-                                        />
-                                      </div>
-                                      <span>
-                                        {
-                                          activeContent.studentProgress.submissions.filter(
-                                            (s) => s.status === "completed" && s.score >= 70 && s.score < 80,
-                                          ).length
-                                        }
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span>Below 70%</span>
-                                      <div className="w-full mx-4">
-                                        <Progress
-                                          value={
-                                            (activeContent.studentProgress.submissions.filter(
-                                              (s) => s.status === "completed" && s.score < 70,
-                                            ).length /
-                                              activeContent.studentProgress.submissions.filter(
-                                                (s) => s.status === "completed",
-                                              ).length) *
-                                            100
-                                          }
-                                          className="h-4"
-                                        />
-                                      </div>
-                                      <span>
-                                        {
-                                          activeContent.studentProgress.submissions.filter(
-                                            (s) => s.status === "completed" && s.score < 70,
-                                          ).length
-                                        }
-                                      </span>
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-
-                              {activeContent.problems && activeContent.problems.length > 0 && (
-                                <Card>
-                                  <CardHeader>
-                                    <CardTitle>Problem Analysis</CardTitle>
-                                    <CardDescription>Performance breakdown by problem</CardDescription>
-                                  </CardHeader>
-                                  <CardContent>
-                                    <div className="space-y-4">
-                                      {activeContent.problems.map((problem, index) => {
-                                        // Calculate success rate for this problem
-                                        const problemResults = activeContent.studentProgress.submissions
-                                          .filter((sub) => sub.status === "completed" && sub.problemResults)
-                                          .map((sub) => sub.problemResults[index])
-                                          .filter(Boolean)
-
-                                        const correctCount = problemResults.filter((result) => result.correct).length
-                                        const totalAttempts = problemResults.length
-                                        const successRate = totalAttempts > 0 ? (correctCount / totalAttempts) * 100 : 0
-
-                                        return (
-                                          <div key={index} className="border rounded-lg p-4">
-                                            <div className="flex justify-between items-center mb-2">
-                                              <div>
-                                                <p className="font-medium">Problem {index + 1}</p>
-                                                <p className="text-sm text-muted-foreground">
-                                                  {problem.type === "multiple-choice"
-                                                    ? "Multiple Choice"
-                                                    : problem.type === "open-ended"
-                                                      ? "Open Ended"
-                                                      : "Math Expression"}
-                                                </p>
-                                              </div>
-                                              <Badge variant={successRate > 70 ? "default" : "outline"}>
-                                                {Math.round(successRate)}% Success Rate
-                                              </Badge>
-                                            </div>
-                                            <Progress value={successRate} className="h-2 mt-2" />
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center p-8 text-center">
-                              <BarChart className="w-12 h-12 mb-4 text-muted-foreground" />
-                              <h3 className="text-lg font-medium">No analytics available</h3>
-                              <p className="text-sm text-muted-foreground max-w-md">
-                                Analytics will be available once students complete this content.
-                              </p>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
+                    <TabsContent value="progress">
+                      <StudentProgressTable />
                     </TabsContent>
                   </Tabs>
                 </CardContent>
