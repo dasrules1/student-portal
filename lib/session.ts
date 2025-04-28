@@ -78,29 +78,70 @@ class SessionManager {
   }
 
   // Login user
-  async login(email: string, password: string): Promise<{ user: User | null, role: string | null }> {
+  async login(email: string, password: string): Promise<{ user: User | null, role: string | null, error?: string }> {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
-      let role = null
-
-      if (user) {
-        // Get user role from Firestore
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid))
-          const userData = userDoc.data()
-          role = userData?.role || null
-        } catch (error) {
-          console.error('Error getting user role:', error)
-        }
-
-        this.setCurrentUser(user, role)
+      // Validate input
+      if (!email || !password) {
+        return { user: null, role: null, error: "Email and password are required" };
       }
 
-      return { user, role }
-    } catch (error) {
-      console.error("Error logging in:", error)
-      return { user: null, role: null }
+      // Check if Firebase auth is initialized
+      if (!auth) {
+        console.error("Firebase auth is not initialized");
+        return { user: null, role: null, error: "Authentication service is not available" };
+      }
+
+      // Attempt to sign in
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      let role = null;
+
+      if (user) {
+        try {
+          // Get user role from Firestore
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          const userData = userDoc.data();
+          
+          if (!userData) {
+            console.error("User document not found in Firestore");
+            return { user: null, role: null, error: "User data not found" };
+          }
+
+          role = userData.role || null;
+          
+          if (!role) {
+            console.error("User role not found in Firestore");
+            return { user: null, role: null, error: "User role not found" };
+          }
+
+          this.setCurrentUser(user, role);
+          return { user, role };
+        } catch (error) {
+          console.error('Error getting user role:', error);
+          return { user: null, role: null, error: "Error retrieving user data" };
+        }
+      }
+
+      return { user: null, role: null, error: "Authentication failed" };
+    } catch (error: any) {
+      console.error("Error logging in:", error);
+      
+      // Handle specific Firebase auth errors
+      let errorMessage = "Authentication failed";
+      
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = "Invalid email or password";
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = "User not found";
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect password";
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later";
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your connection";
+      }
+      
+      return { user: null, role: null, error: errorMessage };
     }
   }
 

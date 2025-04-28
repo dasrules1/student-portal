@@ -1,9 +1,9 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
-import { getAnalytics } from 'firebase/analytics';
-import { getDatabase } from 'firebase/database';
+import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore } from 'firebase/firestore';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { getAnalytics, Analytics } from 'firebase/analytics';
+import { getDatabase, Database } from 'firebase/database';
 
 // Set default values for development if environment variables are missing
 const firebaseConfig = {
@@ -20,19 +20,43 @@ const firebaseConfig = {
 // Check if Firebase is being used in build/SSR context vs client context
 const isServerSideRendering = typeof window === 'undefined';
 
-// Handle errors gracefully and provide fallbacks during build/SSR
-let app, auth, db, storage, analytics, realtimeDb;
+// Initialize Firebase services
+let app: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+let storage: FirebaseStorage;
+let analytics: Analytics | null;
+let realtimeDb: Database;
 
 try {
   // Initialize Firebase
-  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+    console.log("Firebase initialized successfully");
+  } else {
+    app = getApps()[0];
+    console.log("Using existing Firebase app");
+  }
+
+  // Initialize services
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
   
   // Only initialize these in browser context
   if (!isServerSideRendering) {
-    analytics = getAnalytics(app);
+    try {
+      analytics = getAnalytics(app);
+      realtimeDb = getDatabase(app);
+      console.log("Firebase services initialized successfully");
+    } catch (error) {
+      console.error("Error initializing Firebase services:", error);
+      analytics = null;
+      realtimeDb = getDatabase(app);
+    }
+  } else {
+    // Provide mock objects during SSR/builds
+    analytics = null;
     realtimeDb = getDatabase(app);
   }
 } catch (error) {
@@ -40,12 +64,14 @@ try {
   
   // Provide mock objects during SSR/builds to prevent crashes
   if (isServerSideRendering) {
-    // These mock objects will be replaced with real ones on the client
-    auth = { currentUser: null } as any;
-    db = {} as any;
-    storage = {} as any;
+    auth = {} as Auth;
+    db = {} as Firestore;
+    storage = {} as FirebaseStorage;
     analytics = null;
-    realtimeDb = {} as any;
+    realtimeDb = {} as Database;
+  } else {
+    // In client context, rethrow the error to prevent silent failures
+    throw error;
   }
 }
 
