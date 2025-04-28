@@ -8,13 +8,13 @@ import { getDatabase, Database, connectDatabaseEmulator } from 'firebase/databas
 // Set default values for development if environment variables are missing
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyCEJLDvNCGQzYKdsEB8B9uCgm_AORADjYw",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "student-portal-1.firebaseapp.com",
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://student-portal-1.firebaseio.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "student-portal-1",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "student-portal-1.appspot.com",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "123456789012",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:123456789012:web:abcd1234efgh5678",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-ABCD1234EF"
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "backend-education-more.firebaseapp.com",
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://backend-education-more-default-rtdb.firebaseio.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "backend-education-more",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "backend-education-more.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "531115842111",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:531115842111:web:d2c2c477fc8693e29eb68a",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-1HG47JHZ10"
 };
 
 // Check if Firebase is being used in build/SSR context vs client context
