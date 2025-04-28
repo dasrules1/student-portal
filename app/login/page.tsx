@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { auth } from "@/lib/firebase"
-import { signInWithEmailAndPassword } from "firebase/auth"
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth"
 import { Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
@@ -89,43 +89,114 @@ export default function LoginPage() {
     try {
       console.log(`Attempting to log in as ${activeTab} with email: ${email}`)
       
-      // Use Firebase authentication
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
-      
-      if (user) {
-        console.log("Login successful:", user)
-        
-        // Reset retry count on success
-        setRetryCount(0)
-        
-        // Get user role from custom claims
-        const idTokenResult = await user.getIdTokenResult()
-        const role = idTokenResult.claims.role || activeTab
-        
-        // Store user data
-        const userData = {
-          id: user.uid,
-          name: user.displayName || email.split('@')[0],
-          email: user.email,
-          role: role
-        }
-        
-        localStorage.setItem("currentUser", JSON.stringify(userData))
-        sessionStorage.setItem("currentUser", JSON.stringify(userData))
-        
-        setLoginSuccess(true)
-        
-        // Redirect after a short delay 
-        setTimeout(() => {
-          const destination = role === "student" 
-            ? "/student/dashboard" 
-            : role === "teacher" 
-              ? "/teacher/dashboard" 
-              : "/admin/dashboard"
+      // For demo accounts, create them if they don't exist
+      if (email === `${activeTab}@example.com` && password === "password") {
+        try {
+          // Try to sign in first
+          const userCredential = await signInWithEmailAndPassword(auth, email, password)
+          const user = userCredential.user
+          
+          if (user) {
+            console.log("Login successful:", user)
+            setRetryCount(0)
+            
+            // Store user data
+            const userData = {
+              id: user.uid,
+              name: activeTab === "student" ? "John Student" : 
+                    activeTab === "teacher" ? "Jane Teacher" : "Admin User",
+              email: user.email,
+              role: activeTab
+            }
+            
+            localStorage.setItem("currentUser", JSON.stringify(userData))
+            sessionStorage.setItem("currentUser", JSON.stringify(userData))
+            
+            setLoginSuccess(true)
+            
+            // Redirect after a short delay 
+            setTimeout(() => {
+              const destination = activeTab === "student" 
+                ? "/student/dashboard" 
+                : activeTab === "teacher" 
+                  ? "/teacher/dashboard" 
+                  : "/admin/dashboard"
+                  
+              router.push(redirectUrl || destination)
+            }, 1000)
+          }
+        } catch (error: any) {
+          if (error.code === 'auth/user-not-found') {
+            // Create the demo account
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+            const user = userCredential.user
+            
+            if (user) {
+              console.log("Demo account created:", user)
+              setRetryCount(0)
               
-          router.push(redirectUrl || destination)
-        }, 1000)
+              // Store user data
+              const userData = {
+                id: user.uid,
+                name: activeTab === "student" ? "John Student" : 
+                      activeTab === "teacher" ? "Jane Teacher" : "Admin User",
+                email: user.email,
+                role: activeTab
+              }
+              
+              localStorage.setItem("currentUser", JSON.stringify(userData))
+              sessionStorage.setItem("currentUser", JSON.stringify(userData))
+              
+              setLoginSuccess(true)
+              
+              // Redirect after a short delay 
+              setTimeout(() => {
+                const destination = activeTab === "student" 
+                  ? "/student/dashboard" 
+                  : activeTab === "teacher" 
+                    ? "/teacher/dashboard" 
+                    : "/admin/dashboard"
+                    
+                router.push(redirectUrl || destination)
+              }, 1000)
+            }
+          } else {
+            throw error
+          }
+        }
+      } else {
+        // Regular login attempt
+        const userCredential = await signInWithEmailAndPassword(auth, email, password)
+        const user = userCredential.user
+        
+        if (user) {
+          console.log("Login successful:", user)
+          setRetryCount(0)
+          
+          // Store user data
+          const userData = {
+            id: user.uid,
+            name: user.displayName || email.split('@')[0],
+            email: user.email,
+            role: activeTab
+          }
+          
+          localStorage.setItem("currentUser", JSON.stringify(userData))
+          sessionStorage.setItem("currentUser", JSON.stringify(userData))
+          
+          setLoginSuccess(true)
+          
+          // Redirect after a short delay 
+          setTimeout(() => {
+            const destination = activeTab === "student" 
+              ? "/student/dashboard" 
+              : activeTab === "teacher" 
+                ? "/teacher/dashboard" 
+                : "/admin/dashboard"
+                
+            router.push(redirectUrl || destination)
+          }, 1000)
+        }
       }
     } catch (error: any) {
       console.error("Login error:", error)
