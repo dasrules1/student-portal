@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { storage } from "@/lib/storage"
-import { persistentStorage } from "@/lib/persistentStorage"
+import { auth } from "@/lib/firebase"
+import { signInWithEmailAndPassword } from "firebase/auth"
+import { Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -22,36 +23,29 @@ export default function LoginPage() {
   const [loginSuccess, setLoginSuccess] = useState(false)
   const defaultRole = searchParams.get("role") || "student"
   const [activeTab, setActiveTab] = useState(defaultRole)
+  const [showPassword, setShowPassword] = useState(false)
 
   // Check if the user is already logged in
   useEffect(() => {
-    const checkExistingLogin = async () => {
-      // Try localStorage first
-      try {
-        const storedUser = localStorage.getItem("currentUser")
-        if (storedUser) {
-          const user = JSON.parse(storedUser)
-          console.log("User already logged in:", user)
-          setLoginSuccess(true)
-          
-          // Redirect after a short delay
-          setTimeout(() => {
-            const destination = user.role === "student" 
-              ? "/student/dashboard" 
-              : user.role === "teacher" 
-                ? "/teacher/dashboard" 
-                : "/admin/dashboard"
-                
-            router.push(redirectUrl || destination)
-          }, 1000)
-          return
-        }
-      } catch (e) {
-        console.error("Error checking existing login:", e)
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        console.log("User already logged in:", user)
+        setLoginSuccess(true)
+        
+        // Redirect after a short delay
+        setTimeout(() => {
+          const destination = user.role === "student" 
+            ? "/student/dashboard" 
+            : user.role === "teacher" 
+              ? "/teacher/dashboard" 
+              : "/admin/dashboard"
+              
+          router.push(redirectUrl || destination)
+        }, 1000)
       }
-    }
-    
-    checkExistingLogin()
+    })
+
+    return () => unsubscribe()
   }, [router, redirectUrl])
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -68,81 +62,60 @@ export default function LoginPage() {
     try {
       console.log(`Attempting to log in as ${activeTab} with email: ${email}`)
       
-      // Try to get the user from storage
-      let user = null
-      
-      try {
-        // Try to find user in persistent storage
-        const users = await persistentStorage.getAllUsers()
-        user = users.find(u => 
-          u.email.toLowerCase() === email.toLowerCase() && 
-          u.password === password &&
-          u.role === activeTab
-        )
-      } catch (storageError) {
-        console.error("Error getting users from persistent storage:", storageError)
-      }
-      
-      if (!user) {
-        // Fallback to direct storage method
-        try {
-          user = await storage.getUserByEmail(email)
-          if (!user || user.password !== password || user.role !== activeTab) {
-            user = null
-          }
-        } catch (err) {
-          console.error("Error getting user by email:", err)
-        }
-      }
-      
-      // Demo logins for testing
-      if (!user && email === `${activeTab}@example.com` && password === "password") {
-        user = {
-          id: `${activeTab}_demo_1`,
-          name: activeTab === "student" ? "John Student" : 
-                activeTab === "teacher" ? "Jane Teacher" : "Admin User",
-          email: email,
-          role: activeTab,
-          status: "active",
-          password: "password", // Not secure, but this is just for demo
-          classes: []
-        }
-      }
+      // Use Firebase authentication
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const user = userCredential.user
       
       if (user) {
         console.log("Login successful:", user)
         
-        // Store in both localStorage and sessionStorage for redundancy
-        localStorage.setItem("currentUser", JSON.stringify(user))
-        sessionStorage.setItem("currentUser", JSON.stringify(user))
+        // Get user role from custom claims
+        const idTokenResult = await user.getIdTokenResult()
+        const role = idTokenResult.claims.role || activeTab
         
-        // Also store in authUser format that some components may expect
-        const authData = {
-          uid: user.id,
-          displayName: user.name,
+        // Store user data
+        const userData = {
+          id: user.uid,
+          name: user.displayName || email.split('@')[0],
           email: user.email,
-          role: user.role
+          role: role
         }
-        localStorage.setItem("authUser", JSON.stringify(authData))
+        
+        localStorage.setItem("currentUser", JSON.stringify(userData))
+        sessionStorage.setItem("currentUser", JSON.stringify(userData))
         
         setLoginSuccess(true)
         
         // Redirect after a short delay 
         setTimeout(() => {
-          const destination = activeTab === "student" 
+          const destination = role === "student" 
             ? "/student/dashboard" 
-            : activeTab === "teacher" 
+            : role === "teacher" 
               ? "/teacher/dashboard" 
               : "/admin/dashboard"
               
           router.push(redirectUrl || destination)
         }, 1000)
-      } else {
-        setError(`Invalid ${activeTab} credentials. Please try again.`)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error)
-      setError("Error during login. Please try again.")
+      
+      // Handle specific Firebase auth errors
+      let errorMessage = "Error during login. Please try again."
+      
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = "Invalid email or password. Please check your credentials."
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = "No account found with this email."
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect password. Please try again."
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later."
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your connection."
+      }
+      
+      setError(errorMessage)
     }
     
     setLoading(false)
@@ -201,48 +174,53 @@ export default function LoginPage() {
                   </div>
                   
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor={`${role}-password`}>Password</Label>
-                      <Button 
-                        variant="link" 
-                        className="px-0 text-xs" 
-                        onClick={() => setPassword("password")}
+                    <Label htmlFor={`${role}-password`}>Password</Label>
+                    <div className="relative">
+                      <Input
+                        id={`${role}-password`}
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
                       >
-                        Use Demo Password
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-gray-500" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-gray-500" />
+                        )}
                       </Button>
                     </div>
-                    <Input
-                      id={`${role}-password`}
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
                   </div>
                   
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={loading || loginSuccess}
+                    disabled={loading}
                   >
-                    {loading ? "Logging in..." : "Sign In"}
+                    {loading ? "Signing in..." : "Sign In"}
                   </Button>
                 </form>
-                
-                <div className="mt-4 text-center text-sm text-muted-foreground">
-                  <p>Demo credentials for testing: </p>
-                  <code className="text-xs font-mono">
-                    {role}@example.com / password
-                  </code>
-                </div>
               </TabsContent>
             ))}
           </Tabs>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">
-          <div className="text-center text-sm text-muted-foreground mt-2">
-            <p>Education More Portal</p>
+          <div className="text-sm text-center text-gray-500">
+            Demo accounts available:
+            <br />
+            student@example.com / password
+            <br />
+            teacher@example.com / password
+            <br />
+            admin@example.com / password
           </div>
         </CardFooter>
       </Card>
