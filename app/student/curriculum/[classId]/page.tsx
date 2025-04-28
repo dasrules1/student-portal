@@ -196,121 +196,125 @@ export default function StudentCurriculum() {
 
   // Load class and curriculum data
   useEffect(() => {
-    // Check if user is a student
-    const user = sessionManager.getCurrentUser()
-    if (!user || user.role !== "student") {
-      toast({
-        title: "Access denied",
-        description: "You must be logged in as a student to view this page",
-        variant: "destructive",
-      })
-      router.push("/student")
-      return
-    }
+    const loadClassAndCurriculum = async () => {
+      // Check if user is a student
+      const user = sessionManager.getCurrentUser()
+      if (!user || user.role !== "student") {
+        toast({
+          title: "Access denied",
+          description: "You must be logged in as a student to view this page",
+          variant: "destructive",
+        })
+        router.push("/student")
+        return
+      }
 
-    // Cast user to User type
-    const typedUser = user.user as unknown as User;
-    setCurrentUser(typedUser);
+      // Cast user to User type
+      const typedUser = user.user as unknown as User;
+      setCurrentUser(typedUser);
 
-    // Try to get class from storage
-    try {
-      // Get classes and make sure it's an array before using .find()
-      const classes = storage.getClasses() || [];
-      console.log("DEBUG - ClassId from URL:", classId);
-      console.log("DEBUG - Retrieved classes count:", Array.isArray(classes) ? classes.length : "Not an array");
-      
-      if (Array.isArray(classes)) {
-        // Log class IDs for debugging
-        console.log("DEBUG - Available class IDs:", classes.map(c => c && c.id).filter(Boolean));
+      // Try to get class from storage
+      try {
+        // Get classes and make sure it's an array before using .find()
+        const classes = await storage.getClasses();
+        console.log("DEBUG - ClassId from URL:", classId);
+        console.log("DEBUG - Retrieved classes count:", Array.isArray(classes) ? classes.length : "Not an array");
         
-        // Try to find the class with more flexible matching
-        const foundClass = classes.find((c) => {
-          if (!c) return false;
-          console.log(`DEBUG - Comparing class ID: ${c.id} with URL classId: ${classId}`);
-          return c.id === classId || c.id?.includes(classId) || classId.includes(c.id);
-        });
-        
-        console.log("DEBUG - Found class:", foundClass ? "Yes - " + foundClass.name : "No class found with this ID");
-        
-        if (foundClass) {
-          // Enhanced debug logging for enrollment check
-          console.log("DEBUG - Current user:", JSON.stringify(typedUser));
+        if (Array.isArray(classes)) {
+          // Log class IDs for debugging
+          console.log("DEBUG - Available class IDs:", classes.map(c => c && c.id).filter(Boolean));
           
-          // Check if user has an id directly or nested in user property
-          const userId = typedUser.id;
-          console.log("DEBUG - User ID for enrollment check:", userId);
+          // Try to find the class with more flexible matching
+          const foundClass = classes.find((c) => {
+            if (!c) return false;
+            console.log(`DEBUG - Comparing class ID: ${c.id} with URL classId: ${classId}`);
+            return c.id === classId || c.id?.includes(classId) || classId.includes(c.id);
+          });
           
-          // Debug enrolled students array
-          console.log("DEBUG - Class enrolled students:", 
-            foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) 
-              ? foundClass.enrolledStudents 
-              : "No enrolled students array");
+          console.log("DEBUG - Found class:", foundClass ? "Yes - " + foundClass.name : "No class found with this ID");
           
-          // More flexible enrollment check that handles different user ID formats
-          const isEnrolled = 
-            // Standard check
-            (foundClass.enrolledStudents && 
-             Array.isArray(foundClass.enrolledStudents) && 
-             foundClass.enrolledStudents.includes(userId)) ||
-            // Special check for non-standard enrollment format
-            (Array.isArray(foundClass.students) && 
-             foundClass.students.includes(userId)) ||
-            // Check user classes if available
-            (typedUser.classes && Array.isArray(typedUser.classes) && 
-             typedUser.classes.includes(foundClass.id));
-          
-          console.log("DEBUG - Is user enrolled:", isEnrolled);
-          
-          // If we're directly accessing an assignment via URL, bypass enrollment check for better UX
-          // Get URL parameters directly in case our state hasn't updated yet
-          let directLessonParam, directContentParam;
-          if (typeof window !== 'undefined') {
-            const urlParams = new URLSearchParams(window.location.search);
-            directLessonParam = urlParams.get('lesson');
-            directContentParam = urlParams.get('content');
-            console.log("DEBUG - Direct URL parameters check:", { directLessonParam, directContentParam });
-          }
-          
-          // Check both the state-based params and direct URL params
-          const hasDirectAssignmentAccess = 
-            (queryParams.content && queryParams.lesson) || 
-            (directLessonParam && directContentParam);
-          
-          console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess, 
-            "State params:", queryParams, 
-            "URL params:", { lesson: directLessonParam, content: directContentParam });
-          
-          if (isEnrolled || hasDirectAssignmentAccess) {
-            if (!isEnrolled && hasDirectAssignmentAccess) {
-              console.log("DEBUG - Allowing direct access to assignment despite enrollment issue");
+          if (foundClass) {
+            // Enhanced debug logging for enrollment check
+            console.log("DEBUG - Current user:", JSON.stringify(typedUser));
+            
+            // Check if user has an id directly or nested in user property
+            const userId = typedUser.id;
+            console.log("DEBUG - User ID for enrollment check:", userId);
+            
+            // Debug enrolled students array
+            console.log("DEBUG - Class enrolled students:", 
+              foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) 
+                ? foundClass.enrolledStudents 
+                : "No enrolled students array");
+            
+            // More flexible enrollment check that handles different user ID formats
+            const isEnrolled = 
+              // Standard check
+              (foundClass.enrolledStudents && 
+               Array.isArray(foundClass.enrolledStudents) && 
+               foundClass.enrolledStudents.includes(userId)) ||
+              // Special check for non-standard enrollment format
+              (Array.isArray(foundClass.students) && 
+               foundClass.students.includes(userId)) ||
+              // Check user classes if available
+              (typedUser.classes && Array.isArray(typedUser.classes) && 
+               typedUser.classes.includes(foundClass.id));
+            
+            console.log("DEBUG - Is user enrolled:", isEnrolled);
+            
+            // If we're directly accessing an assignment via URL, bypass enrollment check for better UX
+            // Get URL parameters directly in case our state hasn't updated yet
+            let directLessonParam, directContentParam;
+            if (typeof window !== 'undefined') {
+              const urlParams = new URLSearchParams(window.location.search);
+              directLessonParam = urlParams.get('lesson');
+              directContentParam = urlParams.get('content');
+              console.log("DEBUG - Direct URL parameters check:", { directLessonParam, directContentParam });
             }
-            setCurrentClass(foundClass);
-            loadCurriculum();
+            
+            // Check both the state-based params and direct URL params
+            const hasDirectAssignmentAccess = 
+              (queryParams.content && queryParams.lesson) || 
+              (directLessonParam && directContentParam);
+            
+            console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess, 
+              "State params:", queryParams, 
+              "URL params:", { lesson: directLessonParam, content: directContentParam });
+            
+            if (isEnrolled || hasDirectAssignmentAccess) {
+              if (!isEnrolled && hasDirectAssignmentAccess) {
+                console.log("DEBUG - Allowing direct access to assignment despite enrollment issue");
+              }
+              setCurrentClass(foundClass);
+              loadCurriculum();
+            } else {
+              toast({
+                title: "Access denied",
+                description: "You are not enrolled in this class",
+                variant: "destructive",
+              });
+              router.push("/student");
+            }
           } else {
             toast({
-              title: "Access denied",
-              description: "You are not enrolled in this class",
+              title: "Class not found",
+              description: "The requested class could not be found",
               variant: "destructive",
             });
             router.push("/student");
           }
-        } else {
-          toast({
-            title: "Class not found",
-            description: "The requested class could not be found",
-            variant: "destructive",
-          });
-          router.push("/student");
         }
+      } catch (error) {
+        console.error("Error loading class:", error);
+        toast({
+          title: "Error loading class",
+          description: "There was an error loading the class data",
+          variant: "destructive",
+        });
       }
-    } catch (error) {
-      console.error("Error loading class:", error);
-      toast({
-        title: "Error loading class",
-        description: "There was an error loading the class data",
-        variant: "destructive",
-      });
-    }
+    };
+
+    loadClassAndCurriculum();
   }, [classId, router, toast, queryParams]);
 
   // Load curriculum data
