@@ -455,9 +455,13 @@ export default function StudentCurriculum() {
 
   // Handle multiple choice answer selection
   const handleMultipleChoiceSelect = (problemIndex: number, optionIndex: number) => {
+    if (!activeContent) return;
     setUserAnswers(prev => ({
       ...prev,
-      [problemIndex]: optionIndex
+      [activeContent.id]: {
+        ...(prev[activeContent.id] || {}),
+        [problemIndex]: optionIndex
+      }
     }));
     
     // Send real-time update to Firebase
@@ -468,13 +472,16 @@ export default function StudentCurriculum() {
 
   // Handle math expression input
   const handleMathExpressionInput = (problemIndex: number, value: string) => {
+    if (!activeContent) return;
     setMathExpressionInputs(prev => ({
       ...prev,
-      [problemIndex]: value
+      [activeContent.id]: {
+        ...(prev[activeContent.id] || {}),
+        [problemIndex]: value
+      }
     }));
     
     // Send real-time update to Firebase every few keystrokes
-    // This throttles updates for math expressions to avoid excessive writes
     if (currentUser && activeContent && (!lastUpdateTimestamp || Date.now() - lastUpdateTimestamp > 2000)) {
       sendRealTimeUpdate(problemIndex, value, 'math-expression', activeContent.problems[problemIndex])
       setLastUpdateTimestamp(Date.now())
@@ -483,13 +490,16 @@ export default function StudentCurriculum() {
 
   // Handle open ended answer input
   const handleOpenEndedInput = (problemIndex: number, value: string) => {
+    if (!activeContent) return;
     setOpenEndedAnswers(prev => ({
       ...prev,
-      [problemIndex]: value
+      [activeContent.id]: {
+        ...(prev[activeContent.id] || {}),
+        [problemIndex]: value
+      }
     }));
     
     // Send real-time update to Firebase every few keystrokes
-    // This throttles updates for open-ended to avoid excessive writes
     if (currentUser && activeContent && (!lastUpdateTimestamp || Date.now() - lastUpdateTimestamp > 2000)) {
       sendRealTimeUpdate(problemIndex, value, 'open-ended', activeContent.problems[problemIndex])
       setLastUpdateTimestamp(Date.now())
