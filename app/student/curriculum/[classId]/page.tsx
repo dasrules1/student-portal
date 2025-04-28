@@ -260,10 +260,20 @@ export default function StudentCurriculum() {
                   if (paramLessonId && paramContentId) {
                     console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
                     
-                    // Find lesson index
+                    // Find lesson index - try exact match first, then try partial match
                     let lessonIndex = filteredLessons.findIndex(
                       lesson => lesson && lesson.id === paramLessonId
                     );
+                    
+                    // If no exact match, try partial match
+                    if (lessonIndex === -1) {
+                      lessonIndex = filteredLessons.findIndex(
+                        lesson => lesson && (
+                          lesson.id?.includes(paramLessonId) || 
+                          paramLessonId.includes(lesson.id)
+                        )
+                      );
+                    }
                     
                     // If lesson index is found, set active lesson
                     if (lessonIndex !== -1) {
@@ -274,18 +284,36 @@ export default function StudentCurriculum() {
                       // Find the content within this lesson
                       const lesson = filteredLessons[lessonIndex];
                       if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                        const content = lesson.contents.find(
+                        // Try exact match first
+                        let content = lesson.contents.find(
                           content => content && content.id === paramContentId
                         );
+                        
+                        // If no exact match, try partial match
+                        if (!content) {
+                          content = lesson.contents.find(
+                            content => content && (
+                              content.id?.includes(paramContentId) || 
+                              paramContentId.includes(content.id)
+                            )
+                          );
+                        }
                         
                         if (content) {
                           console.log("Found content:", content.title);
                           // Set active content directly
                           setActiveContent(content);
+                        } else {
+                          console.log("Content not found, falling back to first content");
+                          // Fallback to first content if available
+                          if (lesson.contents.length > 0) {
+                            setActiveContent(lesson.contents[0]);
+                          }
                         }
                       }
                     } else {
-                      // Fallback to lesson 1
+                      console.log("Lesson not found, falling back to first lesson");
+                      // Fallback to first lesson
                       setActiveLesson(1);
                     }
                   } else {
@@ -356,10 +384,20 @@ export default function StudentCurriculum() {
                       if (paramLessonId && paramContentId) {
                         console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
                         
-                        // Find lesson index
-                        let lessonIndex = lessons.findIndex(
+                        // Find lesson index - try exact match first, then try partial match
+                        let lessonIndex = filteredLessons.findIndex(
                           lesson => lesson && lesson.id === paramLessonId
                         );
+                        
+                        // If no exact match, try partial match
+                        if (lessonIndex === -1) {
+                          lessonIndex = filteredLessons.findIndex(
+                            lesson => lesson && (
+                              lesson.id?.includes(paramLessonId) || 
+                              paramLessonId.includes(lesson.id)
+                            )
+                          );
+                        }
                         
                         // If lesson index is found, set active lesson
                         if (lessonIndex !== -1) {
@@ -368,20 +406,38 @@ export default function StudentCurriculum() {
                           setActiveLesson(lessonIndex + 1);
                           
                           // Find the content within this lesson
-                          const lesson = lessons[lessonIndex];
+                          const lesson = filteredLessons[lessonIndex];
                           if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                            const content = lesson.contents.find(
+                            // Try exact match first
+                            let content = lesson.contents.find(
                               content => content && content.id === paramContentId
                             );
+                            
+                            // If no exact match, try partial match
+                            if (!content) {
+                              content = lesson.contents.find(
+                                content => content && (
+                                  content.id?.includes(paramContentId) || 
+                                  paramContentId.includes(content.id)
+                                )
+                              );
+                            }
                             
                             if (content) {
                               console.log("Found content:", content.title);
                               // Set active content directly
                               setActiveContent(content);
+                            } else {
+                              console.log("Content not found, falling back to first content");
+                              // Fallback to first content if available
+                              if (lesson.contents.length > 0) {
+                                setActiveContent(lesson.contents[0]);
+                              }
                             }
                           }
                         } else {
-                          // Fallback to lesson 1
+                          console.log("Lesson not found, falling back to first lesson");
+                          // Fallback to first lesson
                           setActiveLesson(1);
                         }
                       } else {
@@ -417,10 +473,20 @@ export default function StudentCurriculum() {
                       if (paramLessonId && paramContentId) {
                         console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
                         
-                        // Find lesson index
+                        // Find lesson index - try exact match first, then try partial match
                         let lessonIndex = filteredLessons.findIndex(
                           lesson => lesson && lesson.id === paramLessonId
                         );
+                        
+                        // If no exact match, try partial match
+                        if (lessonIndex === -1) {
+                          lessonIndex = filteredLessons.findIndex(
+                            lesson => lesson && (
+                              lesson.id?.includes(paramLessonId) || 
+                              paramLessonId.includes(lesson.id)
+                            )
+                          );
+                        }
                         
                         // If lesson index is found, set active lesson
                         if (lessonIndex !== -1) {
@@ -431,18 +497,36 @@ export default function StudentCurriculum() {
                           // Find the content within this lesson
                           const lesson = filteredLessons[lessonIndex];
                           if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                            const content = lesson.contents.find(
+                            // Try exact match first
+                            let content = lesson.contents.find(
                               content => content && content.id === paramContentId
                             );
+                            
+                            // If no exact match, try partial match
+                            if (!content) {
+                              content = lesson.contents.find(
+                                content => content && (
+                                  content.id?.includes(paramContentId) || 
+                                  paramContentId.includes(content.id)
+                                )
+                              );
+                            }
                             
                             if (content) {
                               console.log("Found content:", content.title);
                               // Set active content directly
                               setActiveContent(content);
+                            } else {
+                              console.log("Content not found, falling back to first content");
+                              // Fallback to first content if available
+                              if (lesson.contents.length > 0) {
+                                setActiveContent(lesson.contents[0]);
+                              }
                             }
                           }
                         } else {
-                          // Fallback to lesson 1
+                          console.log("Lesson not found, falling back to first lesson");
+                          // Fallback to first lesson
                           setActiveLesson(1);
                         }
                       } else {
