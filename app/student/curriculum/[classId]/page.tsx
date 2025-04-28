@@ -32,17 +32,36 @@ import { realtimeDb } from "@/lib/firebase"
 import { ref, set, push, serverTimestamp } from "firebase/database"
 
 // Content types for curriculum
+const getContentTypeIcon = (type: string) => {
+  switch (type) {
+    case "new-material":
+      return <BookOpen className="w-4 h-4 mr-2" />;
+    case "guided-practice":
+      return <PenTool className="w-4 h-4 mr-2" />;
+    case "classwork":
+      return <ClipboardList className="w-4 h-4 mr-2" />;
+    case "homework":
+      return <BookMarked className="w-4 h-4 mr-2" />;
+    case "quiz":
+      return <FileQuestion className="w-4 h-4 mr-2" />;
+    case "test":
+      return <FileText className="w-4 h-4 mr-2" />;
+    default:
+      return null;
+  }
+};
+
 const contentTypes = [
-  { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
-  { id: "guided-practice", name: "Guided Practice", icon: <PenTool className="w-4 h-4 mr-2" /> },
-  { id: "classwork", name: "Classwork", icon: <ClipboardList className="w-4 h-4 mr-2" /> },
-  { id: "homework", name: "Homework", icon: <BookMarked className="w-4 h-4 mr-2" /> },
-  { id: "quiz", name: "Quiz", icon: <FileQuestion className="w-4 h-4 mr-2" /> },
-  { id: "test", name: "Test", icon: <FileText className="w-4 h-4 mr-2" /> },
-]
+  { id: "new-material", name: "New Material" },
+  { id: "guided-practice", name: "Guided Practice" },
+  { id: "classwork", name: "Classwork" },
+  { id: "homework", name: "Homework" },
+  { id: "quiz", name: "Quiz" },
+  { id: "test", name: "Test" },
+];
 
 // Function to render LaTeX in the UI
-const renderLatex = (text) => {
+const renderLatex = (text: string) => {
   if (!text) return ""
 
   // Simple regex to identify LaTeX-like content between $$ delimiters
@@ -68,6 +87,70 @@ const renderLatex = (text) => {
       })}
     </>
   )
+}
+
+// Update User type to match the actual structure
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: "student" | "teacher" | "admin";
+  status?: "active" | "inactive";
+  avatar?: string;
+  classes: string[];
+}
+
+// Update Content type to include problems
+interface Content {
+  id: string;
+  title: string;
+  type: string;
+  description?: string;
+  isPublished?: boolean;
+  dueDate?: string;
+  completed?: boolean;
+  completedAt?: string;
+  problems?: Array<{
+    type: string;
+    question: string;
+    options?: string[];
+    answer?: string;
+    keywords?: string[];
+  }>;
+}
+
+// Add type for user answers
+interface UserAnswers {
+  [key: number]: number;
+}
+
+// Add type for math expression inputs
+interface MathExpressionInputs {
+  [key: number]: string;
+}
+
+// Add type for open ended answers
+interface OpenEndedAnswers {
+  [key: number]: string;
+}
+
+// Add type for attempt counts
+interface AttemptCounts {
+  [key: string]: number;
+}
+
+interface Lesson {
+  id: string;
+  title: string;
+  contents?: Content[];
+  assignments?: Content[];
+  quizzes?: Content[];
+}
+
+interface Curriculum {
+  lessons: Lesson[];
+  lastUpdated?: string;
 }
 
 export default function StudentCurriculum() {
@@ -98,18 +181,18 @@ export default function StudentCurriculum() {
     }
   }, [])
 
-  const [currentClass, setCurrentClass] = useState(null)
-  const [curriculum, setCurriculum] = useState(null)
+  const [currentClass, setCurrentClass] = useState<any>(null)
+  const [curriculum, setCurriculum] = useState<any>(null)
   const [activeLesson, setActiveLesson] = useState(1)
-  const [activeContent, setActiveContent] = useState(null)
-  const [userAnswers, setUserAnswers] = useState({})
+  const [activeContent, setActiveContent] = useState<any>(null)
+  const [userAnswers, setUserAnswers] = useState<UserAnswers>({})
   const [showResults, setShowResults] = useState(false)
-  const [mathExpressionInputs, setMathExpressionInputs] = useState({})
-  const [openEndedAnswers, setOpenEndedAnswers] = useState({})
-  const [attemptCounts, setAttemptCounts] = useState({})
-  const [currentUser, setCurrentUser] = useState(null)
-  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null)
-  const [lessonsWithContent, setLessonsWithContent] = useState([])
+  const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({})
+  const [openEndedAnswers, setOpenEndedAnswers] = useState<OpenEndedAnswers>({})
+  const [attemptCounts, setAttemptCounts] = useState<AttemptCounts>({})
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<string | null>(null)
+  const [lessonsWithContent, setLessonsWithContent] = useState<any[]>([])
 
   // Load class and curriculum data
   useEffect(() => {
@@ -125,7 +208,9 @@ export default function StudentCurriculum() {
       return
     }
 
-    setCurrentUser(user)
+    // Cast user to User type
+    const typedUser = user.user as unknown as User;
+    setCurrentUser(typedUser);
 
     // Try to get class from storage
     try {
@@ -149,10 +234,10 @@ export default function StudentCurriculum() {
         
         if (foundClass) {
           // Enhanced debug logging for enrollment check
-          console.log("DEBUG - Current user:", JSON.stringify(user));
+          console.log("DEBUG - Current user:", JSON.stringify(typedUser));
           
           // Check if user has an id directly or nested in user property
-          const userId = user.id || (user.user && user.user.id);
+          const userId = typedUser.id;
           console.log("DEBUG - User ID for enrollment check:", userId);
           
           // Debug enrolled students array
@@ -171,8 +256,8 @@ export default function StudentCurriculum() {
             (Array.isArray(foundClass.students) && 
              foundClass.students.includes(userId)) ||
             // Check user classes if available
-            (user.classes && Array.isArray(user.classes) && 
-             user.classes.includes(foundClass.id));
+            (typedUser.classes && Array.isArray(typedUser.classes) && 
+             typedUser.classes.includes(foundClass.id));
           
           console.log("DEBUG - Is user enrolled:", isEnrolled);
           
@@ -199,425 +284,64 @@ export default function StudentCurriculum() {
             if (!isEnrolled && hasDirectAssignmentAccess) {
               console.log("DEBUG - Allowing direct access to assignment despite enrollment issue");
             }
-            setCurrentClass(foundClass)
-
-            // Load curriculum data using the getCurriculum method
-            const loadCurriculum = async () => {
-              try {
-                // First try the regular curriculum with filtering
-                const curriculumData = await storage.getCurriculum(classId, user);
-                
-                // Check if we have usable curriculum content
-                const hasCurriculumContent = curriculumData && 
-                                          curriculumData.content && 
-                                          (Array.isArray(curriculumData.content) || 
-                                           curriculumData.content.lessons || 
-                                           curriculumData.content.units);
-                
-                if (hasCurriculumContent) {
-                  console.log("Found filtered curriculum data for student:", JSON.stringify(curriculumData).substring(0, 200) + "...");
-                  setCurriculum(curriculumData.content);
-                  
-                  // Extract lessons with content
-                  let filteredLessons = [];
-                  
-                  // Handle different curriculum structures
-                  if (Array.isArray(curriculumData.content)) {
-                    // If content is directly an array of lessons
-                    filteredLessons = curriculumData.content.filter(
-                      lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
-                    );
-                  } else if (curriculumData.content.lessons && Array.isArray(curriculumData.content.lessons)) {
-                    // If content has a lessons property
-                    filteredLessons = curriculumData.content.lessons.filter(
-                      lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
-                    );
-                  } else if (curriculumData.content.units && Array.isArray(curriculumData.content.units)) {
-                    // If content has units with lessons
-                    // Flatten units into lessons for display
-                    filteredLessons = curriculumData.content.units.flatMap(unit => {
-                      return (unit.lessons || []).filter(
-                        lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
-                      );
-                    });
-                  }
-                  
-                  // Check if we actually have lessons with content after filtering
-                  if (filteredLessons.length > 0) {
-                    setLessonsWithContent(filteredLessons);
-                    setLastUpdateTimestamp(curriculumData.lastUpdated);
-                    
-                    // Get URL parameters directly in case our state hasn't updated yet
-                    let paramLessonId = queryParams.lesson;
-                    let paramContentId = queryParams.content;
-                    
-                    if ((!paramLessonId || !paramContentId) && typeof window !== 'undefined') {
-                      const urlParams = new URLSearchParams(window.location.search);
-                      paramLessonId = paramLessonId || urlParams.get('lesson');
-                      paramContentId = paramContentId || urlParams.get('content');
-                      console.log("DEBUG - Using direct URL params for content lookup:", { paramLessonId, paramContentId });
-                    }
-                    
-                    // Find the index of the lesson and content from URL params
-                    if (paramLessonId && paramContentId) {
-                      console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
-                      
-                      // Find lesson index - try exact match first, then try partial match
-                      let lessonIndex = filteredLessons.findIndex(
-                        lesson => lesson && lesson.id === paramLessonId
-                      );
-                      
-                      // If no exact match, try partial match
-                      if (lessonIndex === -1) {
-                        lessonIndex = filteredLessons.findIndex(
-                          lesson => lesson && (
-                            lesson.id?.includes(paramLessonId) || 
-                            paramLessonId.includes(lesson.id)
-                          )
-                        );
-                      }
-                      
-                      // If lesson index is found, set active lesson
-                      if (lessonIndex !== -1) {
-                        console.log(`Found lesson at index ${lessonIndex}`);
-                        // Set active lesson (add 1 because activeLesson is 1-indexed)
-                        setActiveLesson(lessonIndex + 1);
-                        
-                        // Find the content within this lesson
-                        const lesson = filteredLessons[lessonIndex];
-                        if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                          // Try exact match first
-                          let content = lesson.contents.find(
-                            content => content && content.id === paramContentId
-                          );
-                          
-                          // If no exact match, try partial match
-                          if (!content) {
-                            content = lesson.contents.find(
-                              content => content && (
-                                content.id?.includes(paramContentId) || 
-                                paramContentId.includes(content.id)
-                              )
-                            );
-                          }
-                          
-                          if (content) {
-                            console.log("Found content:", content.title);
-                            // Set active content directly
-                            setActiveContent(content);
-                          } else {
-                            console.log("Content not found, falling back to first content");
-                            // Fallback to first content if available
-                            if (lesson.contents.length > 0) {
-                              setActiveContent(lesson.contents[0]);
-                            }
-                          }
-                        }
-                      } else {
-                        console.log("Lesson not found, falling back to first lesson");
-                        // Fallback to first lesson
-                        setActiveLesson(1);
-                      }
-                    } else {
-                      // Default to first lesson if no query params
-                      setActiveLesson(1);
-                    }
-                    
-                    return; // Success! We have content to show
-                  }
-                }
-                
-                // If we reach here, we didn't find usable content through the regular method
-                // Try to get published curriculum directly
-                console.log("No filtered curriculum content found, trying published curriculum directly");
-                
-                // Check localStorage directly for backward compatibility
-                try {
-                  const publishedKey = `published-curriculum-${classId}`;
-                  const localData = localStorage.getItem(publishedKey);
-                  
-                  if (localData) {
-                    const parsedData = JSON.parse(localData);
-                    console.log("Found published curriculum in localStorage:", JSON.stringify(parsedData).substring(0, 200) + "...");
-                    
-                    // Convert the special format to standard curriculum format if needed
-                    if (typeof parsedData === 'object' && !Array.isArray(parsedData) && Object.keys(parsedData).length > 0) {
-                      // This is the special indexed format, convert it
-                      const lessons = [];
-                      
-                      // Extract lesson indices
-                      Object.keys(parsedData).forEach(lessonIdx => {
-                        const lessonContents = [];
-                        
-                        // Extract content indices for this lesson
-                        Object.keys(parsedData[lessonIdx]).forEach(contentIdx => {
-                          lessonContents.push(parsedData[lessonIdx][contentIdx]);
-                        });
-                        
-                        if (lessonContents.length > 0) {
-                          // Use the first content's lesson properties if available
-                          const firstContent = lessonContents[0];
-                          lessons.push({
-                            id: firstContent.lessonId || `lesson-${lessonIdx}`,
-                            title: firstContent.lessonTitle || `Lesson ${parseInt(lessonIdx) + 1}`,
-                            contents: lessonContents
-                          });
-                        }
-                      });
-                      
-                      if (lessons.length > 0) {
-                        const formattedCurriculum = { lessons };
-                        setCurriculum(formattedCurriculum);
-                        setLessonsWithContent(lessons);
-                        setLastUpdateTimestamp(new Date().toISOString());
-                        
-                        // Get URL parameters directly in case our state hasn't updated yet
-                        let paramLessonId = queryParams.lesson;
-                        let paramContentId = queryParams.content;
-                        
-                        if ((!paramLessonId || !paramContentId) && typeof window !== 'undefined') {
-                          const urlParams = new URLSearchParams(window.location.search);
-                          paramLessonId = paramLessonId || urlParams.get('lesson');
-                          paramContentId = paramContentId || urlParams.get('content');
-                          console.log("DEBUG - Using direct URL params for content lookup:", { paramLessonId, paramContentId });
-                        }
-                        
-                        // Find the index of the lesson and content from URL params
-                        if (paramLessonId && paramContentId) {
-                          console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
-                          
-                          // Find lesson index - try exact match first, then try partial match
-                          let lessonIndex = filteredLessons.findIndex(
-                            lesson => lesson && lesson.id === paramLessonId
-                          );
-                          
-                          // If no exact match, try partial match
-                          if (lessonIndex === -1) {
-                            lessonIndex = filteredLessons.findIndex(
-                              lesson => lesson && (
-                                lesson.id?.includes(paramLessonId) || 
-                                paramLessonId.includes(lesson.id)
-                              )
-                            );
-                          }
-                          
-                          // If lesson index is found, set active lesson
-                          if (lessonIndex !== -1) {
-                            console.log(`Found lesson at index ${lessonIndex}`);
-                            // Set active lesson (add 1 because activeLesson is 1-indexed)
-                            setActiveLesson(lessonIndex + 1);
-                            
-                            // Find the content within this lesson
-                            const lesson = filteredLessons[lessonIndex];
-                            if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                              // Try exact match first
-                              let content = lesson.contents.find(
-                                content => content && content.id === paramContentId
-                              );
-                              
-                              // If no exact match, try partial match
-                              if (!content) {
-                                content = lesson.contents.find(
-                                  content => content && (
-                                    content.id?.includes(paramContentId) || 
-                                    paramContentId.includes(content.id)
-                                  )
-                                );
-                              }
-                              
-                              if (content) {
-                                console.log("Found content:", content.title);
-                                // Set active content directly
-                                setActiveContent(content);
-                              } else {
-                                console.log("Content not found, falling back to first content");
-                                // Fallback to first content if available
-                                if (lesson.contents.length > 0) {
-                                  setActiveContent(lesson.contents[0]);
-                                }
-                              }
-                            }
-                          } else {
-                            console.log("Lesson not found, falling back to first lesson");
-                            // Fallback to first lesson
-                            setActiveLesson(1);
-                          }
-                        } else {
-                          // Default to first lesson if no query params
-                          setActiveLesson(1);
-                        }
-                        
-                        return; // Success with converted data
-                      }
-                    } else if (Array.isArray(parsedData)) {
-                      // It's already in array format
-                      const filteredLessons = parsedData.filter(
-                        lesson => lesson && (lesson.contents?.length > 0 || lesson.assignments?.length > 0 || lesson.quizzes?.length > 0)
-                      );
-                      
-                      if (filteredLessons.length > 0) {
-                        setCurriculum({ lessons: filteredLessons });
-                        setLessonsWithContent(filteredLessons);
-                        setLastUpdateTimestamp(new Date().toISOString());
-                        
-                        // Get URL parameters directly in case our state hasn't updated yet
-                        let paramLessonId = queryParams.lesson;
-                        let paramContentId = queryParams.content;
-                        
-                        if ((!paramLessonId || !paramContentId) && typeof window !== 'undefined') {
-                          const urlParams = new URLSearchParams(window.location.search);
-                          paramLessonId = paramLessonId || urlParams.get('lesson');
-                          paramContentId = paramContentId || urlParams.get('content');
-                          console.log("DEBUG - Using direct URL params for content lookup:", { paramLessonId, paramContentId });
-                        }
-                        
-                        // Find the index of the lesson and content from URL params
-                        if (paramLessonId && paramContentId) {
-                          console.log("Trying to find lesson and content from params:", { paramLessonId, paramContentId });
-                          
-                          // Find lesson index - try exact match first, then try partial match
-                          let lessonIndex = filteredLessons.findIndex(
-                            lesson => lesson && lesson.id === paramLessonId
-                          );
-                          
-                          // If no exact match, try partial match
-                          if (lessonIndex === -1) {
-                            lessonIndex = filteredLessons.findIndex(
-                              lesson => lesson && (
-                                lesson.id?.includes(paramLessonId) || 
-                                paramLessonId.includes(lesson.id)
-                              )
-                            );
-                          }
-                          
-                          // If lesson index is found, set active lesson
-                          if (lessonIndex !== -1) {
-                            console.log(`Found lesson at index ${lessonIndex}`);
-                            // Set active lesson (add 1 because activeLesson is 1-indexed)
-                            setActiveLesson(lessonIndex + 1);
-                            
-                            // Find the content within this lesson
-                            const lesson = filteredLessons[lessonIndex];
-                            if (lesson && lesson.contents && Array.isArray(lesson.contents)) {
-                              // Try exact match first
-                              let content = lesson.contents.find(
-                                content => content && content.id === paramContentId
-                              );
-                              
-                              // If no exact match, try partial match
-                              if (!content) {
-                                content = lesson.contents.find(
-                                  content => content && (
-                                    content.id?.includes(paramContentId) || 
-                                    paramContentId.includes(content.id)
-                                  )
-                                );
-                              }
-                              
-                              if (content) {
-                                console.log("Found content:", content.title);
-                                // Set active content directly
-                                setActiveContent(content);
-                              } else {
-                                console.log("Content not found, falling back to first content");
-                                // Fallback to first content if available
-                                if (lesson.contents.length > 0) {
-                                  setActiveContent(lesson.contents[0]);
-                                }
-                              }
-                            }
-                          } else {
-                            console.log("Lesson not found, falling back to first lesson");
-                            // Fallback to first lesson
-                            setActiveLesson(1);
-                          }
-                        } else {
-                          // Default to first lesson if no query params
-                          setActiveLesson(1);
-                        }
-                        
-                        return; // Success with array data
-                      }
-                    }
-                  }
-                } catch (localStorageError) {
-                  console.warn("Error accessing published curriculum from localStorage:", localStorageError);
-                }
-                
-                // If we reach here, we couldn't find any content
-                console.log("No published curriculum available for this student");
-                setCurriculum({ lessons: [] });
-                setLessonsWithContent([]);
-                toast({
-                  title: "No content available",
-                  description: "There is no published curriculum content available for this class yet.",
-                  variant: "warning",
-                });
-              } catch (error) {
-                console.error("Error loading curriculum:", error);
-                setCurriculum({ lessons: [] });
-                setLessonsWithContent([]);
-                toast({
-                  title: "Error loading curriculum",
-                  description: "There was a problem loading the curriculum content.",
-                  variant: "destructive",
-                });
-              }
-            };
-            
+            setCurrentClass(foundClass);
             loadCurriculum();
-
-            // Load any previously graded content
-            if (user) {
-              // Load attempt counts
-              const attemptCountsKey = `attempt-counts-${classId}-${user.id}`;
-              const attemptCountsData = localStorage.getItem(attemptCountsKey);
-              if (attemptCountsData) {
-                try {
-                  setAttemptCounts(JSON.parse(attemptCountsData));
-                } catch (error) {
-                  console.error("Error loading attempt counts:", error);
-                }
-              }
-            }
           } else {
             toast({
-              title: "Not enrolled",
+              title: "Access denied",
               description: "You are not enrolled in this class",
               variant: "destructive",
-            })
-            router.push("/student/dashboard")
+            });
+            router.push("/student");
           }
         } else {
           toast({
             title: "Class not found",
             description: "The requested class could not be found",
             variant: "destructive",
-          })
-          router.push("/student/dashboard")
+          });
+          router.push("/student");
         }
-      } catch (error) {
-        console.error("Error loading class data:", error)
-        toast({
-          title: "Error loading class data",
-          description: "There was a problem loading the class data.",
-          variant: "destructive",
-        })
-        router.push("/student/dashboard")
       }
     } catch (error) {
-      console.error("Error loading class data:", error)
+      console.error("Error loading class:", error);
       toast({
-        title: "Error loading class data",
-        description: "There was a problem loading the class data.",
+        title: "Error loading class",
+        description: "There was an error loading the class data",
         variant: "destructive",
-      })
-      router.push("/student/dashboard")
+      });
     }
-  }, [classId, router, toast])
+  }, [classId, router, toast, queryParams]);
+
+  // Load curriculum data
+  const loadCurriculum = async () => {
+    try {
+      // First try the regular curriculum with filtering
+      const curriculumData = await storage.getCurriculum(classId, currentUser?.role);
+      
+      if (curriculumData?.content) {
+        setCurriculum(curriculumData.content);
+        setLessonsWithContent(curriculumData.content.lessons || []);
+        setLastUpdateTimestamp(curriculumData.lastUpdated || null);
+      } else {
+        toast({
+          title: "No content available",
+          description: "There is no published curriculum content available for this class yet.",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error("Error loading curriculum:", error);
+      toast({
+        title: "Error loading curriculum",
+        description: "There was a problem loading the curriculum content.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Handle selecting a content item
-  const handleSelectContent = (content) => {
+  const handleSelectContent = (content: Content) => {
     setActiveContent(content)
 
     // Check if this content has already been graded for this student
@@ -723,10 +447,11 @@ export default function StudentCurriculum() {
   }
 
   // Handle multiple choice answer selection
-  const handleMultipleChoiceSelect = (problemIndex, optionIndex) => {
-    const updatedAnswers = { ...userAnswers }
-    updatedAnswers[problemIndex] = optionIndex
-    setUserAnswers(updatedAnswers)
+  const handleMultipleChoiceSelect = (problemIndex: number, optionIndex: number) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [problemIndex]: optionIndex
+    }));
     
     // Send real-time update to Firebase
     if (currentUser && activeContent) {
@@ -735,10 +460,11 @@ export default function StudentCurriculum() {
   }
 
   // Handle math expression input
-  const handleMathExpressionInput = (problemIndex, value) => {
-    const updatedInputs = { ...mathExpressionInputs }
-    updatedInputs[problemIndex] = value
-    setMathExpressionInputs(updatedInputs)
+  const handleMathExpressionInput = (problemIndex: number, value: string) => {
+    setMathExpressionInputs(prev => ({
+      ...prev,
+      [problemIndex]: value
+    }));
     
     // Send real-time update to Firebase every few keystrokes
     // This throttles updates for math expressions to avoid excessive writes
@@ -749,10 +475,11 @@ export default function StudentCurriculum() {
   }
 
   // Handle open ended answer input
-  const handleOpenEndedInput = (problemIndex, value) => {
-    const updatedAnswers = { ...openEndedAnswers }
-    updatedAnswers[problemIndex] = value
-    setOpenEndedAnswers(updatedAnswers)
+  const handleOpenEndedInput = (problemIndex: number, value: string) => {
+    setOpenEndedAnswers(prev => ({
+      ...prev,
+      [problemIndex]: value
+    }));
     
     // Send real-time update to Firebase every few keystrokes
     // This throttles updates for open-ended to avoid excessive writes
@@ -763,7 +490,7 @@ export default function StudentCurriculum() {
   }
 
   // Auto-grade a math expression answer
-  const gradeMathExpression = (problem, studentAnswer) => {
+  const gradeMathExpression = (problem: any, studentAnswer: string) => {
     if (!studentAnswer || !problem) return { correct: false, score: 0 }
 
     // Clean up the student answer
@@ -823,7 +550,7 @@ export default function StudentCurriculum() {
   }
 
   // Auto-grade an open ended answer
-  const gradeOpenEnded = (problem, studentAnswer) => {
+  const gradeOpenEnded = (problem: any, studentAnswer: string) => {
     if (!studentAnswer || !problem || !problem.keywords || !Array.isArray(problem.keywords)) {
       return { correct: false, score: 0, matchedKeywords: [] }
     }
@@ -855,197 +582,38 @@ export default function StudentCurriculum() {
 
   // Handle submitting answers
   const handleSubmitAnswers = () => {
-    if (!activeContent || !currentUser || !activeContent.problems || !Array.isArray(activeContent.problems)) return;
-    
-    // Check if all questions are answered
-    const allAnswered = activeContent.problems.every((problem, index) => {
-      if (!problem) return false;
-      
-      if (problem.type === "multiple-choice") {
-        return userAnswers[activeContent.id]?.[index] !== undefined && userAnswers[activeContent.id]?.[index] !== -1
-      } else if (problem.type === "math-expression") {
-        return (
-          mathExpressionInputs[activeContent.id]?.[index] !== undefined &&
-          mathExpressionInputs[activeContent.id]?.[index] !== ""
-        )
-      } else if (problem.type === "open-ended") {
-        return (
-          openEndedAnswers[activeContent.id]?.[index] !== undefined &&
-          openEndedAnswers[activeContent.id]?.[index] !== ""
-        )
-      }
-      return false
-    })
+    if (!activeContent?.problems) return;
 
-    if (!allAnswered) {
-      toast({
-        title: "Incomplete submission",
-        description: `Please answer all questions before submitting.`,
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Check if any problems have exceeded max attempts
-    const attemptKey = `${activeContent.id}`
-    const currentAttempts = attemptCounts[attemptKey] || {}
-
-    const exceededAttempts = activeContent.problems.some((problem, index) => {
-      const problemKey = `problem-${index}`
-      const attempts = currentAttempts[problemKey] || 0
-      return problem.maxAttempts && attempts >= problem.maxAttempts
-    })
-
-    if (exceededAttempts) {
-      toast({
-        title: "Maximum attempts reached",
-        description: "You have reached the maximum number of attempts for one or more problems.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Update attempt counts
-    const newAttempts = { ...currentAttempts }
-    activeContent.problems.forEach((problem, index) => {
-      const problemKey = `problem-${index}`
-      newAttempts[problemKey] = (newAttempts[problemKey] || 0) + 1
-    })
-
-    const newAttemptCounts = {
-      ...attemptCounts,
-      [attemptKey]: newAttempts,
-    }
-
-    setAttemptCounts(newAttemptCounts)
-
-    // Save attempt counts to localStorage
-    if (typeof window !== "undefined") {
-      const attemptCountsKey = `attempt-counts-${classId}-${currentUser.id}`
-      localStorage.setItem(attemptCountsKey, JSON.stringify(newAttemptCounts))
-    }
-
-    // Calculate score
-    let totalPoints = 0
-    let earnedPoints = 0
-    const problemResults = []
+    let totalScore = 0;
+    let totalProblems = activeContent.problems.length;
+    let correctAnswers = 0;
 
     activeContent.problems.forEach((problem, index) => {
-      totalPoints += problem.points
-
+      let result;
       if (problem.type === "multiple-choice") {
-        const isCorrect = userAnswers[activeContent.id][index] === problem.correctAnswer
-        const pointsEarned = isCorrect ? problem.points : 0
-        earnedPoints += pointsEarned
-        problemResults.push({
-          type: problem.type,
-          correct: isCorrect,
-          points: pointsEarned,
-          maxPoints: problem.points,
-          studentAnswer: userAnswers[activeContent.id][index],
-          correctAnswer: problem.correctAnswer,
-        })
+        const selectedOption = userAnswers[index];
+        result = selectedOption === problem.answer;
       } else if (problem.type === "math-expression") {
-        const result = gradeMathExpression(problem, mathExpressionInputs[activeContent.id][index])
-        earnedPoints += result.score
-        problemResults.push({
-          type: problem.type,
-          correct: result.correct,
-          points: result.score,
-          maxPoints: problem.points,
-          studentAnswer: mathExpressionInputs[activeContent.id][index],
-          correctAnswer:
-            problem.correctAnswers && problem.correctAnswers.length > 0
-              ? problem.correctAnswers
-              : problem.correctAnswer,
-        })
+        result = gradeMathExpression(problem, mathExpressionInputs[index] || "");
       } else if (problem.type === "open-ended") {
-        const result = gradeOpenEnded(problem, openEndedAnswers[activeContent.id][index])
-        earnedPoints += result.score
-        problemResults.push({
-          type: problem.type,
-          correct: result.correct,
-          points: result.score,
-          maxPoints: problem.points,
-          studentAnswer: openEndedAnswers[activeContent.id][index],
-          correctAnswer:
-            problem.correctAnswers && problem.correctAnswers.length > 0
-              ? problem.correctAnswers
-              : problem.correctAnswer,
-          matchedKeywords: result.matchedKeywords,
-        })
+        result = gradeOpenEnded(problem, openEndedAnswers[index] || "");
       }
-    })
 
-    const score = Math.round((earnedPoints / totalPoints) * 100)
-
-    // Save the submission to localStorage for teachers to access
-    if (typeof window !== "undefined") {
-      try {
-        // Create a submission record
-        const submission = {
-          studentId: currentUser.id,
-          status: "completed",
-          score,
-          submittedAt: new Date().toISOString(),
-          answers: {
-            multipleChoice: userAnswers[activeContent.id] || {},
-            mathExpression: mathExpressionInputs[activeContent.id] || {},
-            openEnded: openEndedAnswers[activeContent.id] || {},
-          },
-          problemResults,
-          gradedBy: "auto",
-          gradedAt: new Date().toISOString(),
-        }
-
-        // Get existing submissions for this content
-        const gradedContentKey = `graded-content-${classId}-${activeContent.id}`
-        let submissions = []
-
-        const existingData = localStorage.getItem(gradedContentKey)
-        if (existingData) {
-          submissions = JSON.parse(existingData)
-
-          // Update or add this student's submission
-          const existingIndex = submissions.findIndex((sub) => sub.studentId === currentUser.id)
-          if (existingIndex >= 0) {
-            submissions[existingIndex] = submission
-          } else {
-            submissions.push(submission)
-          }
-        } else {
-          submissions.push(submission)
-        }
-
-        // Save back to localStorage
-        localStorage.setItem(gradedContentKey, JSON.stringify(submissions))
-      } catch (error) {
-        console.error("Error saving submission:", error)
+      if (result?.correct) {
+        correctAnswers++;
+        totalScore += result.score;
       }
-    }
+    });
 
-    // After submitting answers, mark the submission as completed in real-time DB
-    try {
-      const submissionRef = ref(realtimeDb, `student-submissions/${classId}/${activeContent.id}/${currentUser.id}`)
-      set(submissionRef, {
-        studentId: currentUser.id,
-        studentName: currentUser.name || 'Student',
-        status: 'completed',
-        score: score,
-        totalPoints: totalPoints,
-        completedAt: Date.now()
-      })
-    } catch (error) {
-      console.error('Error marking submission as completed:', error)
-    }
-
-    setShowResults(true)
+    const percentage = (correctAnswers / totalProblems) * 100;
+    setShowResults(true);
 
     toast({
-      title: "Submission successful",
-      description: `Your answers have been submitted. Score: ${score}%`,
-    })
-  }
+      title: "Quiz submitted",
+      description: `You scored ${percentage.toFixed(1)}% (${correctAnswers}/${totalProblems} correct)`,
+      variant: "default",
+    });
+  };
 
   // Get remaining attempts for a problem
   const getRemainingAttempts = (problemIndex) => {
@@ -1065,7 +633,7 @@ export default function StudentCurriculum() {
   // Render content type icon
   const renderContentTypeIcon = (type) => {
     const contentType = contentTypes.find((ct) => ct.id === type)
-    return contentType ? contentType.icon : <FileText className="w-4 h-4 mr-2" />
+    return contentType ? getContentTypeIcon(type) : <FileText className="w-4 h-4 mr-2" />
   }
 
   // Get status badge for content
