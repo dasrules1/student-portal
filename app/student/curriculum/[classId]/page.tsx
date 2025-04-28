@@ -319,9 +319,10 @@ export default function StudentCurriculum() {
       // First try the regular curriculum with filtering
       const curriculumData = await storage.getCurriculum(classId, currentUser?.role);
       
-      if (curriculumData?.content) {
-        setCurriculum(curriculumData.content);
-        setLessonsWithContent(curriculumData.content.lessons || []);
+      if (curriculumData) {
+        console.log("Loaded curriculum data:", curriculumData);
+        setCurriculum(curriculumData);
+        setLessonsWithContent(curriculumData.content?.lessons || []);
         setLastUpdateTimestamp(curriculumData.lastUpdated || null);
       } else {
         toast({
