@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
@@ -31,6 +32,53 @@ import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
 import { ref, set, push, serverTimestamp } from "firebase/database"
 
+// Type definitions
+interface Content {
+  id: string
+  type: string
+  title: string
+  description?: string
+  problems?: Problem[]
+  status?: string
+}
+
+interface Problem {
+  type: 'multiple-choice' | 'math-expression' | 'open-ended'
+  question: string
+  options?: string[]
+  correctAnswer?: string | string[]
+  maxAttempts?: number
+}
+
+interface BadgeProps {
+  variant?: 'default' | 'secondary' | 'outline'
+  className?: string
+  children: React.ReactNode
+}
+
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      div: React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement>
+      p: React.DetailedHTMLProps<React.HTMLAttributes<HTMLParagraphElement>, HTMLParagraphElement>
+      button: React.DetailedHTMLProps<React.ButtonHTMLAttributes<HTMLButtonElement>, HTMLButtonElement>
+      input: React.DetailedHTMLProps<React.InputHTMLAttributes<HTMLInputElement>, HTMLInputElement>
+      textarea: React.DetailedHTMLProps<React.TextareaHTMLAttributes<HTMLTextAreaElement>, HTMLTextAreaElement>
+      label: React.DetailedHTMLProps<React.LabelHTMLAttributes<HTMLLabelElement>, HTMLLabelElement>
+      span: React.DetailedHTMLProps<React.HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>
+      a: React.DetailedHTMLProps<React.AnchorHTMLAttributes<HTMLAnchorElement>, HTMLAnchorElement>
+      h1: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>
+      h2: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>
+      h3: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>
+      ul: React.DetailedHTMLProps<React.HTMLAttributes<HTMLUListElement>, HTMLUListElement>
+      li: React.DetailedHTMLProps<React.HTMLAttributes<HTMLLIElement>, HTMLLIElement>
+      section: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      strong: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      img: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>
+    }
+  }
+}
+
 // Content types for curriculum
 const contentTypes = [
   { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
@@ -42,7 +90,7 @@ const contentTypes = [
 ]
 
 // Function to render LaTeX in the UI
-const renderLatex = (text) => {
+function renderLatex(text: string): string {
   if (!text) return ""
 
   // Simple regex to identify LaTeX-like content between $$ delimiters
@@ -306,13 +354,16 @@ export default function StudentCurriculum() {
                   return; // Success! We have content to show
                 }
               }
+            } catch (error) {
+              console.error("Error processing filtered curriculum:", error);
+            }
               
-              // If we reach here, we didn't find usable content through the regular method
-              // Try to get published curriculum directly
-              console.log("No filtered curriculum content found, trying published curriculum directly");
+            // If we reach here, we didn't find usable content through the regular method
+            // Try to get published curriculum directly
+            console.log("No filtered curriculum content found, trying published curriculum directly");
               
-              // Check localStorage directly for backward compatibility
-              try {
+            // Check localStorage directly for backward compatibility
+            try {
                 const publishedKey = `published-curriculum-${classId}`;
                 const localData = localStorage.getItem(publishedKey);
                 
@@ -495,144 +546,118 @@ export default function StudentCurriculum() {
           if (user) {
             // Load attempt counts
             const attemptCountsKey = `attempt-counts-${classId}-${user.id}`;
-            const attemptCountsData = localStorage.getItem(attemptCountsKey);
-            if (attemptCountsData) {
-              try {
-                setAttemptCounts(JSON.parse(attemptCountsData));
-              } catch (error) {
-                console.error("Error loading attempt counts:", error);
+            try {
+              const storedAttemptCounts = localStorage.getItem(attemptCountsKey);
+              if (storedAttemptCounts) {
+                setAttemptCounts(JSON.parse(storedAttemptCounts));
               }
+            } catch (error) {
+              console.error("Error loading attempt counts:", error);
             }
-          }
-        } else {
-          toast({
-            title: "Not enrolled",
-            description: "You are not enrolled in this class",
-            variant: "destructive",
-          })
-          router.push("/student/dashboard")
-        }
-      } else {
-        toast({
-          title: "Class not found",
-          description: "The requested class could not be found",
-          variant: "destructive",
-        })
-        router.push("/student/dashboard")
-      }
-    } catch (error) {
-      console.error("Error loading class data:", error)
-      toast({
-        title: "Error loading class data",
-        description: "There was a problem loading the class data.",
-        variant: "destructive",
-      })
-    }
-  }, [classId, router, toast])
-
-  // Handle selecting a content item
-  const handleSelectContent = (content) => {
-    setActiveContent(content)
-
-    // Check if this content has already been graded for this student
-    if (currentUser) {
-      const gradedContentKey = `graded-content-${classId}-${content.id}`
-      const gradedData = localStorage.getItem(gradedContentKey)
-
-      if (gradedData) {
-        try {
-          const submissions = JSON.parse(gradedData)
-          const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id)
-
-          if (userSubmission && userSubmission.status === "completed") {
-            // If the student has already completed this content, show the results
-            setShowResults(true)
-
-            // Load their previous answers if available
-            if (userSubmission.answers) {
-              if (userSubmission.answers.multipleChoice) {
-                setUserAnswers({
-                  [content.id]: userSubmission.answers.multipleChoice,
-                })
-              }
-
-              if (userSubmission.answers.mathExpression) {
-                setMathExpressionInputs({
-                  [content.id]: userSubmission.answers.mathExpression,
-                })
-              }
-
-              if (userSubmission.answers.openEnded) {
-                setOpenEndedAnswers({
-                  [content.id]: userSubmission.answers.openEnded,
-                })
-              }
-            }
-
-            return
           }
         } catch (error) {
-          console.error("Error loading graded content:", error)
+          console.error("Error loading class data:", error);
         }
+    }, [classId, user]);
+
+  // Check if this content has already been graded for this student
+  if (currentUser) {
+    const gradedContentKey = `graded-content-${classId}-${activeContent?.id}`
+    const gradedData = localStorage.getItem(gradedContentKey)
+
+    if (gradedData) {
+      try {
+        const submissions = JSON.parse(gradedData)
+        const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id)
+
+        if (userSubmission && userSubmission.status === "completed") {
+          // If the student has already completed this content, show the results
+          setShowResults(true)
+
+          // Load their previous answers if available
+          if (userSubmission.answers) {
+            if (userSubmission.answers.multipleChoice) {
+              setUserAnswers({
+                [activeContent?.id]: userSubmission.answers.multipleChoice,
+              })
+            }
+
+            if (userSubmission.answers.mathExpression) {
+              setMathExpressionInputs({
+                [activeContent?.id]: userSubmission.answers.mathExpression,
+              })
+            }
+
+            if (userSubmission.answers.openEnded) {
+              setOpenEndedAnswers({
+                [activeContent?.id]: userSubmission.answers.openEnded,
+              })
+            }
+          }
+
+          return
+        }
+      } catch (error) {
+        console.error("Error loading graded content:", error)
       }
     }
+  }
 
-    setShowResults(false)
+  setShowResults(false)
 
-    // Initialize user answers if not already set
-    if (content.problems && content.problems.length > 0) {
-      // For multiple choice questions
-      const initialMultipleChoiceAnswers = {}
-      // For math expression questions
-      const initialMathExpressionInputs = {}
-      // For open ended questions
-      const initialOpenEndedAnswers = {}
+  // Initialize user answers if not already set
+  if (activeContent?.problems && activeContent.problems.length > 0) {
+    // For multiple choice questions
+    const initialMultipleChoiceAnswers = {}
+    // For math expression questions
+    const initialMathExpressionInputs = {}
+    // For open ended questions
+    const initialOpenEndedAnswers = {}
 
-      content.problems.forEach((problem, index) => {
-        if (problem.type === "multiple-choice") {
-          if (!userAnswers[content.id] || userAnswers[content.id][index] === undefined) {
-            initialMultipleChoiceAnswers[index] = -1 // -1 means no answer selected
-          }
-        } else if (problem.type === "math-expression") {
-          if (!mathExpressionInputs[content.id] || mathExpressionInputs[content.id][index] === undefined) {
-            initialMathExpressionInputs[index] = ""
-          }
-        } else if (problem.type === "open-ended") {
-          if (!openEndedAnswers[content.id] || openEndedAnswers[content.id][index] === undefined) {
-            initialOpenEndedAnswers[index] = ""
-          }
+    activeContent.problems.forEach((problem, index) => {
+      if (problem.type === "multiple-choice") {
+        if (!userAnswers[activeContent.id] || userAnswers[activeContent.id][index] === undefined) {
+          initialMultipleChoiceAnswers[index] = -1 // -1 means no answer selected
         }
+      } else if (problem.type === "math-expression") {
+        if (!mathExpressionInputs[activeContent.id] || mathExpressionInputs[activeContent.id][index] === undefined) {
+          initialMathExpressionInputs[index] = ""
+        }
+      } else if (problem.type === "open-ended") {
+        if (!openEndedAnswers[activeContent.id] || openEndedAnswers[activeContent.id][index] === undefined) {
+          initialOpenEndedAnswers[index] = ""
+        }
+      }
+    })
+
+    if (Object.keys(initialMultipleChoiceAnswers).length > 0) {
+      setUserAnswers({
+        ...userAnswers,
+        [activeContent?.id]: {
+          ...(userAnswers[activeContent?.id] || {}),
+          ...initialMultipleChoiceAnswers,
+        },
       })
+    }
 
-      if (Object.keys(initialMultipleChoiceAnswers).length > 0) {
-        setUserAnswers({
-          ...userAnswers,
-          [content.id]: {
-            ...(userAnswers[content.id] || {}),
-            ...initialMultipleChoiceAnswers,
-          },
-        })
-      }
+    if (Object.keys(initialMathExpressionInputs).length > 0) {
+      setMathExpressionInputs({
+        ...mathExpressionInputs,
+        [activeContent?.id]: {
+          ...(mathExpressionInputs[activeContent?.id] || {}),
+          ...initialMathExpressionInputs,
+        },
+      })
+    }
 
-      if (Object.keys(initialMathExpressionInputs).length > 0) {
-        setMathExpressionInputs({
-          ...mathExpressionInputs,
-          [content.id]: {
-            ...(mathExpressionInputs[content.id] || {}),
-            ...initialMathExpressionInputs,
-          },
-        })
-      }
-
-      if (Object.keys(initialOpenEndedAnswers).length > 0) {
-        setOpenEndedAnswers({
-          ...openEndedAnswers,
-          [content.id]: {
-            ...(openEndedAnswers[content.id] || {}),
-            ...initialOpenEndedAnswers,
-          },
-        })
-      }
+    if (Object.keys(initialOpenEndedAnswers).length > 0) {
+      setOpenEndedAnswers({
+        ...openEndedAnswers,
+        [activeContent?.id]: {
+          ...(openEndedAnswers[activeContent?.id] || {}),
+          ...initialOpenEndedAnswers,
+        },
+      })
     }
   }
 
