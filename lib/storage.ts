@@ -1987,6 +1987,7 @@ class StorageService {
     try {
       const auth = getAuth();
       if (auth.currentUser) {
+        console.log("Storage: Attempting to fetch classes from Firestore...");
         const db = getFirestore();
         const classesRef = collection(db, 'classes');
         // Query for classes where this student is enrolled
@@ -2007,16 +2008,18 @@ class StorageService {
               enrolledClasses.push(cls);
             }
           });
+        } else {
+          console.log("Storage: No classes found in Firestore for student", studentId);
         }
+      } else {
+        console.log("Storage: No authenticated user found, skipping Firestore query");
       }
     } catch (firestoreError) {
       console.error("Storage: Error getting classes from Firestore:", firestoreError);
+      // Don't throw the error, just log it and continue with local storage
     }
     
-    // 3. Skip persistent storage step - it's causing reference errors
-    // Instead, go directly to localStorage
-    
-    // 4. Check localStorage directly
+    // 3. Check localStorage directly
     if (typeof window !== "undefined") {
       try {
         // First check for a direct enrollment record

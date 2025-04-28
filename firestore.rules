@@ -29,6 +29,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Classes collection
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow write: if isTeacher() || isAdmin();
+      
+      // Allow students to read classes they're enrolled in
+      allow read: if isStudent() && (
+        resource.data.enrolledStudents.hasAny([request.auth.uid]) ||
+        request.auth.token.classes.hasAny([classId])
+      );
+    }
+
     // Students collection
     match /students/{studentId} {
       allow read: if isAuthenticated() && (
