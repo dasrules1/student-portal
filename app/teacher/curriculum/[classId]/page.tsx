@@ -310,16 +310,29 @@ export default function TeacherCurriculum() {
   useEffect(() => {
     if (!activeContent?.id) return;
 
+    console.log("Setting up real-time listener for content:", activeContent.id);
+
     // Listen for real-time updates from Firebase
     const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
     const unsubscribe = onValue(answersRef, (snapshot) => {
       const data = snapshot.val();
+      console.log("Received real-time update:", data);
       if (data) {
-        setRealTimeUpdates(data);
+        // Transform the data into a more usable format
+        const transformedData = Object.entries(data).reduce((acc, [studentId, studentData]) => {
+          acc[studentId] = studentData;
+          return acc;
+        }, {});
+        console.log("Transformed data:", transformedData);
+        setRealTimeUpdates(transformedData);
+      } else {
+        console.log("No real-time data available");
+        setRealTimeUpdates({});
       }
     });
 
     return () => {
+      console.log("Cleaning up real-time listener");
       unsubscribe();
     };
   }, [activeContent?.id, classId]);
@@ -984,6 +997,12 @@ export default function TeacherCurriculum() {
   const StudentProgressTable = () => {
     if (!activeContent?.problems) return null;
 
+    console.log("Rendering progress table with data:", {
+      students: students.length,
+      realTimeUpdates: Object.keys(realTimeUpdates).length,
+      problems: activeContent.problems.length
+    });
+
     return (
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-4">Student Progress</h3>
@@ -1004,6 +1023,8 @@ export default function TeacherCurriculum() {
             <tbody>
               {students.map((student) => {
                 const studentAnswers = realTimeUpdates[student.id] || {};
+                console.log(`Student ${student.name} answers:`, studentAnswers);
+                
                 const totalScore = activeContent.problems.reduce((sum, problem, index) => {
                   const answer = studentAnswers[`problem-${index}`];
                   return sum + (answer?.score || 0);
@@ -1014,6 +1035,8 @@ export default function TeacherCurriculum() {
                     <td className="p-2">{student.name}</td>
                     {activeContent.problems.map((problem, index) => {
                       const answer = studentAnswers[`problem-${index}`];
+                      console.log(`Problem ${index} answer for ${student.name}:`, answer);
+                      
                       return (
                         <td key={index} className="p-2">
                           <div className="flex flex-col">
