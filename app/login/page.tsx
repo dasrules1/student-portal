@@ -24,6 +24,8 @@ export default function LoginPage() {
   const defaultRole = searchParams.get("role") || "student"
   const [activeTab, setActiveTab] = useState(defaultRole)
   const [showPassword, setShowPassword] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const [lastAttemptTime, setLastAttemptTime] = useState(0)
 
   // Check if the user is already logged in
   useEffect(() => {
@@ -48,6 +50,15 @@ export default function LoginPage() {
     return () => unsubscribe()
   }, [router, redirectUrl])
 
+  // Reset retry count after 5 minutes
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRetryCount(0)
+    }, 5 * 60 * 1000) // 5 minutes
+
+    return () => clearInterval(timer)
+  }, [])
+
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError("")
@@ -55,6 +66,22 @@ export default function LoginPage() {
 
     if (!email || !password) {
       setError("Email and password are required")
+      setLoading(false)
+      return
+    }
+
+    // Check rate limiting
+    const now = Date.now()
+    const timeSinceLastAttempt = now - lastAttemptTime
+    
+    if (retryCount >= 5) {
+      setError("Too many failed attempts. Please wait 5 minutes before trying again.")
+      setLoading(false)
+      return
+    }
+
+    if (timeSinceLastAttempt < 2000) { // 2 seconds between attempts
+      setError("Please wait a moment before trying again.")
       setLoading(false)
       return
     }
@@ -68,6 +95,9 @@ export default function LoginPage() {
       
       if (user) {
         console.log("Login successful:", user)
+        
+        // Reset retry count on success
+        setRetryCount(0)
         
         // Get user role from custom claims
         const idTokenResult = await user.getIdTokenResult()
@@ -100,6 +130,10 @@ export default function LoginPage() {
     } catch (error: any) {
       console.error("Login error:", error)
       
+      // Update retry count and last attempt time
+      setRetryCount(prev => prev + 1)
+      setLastAttemptTime(Date.now())
+      
       // Handle specific Firebase auth errors
       let errorMessage = "Error during login. Please try again."
       
@@ -110,7 +144,7 @@ export default function LoginPage() {
       } else if (error.code === 'auth/wrong-password') {
         errorMessage = "Incorrect password. Please try again."
       } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = "Too many failed attempts. Please try again later."
+        errorMessage = `Too many failed attempts. Please wait ${Math.ceil((5 * 60 * 1000 - timeSinceLastAttempt) / 1000 / 60)} minutes before trying again.`
       } else if (error.code === 'auth/network-request-failed') {
         errorMessage = "Network error. Please check your connection."
       }
@@ -203,7 +237,7 @@ export default function LoginPage() {
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={loading}
+                    disabled={loading || retryCount >= 5}
                   >
                     {loading ? "Signing in..." : "Sign In"}
                   </Button>
