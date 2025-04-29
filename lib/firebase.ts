@@ -36,7 +36,7 @@ try {
       apiKey: "***" // Hide API key in logs
     });
     app = initializeApp(firebaseConfig);
-    console.log("Firebase initialized successfully");
+    console.log("Firebase app initialized successfully");
   } else {
     app = getApps()[0];
     console.log("Using existing Firebase app");
@@ -44,9 +44,15 @@ try {
 
   // Initialize services
   auth = getAuth(app);
-  console.log("Firebase Auth initialized");
+  console.log("Firebase Auth initialized with config:", {
+    authDomain: auth.config.authDomain,
+    apiKey: "***",
+    projectId: auth.config.projectId
+  });
+  
   db = getFirestore(app);
   console.log("Firestore initialized");
+  
   storage = getStorage(app);
   console.log("Storage initialized");
   

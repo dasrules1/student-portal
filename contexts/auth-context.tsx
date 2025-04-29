@@ -58,41 +58,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const session = await firebaseAuth.signIn(email, password)
+      console.log('Auth context: Attempting to sign in with email:', email);
+      const session = await firebaseAuth.signIn(email, password);
+      
       if (session.error) {
-        throw new Error(session.error)
+        console.error('Auth context: Sign in error from firebaseAuth:', session.error);
+        throw new Error(session.error);
       }
       
+      if (!session.user) {
+        console.error('Auth context: No user returned from firebaseAuth');
+        throw new Error('Authentication failed: No user returned');
+      }
+      
+      if (!session.role) {
+        console.error('Auth context: No role returned from firebaseAuth');
+        throw new Error('Authentication failed: No role returned');
+      }
+      
+      console.log('Auth context: Sign in successful, user:', session.user);
+      console.log('Auth context: User role:', session.role);
+      
       // First set the user and role
-      setUser(session.user)
-      setRole(session.role)
+      setUser(session.user);
+      setRole(session.role);
       
       // Store authentication data in localStorage to ensure persistence
       if (session.user && session.role) {
-        localStorage.setItem('authUser', JSON.stringify({
+        const authData = {
           uid: session.user.uid,
           email: session.user.email,
           role: session.role
-        }))
+        };
+        console.log('Auth context: Storing auth data:', authData);
+        localStorage.setItem('authUser', JSON.stringify(authData));
       }
       
       // Wait for a longer delay to ensure state is properly updated
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Then handle navigation based on role
       if (session.role === 'admin') {
-        // Use direct navigation to avoid Next.js router issues
-        window.location.href = '/admin/dashboard'
+        console.log('Auth context: Redirecting to admin dashboard');
+        window.location.href = '/admin/dashboard';
       } else if (session.role === 'student') {
-        window.location.href = '/student/dashboard'
+        console.log('Auth context: Redirecting to student dashboard');
+        window.location.href = '/student/dashboard';
       } else {
-        window.location.href = '/teacher/dashboard'
+        console.log('Auth context: Redirecting to teacher dashboard');
+        window.location.href = '/teacher/dashboard';
       }
     } catch (error: any) {
-      console.error('Sign in error:', error)
-      throw error
+      console.error('Auth context: Sign in error:', error);
+      throw error;
     }
-  }
+  };
 
   const signUp = async (email: string, password: string, name: string, role: 'student' | 'teacher' | 'admin') => {
     try {
