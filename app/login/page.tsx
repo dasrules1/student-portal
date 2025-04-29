@@ -26,6 +26,7 @@ export default function LoginPage() {
   const [activeTab, setActiveTab] = useState(defaultRole)
   const [showPassword, setShowPassword] = useState(false)
   const { signIn } = useAuth()
+  const [resetSent, setResetSent] = useState(false)
 
   // Check if the user is already logged in
   useEffect(() => {
@@ -52,6 +53,30 @@ export default function LoginPage() {
     }
   }, [router, redirectUrl])
 
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError("Please enter your email address");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const result = await firebaseAuth.sendPasswordReset(email);
+      if (result.success) {
+        setResetSent(true);
+        setError("Password reset email sent. Please check your inbox.");
+      } else {
+        setError(result.error || "Failed to send password reset email.");
+      }
+    } catch (error: any) {
+      setError(error.message || "Failed to send password reset email.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError("")
@@ -72,18 +97,7 @@ export default function LoginPage() {
       
       // Try to create a test user if login fails
       if (error.message.includes('auth/invalid-credential')) {
-        try {
-          console.log('Attempting to create test user...')
-          const result = await firebaseAuth.createTestUser()
-          if (result.success) {
-            setError("Test user created. Please try logging in with test@example.com / test123")
-          } else {
-            setError("Failed to create test user: " + result.error)
-          }
-        } catch (createError: any) {
-          console.error('Error creating test user:', createError)
-          setError("Failed to create test user: " + createError.message)
-        }
+        setError("Invalid email or password. Click 'Reset Password' if you've forgotten your password.");
       } else {
         // Handle other Firebase auth errors
         let errorMessage = "Error during login. Please try again."
@@ -149,6 +163,12 @@ export default function LoginPage() {
                     </Alert>
                   )}
                   
+                  {resetSent && (
+                    <Alert className="mb-4 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                      <AlertDescription>Password reset email sent. Please check your inbox.</AlertDescription>
+                    </Alert>
+                  )}
+                  
                   <div className="space-y-2">
                     <Label htmlFor={`${role}-email`}>Email</Label>
                     <Input
@@ -171,13 +191,15 @@ export default function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
+                        className="pr-10"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent focus:outline-none"
                         onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
                       >
                         {showPassword ? (
                           <EyeOff className="h-4 w-4 text-gray-500" />
@@ -188,9 +210,21 @@ export default function LoginPage() {
                     </div>
                   </div>
                   
-                  <Button 
-                    type="submit" 
-                    className="w-full" 
+                  <div className="flex justify-between items-center">
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="text-sm"
+                      onClick={handleResetPassword}
+                      disabled={loading}
+                    >
+                      Reset Password
+                    </Button>
+                  </div>
+                  
+                  <Button
+                    type="submit"
+                    className="w-full"
                     disabled={loading}
                   >
                     {loading ? "Signing in..." : "Sign In"}
