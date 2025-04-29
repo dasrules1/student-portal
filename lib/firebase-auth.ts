@@ -22,26 +22,110 @@ export const firebaseAuth = {
   async signIn(email: string, password: string): Promise<UserSession> {
     try {
       console.log('Attempting to sign in with email:', email);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // First try to sign in
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        console.log('Sign in successful, user:', user);
+        
+        // Get user role from Firestore
+        console.log('Fetching user role from Firestore for user:', user.uid);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const userData = userDoc.data();
+        console.log('User data from Firestore:', userData);
+        
+        if (!userData) {
+          console.log('No user data found in Firestore, creating user document...');
+          // Create user document in Firestore if it doesn't exist
+          const newUserData = {
+            id: user.uid,
+            email: user.email,
+            name: user.displayName || email.split('@')[0].replace(/[._]/g, ' '),
+            role: 'student', // Default role
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          
+          await setDoc(doc(db, 'users', user.uid), newUserData);
+          console.log('Created user document in Firestore:', newUserData);
+          
+          return {
+            user,
+            role: 'student'
+          };
+        }
+        
+        return {
+          user,
+          role: userData.role || null
+        };
+      } catch (error: any) {
+        console.error('Sign in error details:', {
+          code: error.code,
+          message: error.message,
+          fullError: error
+        });
+        
+        // Handle specific error cases
+        if (error.code === 'auth/wrong-password') {
+          throw new Error('Incorrect password. Please try again.');
+        } else if (error.code === 'auth/too-many-requests') {
+          throw new Error('Too many failed attempts. Please try again later.');
+        } else if (error.code === 'auth/network-request-failed') {
+          throw new Error('Network error. Please check your connection.');
+        } else if (error.code === 'auth/invalid-email') {
+          throw new Error('Invalid email format.');
+        } else if (error.code === 'auth/operation-not-allowed') {
+          throw new Error('Email/password accounts are not enabled. Please contact support.');
+        }
+        
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('Sign in error:', error);
+      return {
+        user: null,
+        role: null,
+        error: error.message
+      };
+    }
+  },
+
+  // Create user if they don't exist
+  async createUserIfNotExists(email: string, password: string): Promise<UserSession> {
+    try {
+      // Create the auth user
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-      console.log('Sign in successful, user:', user);
+      console.log('Created new user:', user);
+
+      // Extract name from email
+      const name = email.split('@')[0].replace(/[._]/g, ' ');
+
+      // Update profile with name
+      await updateProfile(user, { displayName: name });
+      console.log('Updated user profile with name:', name);
+
+      // Create user document in Firestore
+      const userData = {
+        id: user.uid,
+        email,
+        name,
+        role: 'student', // Default role
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
       
-      // Get user role from Firestore
-      console.log('Fetching user role from Firestore for user:', user.uid);
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userData = userDoc.data();
-      console.log('User data from Firestore:', userData);
-      
+      await setDoc(doc(db, 'users', user.uid), userData);
+      console.log('Created user document in Firestore:', userData);
+
       return {
         user,
-        role: userData?.role || null
+        role: 'student'
       };
     } catch (error: any) {
-      console.error('Sign in error details:', {
-        code: error.code,
-        message: error.message,
-        fullError: error
-      });
+      console.error('Error creating user:', error);
       return {
         user: null,
         role: null,
