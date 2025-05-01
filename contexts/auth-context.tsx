@@ -22,7 +22,7 @@ interface AuthContextType {
   user: User | null
   role: 'student' | 'teacher' | 'admin' | null
   loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
+  signIn: (email: string, password: string) => Promise<UserSession>
   signUp: (email: string, password: string, name: string, role: 'student' | 'teacher' | 'admin') => Promise<void>
   signOut: () => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
@@ -108,6 +108,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Auth context: Redirecting to teacher dashboard');
         window.location.href = '/teacher/dashboard';
       }
+
+      return session;
     } catch (error: any) {
       console.error('Auth context: Sign in error:', error);
       throw error;

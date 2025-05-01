@@ -62,8 +62,8 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      console.log('Attempting login with email:', email)
-      const session = await signIn(email, password)
+      console.log('Attempting login with email:', email, 'and role:', activeTab)
+      const session = await signIn(email, password, activeTab === 'staff' ? 'teacher' : 'student')
       
       if (session.error) {
         throw new Error(session.error)

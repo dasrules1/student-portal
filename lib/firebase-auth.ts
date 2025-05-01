@@ -59,7 +59,7 @@ export interface UserSession {
 
 export const firebaseAuth = {
   // Sign in with email and password
-  async signIn(email: string, password: string): Promise<UserSession> {
+  async signIn(email: string, password: string, role?: 'student' | 'teacher' | 'admin'): Promise<UserSession> {
     try {
       console.log('Firebase config:', {
         apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -70,7 +70,7 @@ export const firebaseAuth = {
         appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
       });
       
-      console.log('Attempting to sign in with email:', email);
+      console.log('Attempting to sign in with email:', email, 'and role:', role);
       
       // First try to sign in
       try {
@@ -91,7 +91,7 @@ export const firebaseAuth = {
             id: user.uid,
             email: user.email,
             name: user.displayName || email.split('@')[0].replace(/[._]/g, ' '),
-            role: 'student', // Default role
+            role: role || 'student', // Use provided role or default to student
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
@@ -101,7 +101,21 @@ export const firebaseAuth = {
           
           return {
             user,
-            role: 'student'
+            role: role || 'student'
+          };
+        }
+        
+        // If role is provided and different from stored role, update it
+        if (role && userData.role !== role) {
+          console.log('Updating user role from', userData.role, 'to', role);
+          await setDoc(doc(db, 'users', user.uid), {
+            ...userData,
+            role: role,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          return {
+            user,
+            role: role
           };
         }
         
@@ -146,7 +160,7 @@ export const firebaseAuth = {
   },
 
   // Create user if they don't exist
-  async createUserIfNotExists(email: string, password: string): Promise<UserSession> {
+  async createUserIfNotExists(email: string, password: string, role: 'student' | 'teacher' | 'admin'): Promise<UserSession> {
     try {
       // Create the auth user
       const userCredential = await firebaseCreateUserWithEmailAndPassword(auth, email, password);
@@ -160,12 +174,12 @@ export const firebaseAuth = {
       await updateProfile(user, { displayName: name });
       console.log('Updated user profile with name:', name);
 
-      // Create user document in Firestore
+      // Create user document in Firestore with specified role
       const userData = {
         id: user.uid,
         email,
         name,
-        role: 'student', // Default role
+        role: role, // Use the provided role
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -175,7 +189,7 @@ export const firebaseAuth = {
 
       return {
         user,
-        role: 'student'
+        role: role
       };
     } catch (error: any) {
       console.error('Error creating user:', error);
