@@ -21,6 +21,14 @@ import {
   Activity,
   Users
 } from "lucide-react"
+import {
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select"
 
 interface Answer {
   studentId: string
@@ -41,17 +49,21 @@ interface RealTimeMonitorProps {
   contentId?: string
   recentOnly?: boolean
   limitEntries?: number
+  showAllStudents?: boolean
 }
 
 export function RealTimeMonitor({
   classId,
   contentId,
   recentOnly = false,
-  limitEntries = 20
+  limitEntries = 20,
+  showAllStudents = false
 }: RealTimeMonitorProps) {
   const [realtimeAnswers, setRealtimeAnswers] = useState<Answer[]>([])
   const [activeStudents, setActiveStudents] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'correct' | 'incorrect' | 'pending'>('all')
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     // Set up real-time listener for student answers
@@ -102,8 +114,34 @@ export function RealTimeMonitor({
         // Sort by timestamp (newest first)
         answers.sort((a, b) => b.timestamp - a.timestamp)
         
+        // Apply filters
+        let filteredAnswers = answers
+        if (filter !== 'all') {
+          filteredAnswers = answers.filter(answer => {
+            switch (filter) {
+              case 'correct':
+                return answer.correct === true
+              case 'incorrect':
+                return answer.correct === false
+              case 'pending':
+                return answer.correct === undefined
+              default:
+                return true
+            }
+          })
+        }
+        
+        // Apply search filter
+        if (searchTerm) {
+          filteredAnswers = filteredAnswers.filter(answer => 
+            answer.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            answer.questionText.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            answer.answer.toLowerCase().includes(searchTerm.toLowerCase())
+          )
+        }
+        
         // Limit the number of entries if needed
-        const limitedAnswers = limitEntries > 0 ? answers.slice(0, limitEntries) : answers
+        const limitedAnswers = limitEntries > 0 ? filteredAnswers.slice(0, limitEntries) : filteredAnswers
         
         setRealtimeAnswers(limitedAnswers)
         setActiveStudents(studentSet)
@@ -121,7 +159,7 @@ export function RealTimeMonitor({
     return () => {
       off(answersRef, 'value', onDataChange)
     }
-  }, [classId, contentId, recentOnly, limitEntries])
+  }, [classId, contentId, recentOnly, limitEntries, filter, searchTerm])
 
   // Helper function to format answer display based on type
   const formatAnswer = (answer: Answer) => {
@@ -190,6 +228,25 @@ export function RealTimeMonitor({
           <Users className="w-4 h-4 mr-1" />
           {activeStudents.size} active students | {realtimeAnswers.length} responses
         </CardDescription>
+        <div className="flex items-center space-x-4 mt-4">
+          <Input
+            placeholder="Search students or answers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="max-w-xs"
+          />
+          <Select value={filter} onValueChange={(value: any) => setFilter(value)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter answers" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Answers</SelectItem>
+              <SelectItem value="correct">Correct Answers</SelectItem>
+              <SelectItem value="incorrect">Incorrect Answers</SelectItem>
+              <SelectItem value="pending">Pending Review</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent>
         {realtimeAnswers.length > 0 ? (
@@ -214,6 +271,11 @@ export function RealTimeMonitor({
                   </div>
                   <p className="text-xs text-muted-foreground">{answer.questionText}</p>
                   <p className="text-sm">{formatAnswer(answer)}</p>
+                  {answer.partialCredit !== undefined && (
+                    <p className="text-xs text-muted-foreground">
+                      Partial Credit: {answer.partialCredit}%
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

@@ -726,23 +726,42 @@ export default function StudentCurriculum() {
       
       // Determine if the answer is correct (for multiple choice)
       let isCorrect = undefined
+      let partialCredit = undefined
+      
       if (type === 'multiple-choice' && typeof problem.correctAnswer !== 'undefined') {
         isCorrect = parseInt(answer) === problem.correctAnswer
+      } else if (type === 'math-expression' && problem.correctAnswer) {
+        // For math expressions, we'll let the teacher review
+        isCorrect = undefined
+      } else if (type === 'open-ended') {
+        // For open-ended questions, we'll let the teacher review
+        isCorrect = undefined
       }
       
-      set(newAnswerRef, {
+      // Create the answer object
+      const answerData = {
         studentId: currentUser.id,
         studentName: currentUser.name || 'Student',
         studentEmail: currentUser.email,
+        studentAvatar: currentUser.avatar,
         questionId: problem.id || `problem-${problemIndex}`,
         questionText: questionText,
         answer: answer,
         answerType: type,
         timestamp: Date.now(),
-        correct: isCorrect
-      })
+        correct: isCorrect,
+        partialCredit: partialCredit,
+        problemType: problem.type,
+        problemPoints: problem.points || 1,
+        classId: classId,
+        contentId: activeContent.id,
+        contentTitle: activeContent.title
+      }
       
-      console.log(`Real-time update sent for problem ${problemIndex}`)
+      // Send the update
+      set(newAnswerRef, answerData)
+      
+      console.log(`Real-time update sent for problem ${problemIndex}:`, answerData)
     } catch (error) {
       console.error('Error sending real-time update:', error)
     }

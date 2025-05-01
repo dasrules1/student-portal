@@ -57,6 +57,7 @@ import {
 import { db } from '@/lib/firebase';
 import { ref, onValue } from 'firebase/database';
 import { realtimeDb } from '@/lib/firebase';
+import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 
 // Add interface definitions for types
 interface Class {
@@ -1290,69 +1291,50 @@ export default function TeacherCurriculum() {
                 </CardContent>
               </Card>
             ) : activeContent ? (
-              // Content detail view
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      {renderContentTypeIcon(activeContent.type)}
-                      <div>
-                        <CardTitle>{activeContent.title}</CardTitle>
-                        <CardDescription>{renderLatex(activeContent.description)}</CardDescription>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setActiveContent(null)}
-                      >
-                        <ArrowLeft className="w-4 h-4 mr-2" />
-                        Back to Lessons
-                      </Button>
-                      {activeContent.isPublished && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            setContentToPublish(activeContent);
-                            setPublishDialogOpen(true);
-                          }}
-                        >
-                          <X className="w-4 h-4 mr-2" />
-                          Unpublish
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList>
-                      <TabsTrigger value="content">Content</TabsTrigger>
-                      <TabsTrigger value="progress">Student Progress</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="content">
-                      {activeContent.problems && activeContent.problems.length > 0 ? (
-                        <div className="space-y-4">
-                          <h3 className="text-lg font-medium">Problems</h3>
-                          {activeContent.problems.map((problem, index) => renderProblemWithAnswer(problem, index))}
-                        </div>
-                      ) : (
-                        <div className="p-4 border rounded-lg">
-                          <p>{renderLatex(activeContent.description)}</p>
-                          <p className="mt-4 text-sm text-muted-foreground">
-                            This content doesn't have any problems to solve.
-                          </p>
-                        </div>
-                      )}
-                    </TabsContent>
-                    <TabsContent value="progress">
-                      <StudentProgressTable />
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{activeContent.title}</CardTitle>
+                      <CardDescription>{activeContent.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Tabs value={activeTab} onValueChange={setActiveTab}>
+                        <TabsList>
+                          <TabsTrigger value="content">Content</TabsTrigger>
+                          <TabsTrigger value="progress">Student Progress</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="content">
+                          {activeContent.problems && activeContent.problems.length > 0 ? (
+                            <div className="space-y-4">
+                              <h3 className="text-lg font-medium">Problems</h3>
+                              {activeContent.problems.map((problem, index) => renderProblemWithAnswer(problem, index))}
+                            </div>
+                          ) : (
+                            <div className="p-4 border rounded-lg">
+                              <p>{renderLatex(activeContent.description)}</p>
+                              <p className="mt-4 text-sm text-muted-foreground">
+                                This content doesn't have any problems to solve.
+                              </p>
+                            </div>
+                          )}
+                        </TabsContent>
+                        <TabsContent value="progress">
+                          <StudentProgressTable />
+                        </TabsContent>
+                      </Tabs>
+                    </CardContent>
+                  </Card>
+                </div>
+                <div className="lg:col-span-1">
+                  <RealTimeMonitor 
+                    classId={classId} 
+                    contentId={activeContent.id}
+                    recentOnly={true}
+                    limitEntries={10}
+                  />
+                </div>
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-8 border border-dashed rounded-lg">
                 <FileText className="w-12 h-12 mb-4 text-muted-foreground" />
