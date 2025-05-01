@@ -21,6 +21,7 @@ import { toast } from "@/components/ui/use-toast"
 import { sessionManager } from "@/lib/session"
 import { getDoc, doc, collection, query, where, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+import { getStudentProgress, updateStudentProgress } from "@/lib/firestore"
 
 // Define interfaces for data structures
 interface User {
@@ -59,6 +60,7 @@ interface EnrichedAssignment extends Content {
   className: string;
   lessonId?: string;
   lessonTitle?: string;
+  progress?: StudentProgress;
 }
 
 export default function StudentAssignments() {
@@ -1195,6 +1197,58 @@ export default function StudentAssignments() {
     
     return extractedAssignments;
   };
+
+  // Update progress when answering questions
+  const handleAnswerSubmit = async (assignmentId: string, problemId: string, answer: string) => {
+    try {
+      const studentId = localStorage.getItem('userId')
+      if (!studentId) return
+
+      const assignment = assignments.find(a => a.id === assignmentId)
+      if (!assignment) return
+
+      const currentProgress = assignment.progress || {
+        studentId,
+        assignmentId,
+        courseId: assignment.courseId,
+        status: 'in-progress',
+        currentProblem: 0,
+        answers: {}
+      }
+
+      const updatedProgress = {
+        ...currentProgress,
+        answers: {
+          ...currentProgress.answers,
+          [problemId]: {
+            answer,
+            submittedAt: new Date()
+          }
+        }
+      }
+
+      // Check if all problems are answered
+      const allProblemsAnswered = assignment.problems.every(
+        problem => updatedProgress.answers[problem.id]
+      )
+
+      if (allProblemsAnswered) {
+        updatedProgress.status = 'completed'
+        updatedProgress.completedAt = new Date()
+      }
+
+      await updateStudentProgress(updatedProgress)
+
+      // Update local state
+      setAssignments(prev => prev.map(a => 
+        a.id === assignmentId 
+          ? { ...a, progress: updatedProgress }
+          : a
+      ))
+    } catch (error) {
+      console.error('Error updating progress:', error)
+    }
+  }
 
   const navigation = [
     {

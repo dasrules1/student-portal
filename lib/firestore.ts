@@ -32,10 +32,16 @@ export interface Assignment {
   courseId: string
   title: string
   description: string
-  dueDate: Date
   points: number
   createdAt: Date
   updatedAt: Date
+  problems: Array<{
+    id: string
+    question: string
+    type: 'multiple-choice' | 'short-answer' | 'long-answer'
+    options?: string[]
+    correctAnswer?: string
+  }>
 }
 
 export interface Grade {
@@ -67,6 +73,25 @@ export interface Teacher {
   name: string
   email: string
   subjects: string[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface StudentProgress {
+  id?: string
+  studentId: string
+  assignmentId: string
+  courseId: string
+  status: 'not-started' | 'in-progress' | 'completed'
+  currentProblem: number
+  answers: {
+    [problemId: string]: {
+      answer: string
+      isCorrect?: boolean
+      submittedAt: Date
+    }
+  }
+  completedAt?: Date
   createdAt: Date
   updatedAt: Date
 }
@@ -147,7 +172,7 @@ export const getAssignment = async (id: string) => {
 
 export const getAssignmentsByCourse = async (courseId: string) => {
   const assignmentsRef = collection(db, 'assignments')
-  const q = query(assignmentsRef, where('courseId', '==', courseId), orderBy('dueDate', 'asc'))
+  const q = query(assignmentsRef, where('courseId', '==', courseId))
   const snapshot = await getDocs(q)
   return snapshot.docs.map(doc => ({ id: doc.id, ...convertTimestamp(doc.data()) }))
 }
@@ -334,4 +359,46 @@ export const deleteTeacher = async (id: string) => {
   const teacherRef = doc(db, 'teachers', id)
   await deleteDoc(teacherRef)
   return id
+}
+
+// Student Progress
+export const getStudentProgress = async (studentId: string, assignmentId: string) => {
+  const progressRef = collection(db, 'student_progress')
+  const q = query(progressRef, 
+    where('studentId', '==', studentId),
+    where('assignmentId', '==', assignmentId)
+  )
+  const snapshot = await getDocs(q)
+  if (snapshot.empty) return null
+  return { id: snapshot.docs[0].id, ...convertTimestamp(snapshot.docs[0].data()) }
+}
+
+export const updateStudentProgress = async (progress: Omit<StudentProgress, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const progressRef = collection(db, 'student_progress')
+  const q = query(progressRef, 
+    where('studentId', '==', progress.studentId),
+    where('assignmentId', '==', progress.assignmentId)
+  )
+  const snapshot = await getDocs(q)
+  
+  const now = serverTimestamp()
+  if (snapshot.empty) {
+    // Create new progress
+    const newProgress = {
+      ...progress,
+      createdAt: now,
+      updatedAt: now
+    }
+    const docRef = await addDoc(progressRef, newProgress)
+    return { id: docRef.id, ...progress, createdAt: new Date(), updatedAt: new Date() }
+  } else {
+    // Update existing progress
+    const docRef = snapshot.docs[0].ref
+    const updateData = {
+      ...progress,
+      updatedAt: now
+    }
+    await updateDoc(docRef, updateData)
+    return { id: docRef.id, ...progress }
+  }
 } 
