@@ -111,28 +111,28 @@ interface Content {
   dueDate?: string;
   completed?: boolean;
   completedAt?: string;
-  problems?: Array<{
-    type: string;
-    question: string;
-    options?: string[];
-    answer?: string;
-    keywords?: string[];
-  }>;
+  problems?: Problem[];
 }
 
 // Add type for user answers
 interface UserAnswers {
-  [key: number]: number;
+  [key: string]: {
+    [key: string]: number;
+  };
 }
 
 // Add type for math expression inputs
 interface MathExpressionInputs {
-  [key: number]: string;
+  [key: string]: {
+    [key: string]: string;
+  };
 }
 
 // Add type for open ended answers
 interface OpenEndedAnswers {
-  [key: number]: string;
+  [key: string]: {
+    [key: string]: string;
+  };
 }
 
 // Add type for attempt counts
@@ -151,6 +151,67 @@ interface Lesson {
 interface Curriculum {
   lessons: Lesson[];
   lastUpdated?: string;
+}
+
+interface UserSubmission {
+  studentId: string;
+  status: string;
+  score?: number;
+}
+
+interface ProblemScores {
+  [key: string]: number;
+}
+
+interface SubmittedProblems {
+  [key: string]: boolean;
+}
+
+interface Problem {
+  id?: string;
+  type: string;
+  question: string;
+  options?: string[];
+  answer?: string;
+  keywords?: string[];
+  points?: number;
+  correctAnswer?: number | string;
+  correctAnswers?: string[];
+  tolerance?: number;
+}
+
+interface ProblemState {
+  [key: string]: {
+    answer: string | number;
+    submitted: boolean;
+    score: number;
+  };
+}
+
+interface ProblemSubmission {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  studentAvatar?: string;
+  questionId: string;
+  questionText: string;
+  answer: string | number;
+  answerType: string;
+  timestamp: number;
+  correct?: boolean;
+  partialCredit?: number;
+  problemType: string;
+  problemPoints: number;
+  classId: string;
+  contentId: string;
+  contentTitle: string;
+  status?: string;
+  score?: number;
+}
+
+interface GradingResult {
+  correct: boolean;
+  score: number;
 }
 
 export default function StudentCurriculum() {
@@ -184,7 +245,7 @@ export default function StudentCurriculum() {
   const [currentClass, setCurrentClass] = useState<any>(null)
   const [curriculum, setCurriculum] = useState<any>(null)
   const [activeLesson, setActiveLesson] = useState(1)
-  const [activeContent, setActiveContent] = useState<any>(null)
+  const [activeContent, setActiveContent] = useState<Content | null>(null)
   const [userAnswers, setUserAnswers] = useState<UserAnswers>({})
   const [showResults, setShowResults] = useState(false)
   const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({})
@@ -193,8 +254,9 @@ export default function StudentCurriculum() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<string | null>(null)
   const [lessonsWithContent, setLessonsWithContent] = useState<any[]>([])
-  const [problemScores, setProblemScores] = useState<{[key: string]: number}>({});
-  const [submittedProblems, setSubmittedProblems] = useState<{[key: string]: boolean}>({});
+  const [problemScores, setProblemScores] = useState<ProblemScores>({})
+  const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})
+  const [problemState, setProblemState] = useState<ProblemState>({})
 
   // Load class and curriculum data
   useEffect(() => {
@@ -455,147 +517,175 @@ export default function StudentCurriculum() {
 
   // Handle multiple choice answer selection
   const handleMultipleChoiceSelect = (problemIndex: number, optionIndex: number) => {
-    if (!activeContent) return;
+    if (!activeContent?.id || !activeContent.problems) return;
+    const key = `${activeContent.id}-${problemIndex}`;
+    const problem = activeContent.problems[problemIndex];
+    if (!problem) return;
+
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        answer: optionIndex,
+        submitted: false
+      }
+    }));
+    
     setUserAnswers(prev => ({
       ...prev,
       [activeContent.id]: {
         ...(prev[activeContent.id] || {}),
-        [problemIndex]: optionIndex
+        [problemIndex.toString()]: optionIndex
       }
     }));
     
     // Send real-time update to Firebase
-    if (currentUser && activeContent) {
-      sendRealTimeUpdate(problemIndex, optionIndex.toString(), 'multiple-choice', activeContent.problems[problemIndex])
+    if (currentUser) {
+      sendRealTimeUpdate(problemIndex, optionIndex.toString(), 'multiple-choice', problem);
     }
   }
 
   // Handle math expression input
   const handleMathExpressionInput = (problemIndex: number, value: string) => {
-    if (!activeContent) return;
+    if (!activeContent?.id || !activeContent.problems) return;
+    const key = `${activeContent.id}-${problemIndex}`;
+    const problem = activeContent.problems[problemIndex];
+    if (!problem) return;
+
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        answer: value,
+        submitted: false
+      }
+    }));
+    
     setMathExpressionInputs(prev => ({
       ...prev,
       [activeContent.id]: {
         ...(prev[activeContent.id] || {}),
-        [problemIndex]: value
+        [problemIndex.toString()]: value
       }
     }));
     
     // Send real-time update to Firebase every few keystrokes
-    if (currentUser && activeContent && (!lastUpdateTimestamp || Date.now() - lastUpdateTimestamp > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'math-expression', activeContent.problems[problemIndex])
-      setLastUpdateTimestamp(Date.now())
+    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
+      sendRealTimeUpdate(problemIndex, value, 'math-expression', problem);
+      setLastUpdateTimestamp(Date.now().toString());
     }
   }
 
   // Handle open ended answer input
   const handleOpenEndedInput = (problemIndex: number, value: string) => {
-    if (!activeContent) return;
+    if (!activeContent?.id || !activeContent.problems) return;
+    const key = `${activeContent.id}-${problemIndex}`;
+    const problem = activeContent.problems[problemIndex];
+    if (!problem) return;
+
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        answer: value,
+        submitted: false
+      }
+    }));
+    
     setOpenEndedAnswers(prev => ({
       ...prev,
       [activeContent.id]: {
         ...(prev[activeContent.id] || {}),
-        [problemIndex]: value
+        [problemIndex.toString()]: value
       }
     }));
     
     // Send real-time update to Firebase every few keystrokes
-    if (currentUser && activeContent && (!lastUpdateTimestamp || Date.now() - lastUpdateTimestamp > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'open-ended', activeContent.problems[problemIndex])
-      setLastUpdateTimestamp(Date.now())
+    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
+      sendRealTimeUpdate(problemIndex, value, 'open-ended', problem);
+      setLastUpdateTimestamp(Date.now().toString());
     }
   }
 
   // Auto-grade a math expression answer
-  const gradeMathExpression = (problem: any, studentAnswer: string) => {
-    if (!studentAnswer || !problem) return { correct: false, score: 0 }
+  const gradeMathExpression = (problem: Problem, studentAnswer: string): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentAnswer || !problem) return result;
 
     // Clean up the student answer
-    const cleanStudentAnswer = studentAnswer.replace(/\s+/g, "").toLowerCase()
-
-    // Check if problem has multiple correct answers
-    if (problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0) {
-      // Try each correct answer
+    const cleanStudentAnswer = studentAnswer.trim().toLowerCase();
+    
+    if (problem.correctAnswers && Array.isArray(problem.correctAnswers)) {
+      // Multiple correct answers
       for (const correctAnswer of problem.correctAnswers) {
-        if (!correctAnswer) continue;
+        const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
         
-        // Clean up the correct answer
-        const cleanCorrectAnswer = correctAnswer.replace(/\s+/g, "").toLowerCase()
-
         // Check for exact match
         if (cleanStudentAnswer === cleanCorrectAnswer) {
-          return { correct: true, score: problem.points || 0 }
+          result = { correct: true, score: problem.points || 0 };
+          return result;
         }
-
-        // Try numerical comparison if possible
-        const correctNum = Number.parseFloat(cleanCorrectAnswer)
-        const studentNum = Number.parseFloat(cleanStudentAnswer)
-
-        if (!isNaN(correctNum) && !isNaN(studentNum)) {
-          // Check if within tolerance
+        
+        // Try numeric comparison if both are numbers
+        const studentNum = parseFloat(cleanStudentAnswer);
+        const correctNum = parseFloat(cleanCorrectAnswer);
+        
+        if (!isNaN(studentNum) && !isNaN(correctNum)) {
           const tolerance = problem.tolerance || 0.001;
           if (Math.abs(correctNum - studentNum) <= tolerance) {
-            return { correct: true, score: problem.points || 0 }
+            result = { correct: true, score: problem.points || 0 };
+            return result;
           }
         }
       }
-
-      return { correct: false, score: 0 }
     } else if (problem.correctAnswer) {
       // Legacy support for single correct answer
-      const cleanCorrectAnswer = problem.correctAnswer.replace(/\s+/g, "").toLowerCase()
-
+      const correctAnswer = problem.correctAnswer.toString();
+      const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
+      
       // Check for exact match first
       if (cleanStudentAnswer === cleanCorrectAnswer) {
-        return { correct: true, score: problem.points || 0 }
+        result = { correct: true, score: problem.points || 0 };
+        return result;
       }
-
-      // Try to parse as numbers for numerical comparison
-      const correctNum = Number.parseFloat(cleanCorrectAnswer)
-      const studentNum = Number.parseFloat(cleanStudentAnswer)
-
-      if (!isNaN(correctNum) && !isNaN(studentNum)) {
-        // Check if within tolerance
+      
+      // Try numeric comparison if both are numbers
+      const studentNum = parseFloat(cleanStudentAnswer);
+      const correctNum = parseFloat(cleanCorrectAnswer);
+      
+      if (!isNaN(studentNum) && !isNaN(correctNum)) {
         const tolerance = problem.tolerance || 0.001;
         if (Math.abs(correctNum - studentNum) <= tolerance) {
-          return { correct: true, score: problem.points || 0 }
+          result = { correct: true, score: problem.points || 0 };
+          return result;
         }
       }
     }
-
-    return { correct: false, score: 0 }
-  }
+    
+    return result;
+  };
 
   // Auto-grade an open ended answer
-  const gradeOpenEnded = (problem: any, studentAnswer: string) => {
+  const gradeOpenEnded = (problem: Problem, studentAnswer: string): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
     if (!studentAnswer || !problem || !problem.keywords || !Array.isArray(problem.keywords)) {
-      return { correct: false, score: 0, matchedKeywords: [] }
+      return result;
     }
-
-    // Count how many keywords are present in the student's answer
-    const lowerStudentAnswer = studentAnswer.toLowerCase()
-    const matchedKeywords = problem.keywords.filter((keyword) => 
-      keyword && lowerStudentAnswer.includes(keyword.toLowerCase())
-    )
-
-    // Calculate score based on keyword matches
-    let score = 0
-    if (matchedKeywords.length > 0) {
-      if (problem.allowPartialCredit) {
-        // Award partial credit based on keyword matches
-        score = Math.round((matchedKeywords.length / problem.keywords.length) * (problem.points || 0))
-      } else if (matchedKeywords.length === problem.keywords.length) {
-        // All keywords must be present for full credit
-        score = problem.points || 0
-      }
+    
+    // Check for keywords
+    const foundKeywords = problem.keywords.filter(keyword => 
+      studentAnswer.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    if (foundKeywords.length > 0) {
+      const score = (foundKeywords.length / problem.keywords.length) * (problem.points || 1);
+      result = { correct: score >= (problem.points || 1) * 0.6, score };
     }
-
-    return {
-      correct: score === (problem.points || 0),
-      score,
-      matchedKeywords,
-    }
-  }
+    
+    return result;
+  };
 
   // Handle submitting a single problem
   const handleSubmitProblem = (problemIndex: number) => {
@@ -662,30 +752,35 @@ export default function StudentCurriculum() {
 
   // Check if a problem is submitted
   const isProblemSubmitted = (problemIndex: number) => {
-    return submittedProblems[`${activeContent?.id}-${problemIndex}`] || false;
+    if (!activeContent?.id) return false;
+    const key = `${activeContent.id}-${problemIndex}`;
+    return problemState[key]?.submitted || false;
   };
 
   // Get problem score
   const getProblemScore = (problemIndex: number) => {
-    return problemScores[`${activeContent?.id}-${problemIndex}`] || 0;
+    if (!activeContent?.id) return 0;
+    const key = `${activeContent.id}-${problemIndex}`;
+    return problemState[key]?.score || 0;
   };
 
   // Render content type icon
-  const renderContentTypeIcon = (type) => {
-    const contentType = contentTypes.find((ct) => ct.id === type)
-    return contentType ? getContentTypeIcon(type) : <FileText className="w-4 h-4 mr-2" />
+  const renderContentTypeIcon = (type: string | undefined) => {
+    if (!type) return <FileText className="w-4 h-4 mr-2" />;
+    const contentType = contentTypes.find((ct) => ct.id === type);
+    return contentType ? getContentTypeIcon(type) : <FileText className="w-4 h-4 mr-2" />;
   }
 
   // Get status badge for content
-  const getStatusBadge = (content) => {
+  const getStatusBadge = (content: Content) => {
     if (currentUser) {
-      const gradedContentKey = `graded-content-${classId}-${content.id}`
-      const gradedData = localStorage.getItem(gradedContentKey)
+      const gradedContentKey = `graded-content-${classId}-${content.id}`;
+      const gradedData = localStorage.getItem(gradedContentKey);
 
       if (gradedData) {
         try {
-          const submissions = JSON.parse(gradedData)
-          const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id)
+          const submissions = JSON.parse(gradedData) as ProblemSubmission[];
+          const userSubmission = submissions.find((sub: ProblemSubmission) => sub.studentId === currentUser.id);
 
           if (userSubmission) {
             if (userSubmission.status === "completed") {
@@ -694,52 +789,46 @@ export default function StudentCurriculum() {
                   <CheckCircle2 className="w-3 h-3 mr-1" />
                   Completed ({userSubmission.score}%)
                 </Badge>
-              )
+              );
             } else {
               return (
                 <Badge variant="secondary">
                   <Clock className="w-3 h-3 mr-1" />
                   In Progress
                 </Badge>
-              )
+              );
             }
           }
         } catch (error) {
-          console.error("Error loading graded content:", error)
+          console.error("Error loading graded content:", error);
         }
       }
     }
 
-    return <Badge variant="outline">Not Started</Badge>
+    return <Badge variant="outline">Not Started</Badge>;
   }
 
   // Add the new function for sending real-time updates
-  const sendRealTimeUpdate = (problemIndex, answer, type, problem) => {
-    if (!currentUser || !activeContent || !problem) return
+  const sendRealTimeUpdate = (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
+    if (!currentUser || !activeContent || !problem) return;
     
     try {
-      const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`)
-      const newAnswerRef = push(answersRef)
+      const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
+      const newAnswerRef = push(answersRef);
       
       // Get the question text from the problem
-      const questionText = problem.question || 'Question not available'
+      const questionText = problem.question || 'Question not available';
       
       // Determine if the answer is correct (for multiple choice)
-      let isCorrect = undefined
-      let partialCredit = undefined
+      let isCorrect: boolean | undefined = undefined;
+      let partialCredit: number | undefined = undefined;
       
       if (type === 'multiple-choice' && typeof problem.correctAnswer !== 'undefined') {
-        isCorrect = parseInt(answer) === problem.correctAnswer
-      } else if (type === 'math-expression' && problem.correctAnswer) {
-        // For math expressions, we'll let the teacher review
-        isCorrect = undefined
-      } else if (type === 'open-ended') {
-        // For open-ended questions, we'll let the teacher review
-        isCorrect = undefined
+        isCorrect = Number(answer) === problem.correctAnswer;
       }
       
       // Create the answer object
-      const answerData = {
+      const answerData: ProblemSubmission = {
         studentId: currentUser.id,
         studentName: currentUser.name || 'Student',
         studentEmail: currentUser.email,
@@ -755,17 +844,19 @@ export default function StudentCurriculum() {
         problemPoints: problem.points || 1,
         classId: classId,
         contentId: activeContent.id,
-        contentTitle: activeContent.title
-      }
+        contentTitle: activeContent.title,
+        status: isCorrect ? "completed" : "in-progress",
+        score: isCorrect ? (problem.points || 0) : undefined
+      };
       
       // Send the update
-      set(newAnswerRef, answerData)
+      set(newAnswerRef, answerData);
       
-      console.log(`Real-time update sent for problem ${problemIndex}:`, answerData)
+      console.log(`Real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
-      console.error('Error sending real-time update:', error)
+      console.error('Error sending real-time update:', error);
     }
-  }
+  };
 
   // Main render function
   if (!currentClass || !curriculum) {
