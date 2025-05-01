@@ -1,15 +1,55 @@
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { 
+  getAuth, 
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  User,
   sendPasswordResetEmail,
+  createUserWithEmailAndPassword,
+  createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword,
+  sendPasswordResetEmail as firebaseSendPasswordResetEmail,
   sendEmailVerification,
   updateProfile,
-  User,
-  UserCredential
+  UserCredential,
+  Auth
 } from 'firebase/auth';
-import { auth, db } from './firebase';
+import { getFirestore, Firestore } from 'firebase/firestore';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+};
+
+// Initialize Firebase
+let app: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+
+try {
+  if (!getApps().length) {
+    app = initializeApp(firebaseConfig);
+    console.log('Firebase initialized successfully');
+  } else {
+    app = getApp();
+    console.log('Using existing Firebase app');
+  }
+  
+  auth = getAuth(app);
+  db = getFirestore(app);
+  
+  // Log the auth domain to verify configuration
+  console.log('Firebase Auth Domain:', auth.config.authDomain);
+} catch (error) {
+  console.error('Error initializing Firebase:', error);
+  throw error;
+}
 
 export interface UserSession {
   user: User | null;
@@ -21,6 +61,15 @@ export const firebaseAuth = {
   // Sign in with email and password
   async signIn(email: string, password: string): Promise<UserSession> {
     try {
+      console.log('Firebase config:', {
+        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+        authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+        appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+      });
+      
       console.log('Attempting to sign in with email:', email);
       
       // First try to sign in
@@ -64,7 +113,9 @@ export const firebaseAuth = {
         console.error('Sign in error details:', {
           code: error.code,
           message: error.message,
-          fullError: error
+          fullError: error,
+          authDomain: auth.config.authDomain,
+          currentUser: auth.currentUser
         });
         
         // Handle specific error cases
@@ -78,6 +129,8 @@ export const firebaseAuth = {
           throw new Error('Invalid email format.');
         } else if (error.code === 'auth/operation-not-allowed') {
           throw new Error('Email/password accounts are not enabled. Please contact support.');
+        } else if (error.code === 'auth/invalid-credential') {
+          throw new Error('Invalid email or password. Please check your credentials and try again.');
         }
         
         throw error;
@@ -96,7 +149,7 @@ export const firebaseAuth = {
   async createUserIfNotExists(email: string, password: string): Promise<UserSession> {
     try {
       // Create the auth user
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await firebaseCreateUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       console.log('Created new user:', user);
 
@@ -138,7 +191,7 @@ export const firebaseAuth = {
   async signUp(email: string, password: string, name: string, role: 'student' | 'teacher' | 'admin'): Promise<{ success: boolean; error?: string; userId?: string }> {
     try {
       // Create the auth user
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await firebaseCreateUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       // Update profile with name
@@ -167,7 +220,7 @@ export const firebaseAuth = {
   // Sign out
   async signOut(): Promise<boolean> {
     try {
-      await signOut(auth);
+      await firebaseSignOut(auth);
       return true;
     } catch (error) {
       console.error('Sign out error:', error);
@@ -178,7 +231,7 @@ export const firebaseAuth = {
   // Send password reset email
   async sendPasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
     try {
-      await sendPasswordResetEmail(auth, email);
+      await firebaseSendPasswordResetEmail(auth, email);
       return { success: true };
     } catch (error: any) {
       console.error('Password reset error:', error);
@@ -226,42 +279,56 @@ export const firebaseAuth = {
     }
   },
 
-  // Create test user if it doesn't exist
-  async createTestUser(): Promise<{ success: boolean; error?: string }> {
+  // Create a test user for debugging
+  async createTestUser(email: string, password: string): Promise<UserSession> {
     try {
-      const testEmail = 'test@example.com';
-      const testPassword = 'test123';
+      console.log('Creating test user with email:', email);
       
-      // Try to sign in first to check if user exists
+      // First try to sign in to see if user exists
       try {
-        await signInWithEmailAndPassword(auth, testEmail, testPassword);
-        console.log('Test user already exists');
-        return { success: true };
+        const existingUser = await signInWithEmailAndPassword(auth, email, password);
+        console.log('User already exists:', existingUser.user.uid);
+        return {
+          user: existingUser.user,
+          role: 'student'
+        };
       } catch (error: any) {
-        if (error.code === 'auth/user-not-found') {
-          // Create the user if it doesn't exist
-          console.log('Creating test user...');
-          const userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
-          const user = userCredential.user;
-          
-          // Create user document in Firestore
-          await setDoc(doc(db, 'users', user.uid), {
-            id: user.uid,
-            email: testEmail,
-            name: 'Test User',
-            role: 'student',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
-          
-          console.log('Test user created successfully');
-          return { success: true };
+        if (error.code !== 'auth/user-not-found') {
+          throw error;
         }
-        throw error;
       }
+      
+      // Create new user
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      console.log('Created new test user:', user.uid);
+      
+      // Create user document in Firestore
+      const userData = {
+        id: user.uid,
+        email: user.email,
+        name: email.split('@')[0].replace(/[._]/g, ' '),
+        role: 'student',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      await setDoc(doc(db, 'users', user.uid), userData);
+      console.log('Created user document in Firestore:', userData);
+      
+      return {
+        user,
+        role: 'student'
+      };
     } catch (error: any) {
       console.error('Error creating test user:', error);
-      return { success: false, error: error.message };
+      return {
+        user: null,
+        role: null,
+        error: error.message
+      };
     }
   }
-}; 
+};
+
+export { auth, db }; 
