@@ -766,9 +766,13 @@ export default function StudentCurriculum() {
 
   // Render content type icon
   const renderContentTypeIcon = (type: string | undefined) => {
+    // Always return a valid React element
     if (!type) return <FileText className="w-4 h-4 mr-2" />;
-    const contentType = contentTypes.find((ct) => ct.id === type);
-    return contentType ? getContentTypeIcon(type) : <FileText className="w-4 h-4 mr-2" />;
+    
+    const icon = getContentTypeIcon(type);
+    if (!icon) return <FileText className="w-4 h-4 mr-2" />;
+    
+    return icon;
   }
 
   // Get status badge for content
