@@ -886,9 +886,13 @@ export default function TeacherCurriculum() {
 
   // Render content type icon
   const renderContentTypeIcon = (type: string | undefined) => {
+    // Always return a valid React element
     if (!type) return <FileText className="w-4 h-4 mr-2" />;
+    
     const contentType = contentTypes.find((ct) => ct.id === type);
-    return contentType ? contentType.icon : <FileText className="w-4 h-4 mr-2" />;
+    if (!contentType || !contentType.icon) return <FileText className="w-4 h-4 mr-2" />;
+    
+    return contentType.icon;
   }
 
   // Get student status badge
