@@ -890,12 +890,9 @@ export default function TeacherCurriculum() {
     if (!type) return <FileText className="w-4 h-4 mr-2" />;
     
     const contentType = contentTypes.find((ct) => ct.id === type);
-    if (!contentType) return <FileText className="w-4 h-4 mr-2" />;
+    if (!contentType || !contentType.icon) return <FileText className="w-4 h-4 mr-2" />;
     
-    const icon = getContentTypeIcon(type);
-    if (!icon) return <FileText className="w-4 h-4 mr-2" />;
-    
-    return icon;
+    return contentType.icon;
   }
 
   // Get student status badge
