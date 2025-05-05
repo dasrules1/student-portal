@@ -56,7 +56,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, set } from 'firebase/database';
 import { realtimeDb } from '@/lib/firebase';
 import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 
@@ -355,7 +355,7 @@ export default function TeacherCurriculum() {
     };
   }, [classId, students]);
 
-  // Add real-time listener for student progress
+  // Update the real-time listener for student progress
   useEffect(() => {
     if (!activeContent?.id || !classId) return;
 
@@ -371,19 +371,101 @@ export default function TeacherCurriculum() {
           // Transform the data into a more usable format
           const transformedData = Object.entries(data).reduce((acc, [studentId, studentData]) => {
             if (studentData && typeof studentData === 'object') {
-              acc[studentId] = {
-                ...studentData,
-                studentName: studentData.studentName || 'Unknown Student',
-                questionText: studentData.questionText || 'Question not available',
-                answer: studentData.answer || 'No answer provided',
-                answerType: studentData.answerType || 'open-ended',
-                timestamp: studentData.timestamp || Date.now()
-              };
+              // Process each problem's answer
+              Object.entries(studentData).forEach(([problemKey, problemData]) => {
+                if (problemKey.startsWith('problem-') && problemData && typeof problemData === 'object') {
+                  const problemIndex = parseInt(problemKey.split('-')[1]);
+                  if (!isNaN(problemIndex)) {
+                    if (!acc[studentId]) {
+                      acc[studentId] = {};
+                    }
+                    acc[studentId][problemKey] = {
+                      answer: problemData.answer || 'No answer provided',
+                      score: problemData.score || 0,
+                      correct: problemData.correct || false,
+                      timestamp: problemData.timestamp || Date.now()
+                    };
+                  }
+                }
+              });
             }
             return acc;
           }, {});
+
           console.log("Transformed data:", transformedData);
           setRealTimeUpdates(transformedData);
+
+          // Update the curriculum state with the new data
+          setCurriculum(prevCurriculum => {
+            if (!prevCurriculum) return prevCurriculum;
+
+            const updatedCurriculum = { ...prevCurriculum };
+            const lessonIndex = updatedCurriculum.lessons.findIndex(
+              lesson => lesson.contents.some(content => content.id === activeContent.id)
+            );
+
+            if (lessonIndex !== -1) {
+              const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
+                content => content.id === activeContent.id
+              );
+
+              if (contentIndex !== -1) {
+                // Initialize studentProgress if it doesn't exist
+                if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
+                  updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
+                    submissions: []
+                  };
+                }
+
+                // Update each student's progress
+                Object.entries(transformedData).forEach(([studentId, studentAnswers]) => {
+                  const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions;
+                  const submissionIndex = submissions.findIndex(sub => sub.studentId === studentId);
+
+                  const problemResults = Object.entries(studentAnswers).map(([problemKey, answerData]) => {
+                    const problemIndex = parseInt(problemKey.split('-')[1]);
+                    return {
+                      type: 'open-ended',
+                      correct: answerData.correct,
+                      points: answerData.score,
+                      maxPoints: activeContent.problems[problemIndex]?.points || 1,
+                      studentAnswer: answerData.answer,
+                      timestamp: answerData.timestamp
+                    };
+                  });
+
+                  const totalScore = problemResults.reduce((sum, result) => sum + result.points, 0);
+                  const maxPoints = problemResults.reduce((sum, result) => sum + result.maxPoints, 0);
+
+                  if (submissionIndex !== -1) {
+                    // Update existing submission
+                    submissions[submissionIndex] = {
+                      ...submissions[submissionIndex],
+                      problemResults,
+                      score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
+                      lastUpdated: Date.now()
+                    };
+                  } else {
+                    // Add new submission
+                    submissions.push({
+                      studentId,
+                      problemResults,
+                      score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
+                      status: 'in-progress',
+                      submittedAt: Date.now(),
+                      lastUpdated: Date.now()
+                    });
+                  }
+                });
+
+                // Save to Firebase
+                const progressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}`);
+                set(progressRef, updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress);
+              }
+            }
+
+            return updatedCurriculum;
+          });
         } else {
           console.log("No real-time data available");
           setRealTimeUpdates({});
@@ -392,9 +474,6 @@ export default function TeacherCurriculum() {
         console.error("Error processing real-time data:", error);
         setRealTimeUpdates({});
       }
-    }, (error) => {
-      console.error("Real-time listener error:", error);
-      setRealTimeUpdates({});
     });
 
     return () => {
@@ -1064,7 +1143,7 @@ export default function TeacherCurriculum() {
     );
   };
 
-  // Add student progress table component
+  // Update the StudentProgressTable component
   const StudentProgressTable = () => {
     if (!activeContent?.problems || !Array.isArray(activeContent.problems)) return null;
 
@@ -1094,7 +1173,9 @@ export default function TeacherCurriculum() {
             <tbody>
               {students.map((student) => {
                 const studentAnswers = realTimeUpdates[student.id] || {};
-                console.log(`Student ${student.name} answers:`, studentAnswers);
+                const studentProgress = activeContent.studentProgress?.submissions?.find(
+                  sub => sub.studentId === student.id
+                );
                 
                 const totalScore = activeContent.problems.reduce((sum, problem, index) => {
                   const answer = studentAnswers[`problem-${index}`];
@@ -1106,7 +1187,7 @@ export default function TeacherCurriculum() {
                     <td className="p-2">{student.name}</td>
                     {activeContent.problems.map((problem, index) => {
                       const answer = studentAnswers[`problem-${index}`];
-                      console.log(`Problem ${index} answer for ${student.name}:`, answer);
+                      const problemResult = studentProgress?.problemResults?.[index];
                       
                       return (
                         <td key={index} className="p-2">
@@ -1121,11 +1202,20 @@ export default function TeacherCurriculum() {
                                     ({answer.score || 0}/{problem.points || 1})
                                   </span>
                                 </>
+                              ) : problemResult ? (
+                                <>
+                                  <span className={problemResult.correct ? "text-green-600" : "text-red-600"}>
+                                    {problemResult.studentAnswer || 'No answer'}
+                                  </span>
+                                  <span className="ml-2">
+                                    ({problemResult.points || 0}/{problemResult.maxPoints || 1})
+                                  </span>
+                                </>
                               ) : (
                                 <span className="text-gray-500">Not attempted</span>
                               )}
                             </div>
-                            {answer && (
+                            {(answer || problemResult) && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1134,8 +1224,8 @@ export default function TeacherCurriculum() {
                                   setStudentToGrade(student);
                                   setStudentSubmission({
                                     problemIndex: index,
-                                    answer: answer.answer || '',
-                                    currentScore: answer.score || 0,
+                                    answer: answer?.answer || problemResult?.studentAnswer || '',
+                                    currentScore: answer?.score || problemResult?.points || 0,
                                     maxPoints: problem.points || 1
                                   });
                                   setManualGradingDialogOpen(true);
@@ -1370,7 +1460,7 @@ export default function TeacherCurriculum() {
               </Card>
             ) : activeContent ? (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2">
+                <div className="lg:col-span-3">
                   <Card>
                     <CardHeader>
                       <CardTitle>{activeContent.title}</CardTitle>
@@ -1403,19 +1493,6 @@ export default function TeacherCurriculum() {
                       </Tabs>
                     </CardContent>
                   </Card>
-                </div>
-                <div className="lg:col-span-1">
-                  {activeContent && (
-                    <div className="mt-6">
-                      <RealTimeMonitor
-                        key={`monitor-${activeContent.id}`}
-                        classId={classId}
-                        contentId={activeContent.id}
-                        recentOnly={true}
-                        limitEntries={10}
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             ) : (
