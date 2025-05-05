@@ -321,7 +321,9 @@ export default function TeacherCurriculum() {
       if (data) {
         // Transform the data into a more usable format
         const transformedData = Object.entries(data).reduce((acc, [studentId, studentData]) => {
-          acc[studentId] = studentData;
+          if (studentData && typeof studentData === 'object') {
+            acc[studentId] = studentData;
+          }
           return acc;
         }, {});
         console.log("Transformed data:", transformedData);
@@ -1001,7 +1003,7 @@ export default function TeacherCurriculum() {
 
   // Add student progress table component
   const StudentProgressTable = () => {
-    if (!activeContent?.problems) return null;
+    if (!activeContent?.problems || !Array.isArray(activeContent.problems)) return null;
 
     console.log("Rendering progress table with data:", {
       students: students.length,
@@ -1050,10 +1052,10 @@ export default function TeacherCurriculum() {
                               {answer ? (
                                 <>
                                   <span className={answer.correct ? "text-green-600" : "text-red-600"}>
-                                    {answer.answer}
+                                    {answer.answer || 'No answer'}
                                   </span>
                                   <span className="ml-2">
-                                    ({answer.score || 0}/{problem.points})
+                                    ({answer.score || 0}/{problem.points || 1})
                                   </span>
                                 </>
                               ) : (
@@ -1069,9 +1071,9 @@ export default function TeacherCurriculum() {
                                   setStudentToGrade(student);
                                   setStudentSubmission({
                                     problemIndex: index,
-                                    answer: answer.answer,
-                                    currentScore: answer.score,
-                                    maxPoints: problem.points
+                                    answer: answer.answer || '',
+                                    currentScore: answer.score || 0,
+                                    maxPoints: problem.points || 1
                                   });
                                   setManualGradingDialogOpen(true);
                                 }}
@@ -1085,7 +1087,7 @@ export default function TeacherCurriculum() {
                       );
                     })}
                     <td className="p-2 font-semibold">
-                      {totalScore}/{activeContent.problems.reduce((sum, p) => sum + (p.points || 0), 0)}
+                      {totalScore}/{activeContent.problems.reduce((sum, p) => sum + (p.points || 1), 0)}
                     </td>
                     <td className="p-2">
                       <Button
