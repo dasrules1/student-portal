@@ -1110,6 +1110,7 @@ export default function TeacherCurriculum() {
     );
   };
 
+  // Main render function
   if (!currentClass || !curriculum) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -1117,6 +1118,11 @@ export default function TeacherCurriculum() {
       </div>
     )
   }
+
+  // Ensure curriculum.lessons exists and is an array
+  const lessons = curriculum.lessons || [];
+  const currentLesson = lessons[activeLesson - 1] || null;
+  const lessonContents = currentLesson?.contents || [];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -1148,31 +1154,31 @@ export default function TeacherCurriculum() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-1">
-                  {curriculum.lessons &&
-                    curriculum.lessons.map((lesson, index) => {
-                      const hasContent = lesson.contents && lesson.contents.length > 0
-                      if (!hasContent) return null
+                  {lessons.map((lesson, index) => {
+                    if (!lesson) return null;
+                    const hasContent = lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0;
+                    if (!hasContent) return null;
 
-                      return (
-                        <Button
-                          key={lesson.id || index}
-                          variant={activeLesson === index + 1 ? "default" : "ghost"}
-                          className="justify-start w-full"
-                          onClick={() => {
-                            setActiveLesson(index + 1)
-                            setActiveContent(null)
-                          }}
-                        >
-                          <span className="mr-2">{index + 1}.</span>
-                          {lesson.title}
-                          {hasContent && (
-                            <Badge variant="secondary" className="ml-auto">
-                              {lesson.contents.length}
-                            </Badge>
-                          )}
-                        </Button>
-                      )
-                    })}
+                    return (
+                      <Button
+                        key={lesson.id || `lesson-${index}`}
+                        variant={activeLesson === index + 1 ? "default" : "ghost"}
+                        className="justify-start w-full"
+                        onClick={() => {
+                          setActiveLesson(index + 1)
+                          setActiveContent(null)
+                        }}
+                      >
+                        <span className="mr-2">{index + 1}.</span>
+                        {lesson.title || `Lesson ${index + 1}`}
+                        {hasContent && (
+                          <Badge variant="secondary" className="ml-auto">
+                            {lesson.contents.length}
+                          </Badge>
+                        )}
+                      </Button>
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -1180,108 +1186,110 @@ export default function TeacherCurriculum() {
 
           {/* Content area */}
           <div className="md:col-span-9">
-            {!activeContent && curriculum.lessons && curriculum.lessons.length > 0 ? (
+            {!activeContent && currentLesson ? (
               // Lesson overview
               <Card>
                 <CardHeader>
                   <CardTitle>
-                    Lesson {activeLesson}: {curriculum.lessons[activeLesson - 1]?.title}
+                    Lesson {activeLesson}: {currentLesson.title || `Lesson ${activeLesson}`}
                   </CardTitle>
                   <CardDescription>
-                    {curriculum.lessons[activeLesson - 1]?.description
-                      ? renderLatex(curriculum.lessons[activeLesson - 1].description)
+                    {currentLesson.description
+                      ? renderLatex(currentLesson.description)
                       : "No description provided"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {curriculum.lessons[activeLesson - 1]?.contents &&
-                    curriculum.lessons[activeLesson - 1].contents.length > 0 ? (
-                      curriculum.lessons[activeLesson - 1].contents.map((content) => (
-                        <Card key={content.id} className="overflow-hidden">
-                          <div
-                            className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
-                            onClick={() => setActiveContent(content)}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                {renderContentTypeIcon(content.type)}
-                                <div>
-                                  <CardTitle className="text-base">{content.title}</CardTitle>
-                                  <p className="text-sm text-muted-foreground">{renderLatex(content.description)}</p>
+                    {lessonContents.length > 0 ? (
+                      lessonContents.map((content) => {
+                        if (!content) return null;
+                        return (
+                          <Card key={content.id || `content-${Math.random()}`} className="overflow-hidden">
+                            <div
+                              className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
+                              onClick={() => setActiveContent(content)}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  {renderContentTypeIcon(content.type)}
+                                  <div>
+                                    <CardTitle className="text-base">{content.title || 'Untitled Content'}</CardTitle>
+                                    <p className="text-sm text-muted-foreground">{renderLatex(content.description || '')}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Badge
+                                    variant={content.isPublished ? "success" : "outline"}
+                                    className={content.isPublished ? "bg-green-500" : ""}
+                                  >
+                                    {content.isPublished ? "Published" : "Draft"}
+                                  </Badge>
+                                  <Button
+                                    variant={content.isPublished ? "destructive" : "default"}
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handlePublishContent(
+                                        content,
+                                        activeLesson - 1,
+                                        lessonContents.indexOf(content),
+                                      )
+                                    }}
+                                  >
+                                    {content.isPublished ? (
+                                      <>
+                                        <X className="w-4 h-4 mr-2" />
+                                        Unpublish
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Upload className="w-4 h-4 mr-2" />
+                                        Publish
+                                      </>
+                                    )}
+                                  </Button>
                                 </div>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <Badge
-                                  variant={content.isPublished ? "success" : "outline"}
-                                  className={content.isPublished ? "bg-green-500" : ""}
-                                >
-                                  {content.isPublished ? "Published" : "Draft"}
-                                </Badge>
-                                <Button
-                                  variant={content.isPublished ? "destructive" : "default"}
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handlePublishContent(
-                                      content,
-                                      activeLesson - 1,
-                                      curriculum.lessons[activeLesson - 1].contents.indexOf(content),
-                                    )
-                                  }}
-                                >
-                                  {content.isPublished ? (
-                                    <>
-                                      <X className="w-4 h-4 mr-2" />
-                                      Unpublish
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Upload className="w-4 h-4 mr-2" />
-                                      Publish
-                                    </>
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
 
-                            {/* Show progress summary if available */}
-                            {content.studentProgress && (
-                              <div className="mt-3 pt-3 border-t">
-                                <div className="flex justify-between items-center">
-                                  <div className="text-sm">
-                                    <span className="font-medium">Student Progress:</span>{" "}
-                                    {content.studentProgress.submissions?.filter((s) => s.status === "completed")
-                                      .length || 0}
-                                    {" / "}
-                                    {content.studentProgress.submissions?.length || 0}
-                                    {" completed"}
+                              {/* Show progress summary if available */}
+                              {content.studentProgress && (
+                                <div className="mt-3 pt-3 border-t">
+                                  <div className="flex justify-between items-center">
+                                    <div className="text-sm">
+                                      <span className="font-medium">Student Progress:</span>{" "}
+                                      {content.studentProgress.submissions?.filter((s) => s.status === "completed")
+                                        .length || 0}
+                                      {" / "}
+                                      {content.studentProgress.submissions?.length || 0}
+                                      {" completed"}
+                                    </div>
+
+                                    {calculateClassAverage(content) !== null && (
+                                      <div className="text-sm">
+                                        <span className="font-medium">Class Average:</span>{" "}
+                                        {calculateClassAverage(content)}%
+                                      </div>
+                                    )}
                                   </div>
 
-                                  {calculateClassAverage(content) !== null && (
-                                    <div className="text-sm">
-                                      <span className="font-medium">Class Average:</span>{" "}
-                                      {calculateClassAverage(content)}%
-                                    </div>
-                                  )}
+                                  <Progress
+                                    value={
+                                      content.studentProgress.submissions?.length
+                                        ? (content.studentProgress.submissions.filter((s) => s.status === "completed")
+                                            .length /
+                                            content.studentProgress.submissions.length) *
+                                          100
+                                        : 0
+                                    }
+                                    className="h-2 mt-2"
+                                  />
                                 </div>
-
-                                <Progress
-                                  value={
-                                    content.studentProgress.submissions?.length
-                                      ? (content.studentProgress.submissions.filter((s) => s.status === "completed")
-                                          .length /
-                                          content.studentProgress.submissions.length) *
-                                        100
-                                      : 0
-                                  }
-                                  className="h-2 mt-2"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </Card>
-                      ))
+                              )}
+                            </div>
+                          </Card>
+                        );
+                      })
                     ) : (
                       <div className="flex flex-col items-center justify-center p-8 border border-dashed rounded-lg">
                         <FileText className="w-12 h-12 mb-4 text-muted-foreground" />
