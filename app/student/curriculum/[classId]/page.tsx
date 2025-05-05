@@ -1,5 +1,12 @@
 "use client"
 
+// Add module declarations
+declare module "react" {}
+declare module "next/navigation" {}
+declare module "next/link" {}
+declare module "lucide-react" {}
+declare module "firebase/database" {}
+
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
@@ -27,9 +34,19 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { sessionManager } from "@/lib/session"
+
+interface Session {
+  userId: string
+}
+
+declare module '@/lib/session' {
+  interface SessionManager {
+    getSession(): Session | null
+  }
+}
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
-import { ref, set, push, serverTimestamp } from "firebase/database"
+import { ref, set, push, serverTimestamp, get } from "firebase/database"
 
 // Content types for curriculum
 const getContentTypeIcon = (type: string) => {
@@ -246,7 +263,11 @@ export default function StudentCurriculum() {
   const [curriculum, setCurriculum] = useState<any>(null)
   const [activeLesson, setActiveLesson] = useState(1)
   const [activeContent, setActiveContent] = useState<Content | null>(null)
-  const [userAnswers, setUserAnswers] = useState<UserAnswers>({})
+  const [userAnswers, setUserAnswers] = useState<Record<string, any>>({})
+  const [userMathAnswers, setUserMathAnswers] = useState<Record<string, string>>({})
+  const [userOpenEndedAnswers, setUserOpenEndedAnswers] = useState<Record<string, string>>({})
+  const [userMultipleChoiceAnswers, setUserMultipleChoiceAnswers] = useState<Record<string, string>>({})
+  const [userGrades, setUserGrades] = useState<Record<string, any>>({})
   const [showResults, setShowResults] = useState(false)
   const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({})
   const [openEndedAnswers, setOpenEndedAnswers] = useState<OpenEndedAnswers>({})
@@ -410,8 +431,33 @@ export default function StudentCurriculum() {
   };
 
   // Handle selecting a content item
-  const handleSelectContent = (content: Content) => {
+  const loadSavedAnswers = async (content: Content) => {
+    const userId = sessionManager.getSession()?.userId
+    if (!userId) return
+
+    const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
+    const snapshot = await get(answersRef)
+    const savedAnswers = snapshot.val()
+
+    if (savedAnswers) {
+      setUserAnswers(savedAnswers.userAnswers || {})
+      setUserMathAnswers(savedAnswers.userMathAnswers || {})
+      setUserOpenEndedAnswers(savedAnswers.userOpenEndedAnswers || {})
+      setUserMultipleChoiceAnswers(savedAnswers.userMultipleChoiceAnswers || {})
+      setUserGrades(savedAnswers.userGrades || {})
+    } else {
+      // Initialize empty answers if no saved answers found
+      setUserAnswers({})
+      setUserMathAnswers({})
+      setUserOpenEndedAnswers({})
+      setUserMultipleChoiceAnswers({})
+      setUserGrades({})
+    }
+  }
+
+  const handleSelectContent = async (content: Content) => {
     setActiveContent(content)
+    await loadSavedAnswers(content)
 
     // Check if this content has already been graded for this student
     if (currentUser) {
