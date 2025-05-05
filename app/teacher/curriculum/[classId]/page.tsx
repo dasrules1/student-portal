@@ -21,6 +21,7 @@ import {
   Edit,
   Save,
   Check,
+  Activity,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -51,7 +52,6 @@ import {
   collection, 
   query, 
   where,
-  onSnapshot,
   deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -66,8 +66,27 @@ interface Class {
   teacher: string;
   teacher_id?: string;
   enrolledStudents?: string[];
-  curriculum?: any;
-  [key: string]: any; // For other properties that might exist
+  curriculum?: {
+    lessons: {
+      id: string;
+      title: string;
+      description?: string;
+      resources?: {
+        id: string;
+        title: string;
+        type: string;
+        url?: string;
+        content?: string;
+      }[];
+    }[];
+    assignments?: {
+      id: string;
+      title: string;
+      description?: string;
+      dueDate?: string;
+      points?: number;
+    }[];
+  };
 }
 
 interface SessionUser {
@@ -90,6 +109,28 @@ interface User {
   [key: string]: any; // For other properties
 }
 
+interface Curriculum {
+  lessons: {
+    id: string;
+    title: string;
+    description?: string;
+    resources?: {
+      id: string;
+      title: string;
+      type: string;
+      url?: string;
+      content?: string;
+    }[];
+  }[];
+  assignments?: {
+    id: string;
+    title: string;
+    description?: string;
+    dueDate?: string;
+    points?: number;
+  }[];
+}
+
 // Content types for curriculum
 const contentTypes = [
   { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
@@ -107,7 +148,7 @@ export default function TeacherCurriculum() {
   const classId = params.classId as string
 
   const [currentClass, setCurrentClass] = useState<Class | null>(null)
-  const [curriculum, setCurriculum] = useState<any>(null)
+  const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
   const [activeLesson, setActiveLesson] = useState(1)
   const [activeContent, setActiveContent] = useState<any>(null)
   const [publishDialogOpen, setPublishDialogOpen] = useState(false)
@@ -309,29 +350,44 @@ export default function TeacherCurriculum() {
 
   // Add real-time listener for student progress
   useEffect(() => {
-    if (!activeContent?.id) return;
+    if (!activeContent?.id || !classId) return;
 
     console.log("Setting up real-time listener for content:", activeContent.id);
 
     // Listen for real-time updates from Firebase
     const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
     const unsubscribe = onValue(answersRef, (snapshot) => {
-      const data = snapshot.val();
-      console.log("Received real-time update:", data);
-      if (data) {
-        // Transform the data into a more usable format
-        const transformedData = Object.entries(data).reduce((acc, [studentId, studentData]) => {
-          if (studentData && typeof studentData === 'object') {
-            acc[studentId] = studentData;
-          }
-          return acc;
-        }, {});
-        console.log("Transformed data:", transformedData);
-        setRealTimeUpdates(transformedData);
-      } else {
-        console.log("No real-time data available");
+      try {
+        const data = snapshot.val();
+        console.log("Received real-time update:", data);
+        if (data) {
+          // Transform the data into a more usable format
+          const transformedData = Object.entries(data).reduce((acc, [studentId, studentData]) => {
+            if (studentData && typeof studentData === 'object') {
+              acc[studentId] = {
+                ...studentData,
+                studentName: studentData.studentName || 'Unknown Student',
+                questionText: studentData.questionText || 'Question not available',
+                answer: studentData.answer || 'No answer provided',
+                answerType: studentData.answerType || 'open-ended',
+                timestamp: studentData.timestamp || Date.now()
+              };
+            }
+            return acc;
+          }, {});
+          console.log("Transformed data:", transformedData);
+          setRealTimeUpdates(transformedData);
+        } else {
+          console.log("No real-time data available");
+          setRealTimeUpdates({});
+        }
+      } catch (error) {
+        console.error("Error processing real-time data:", error);
         setRealTimeUpdates({});
       }
+    }, (error) => {
+      console.error("Real-time listener error:", error);
+      setRealTimeUpdates({});
     });
 
     return () => {
@@ -1342,12 +1398,17 @@ export default function TeacherCurriculum() {
                   </Card>
                 </div>
                 <div className="lg:col-span-1">
-                  <RealTimeMonitor 
-                    classId={classId} 
-                    contentId={activeContent.id}
-                    recentOnly={true}
-                    limitEntries={10}
-                  />
+                  {activeContent && (
+                    <div className="mt-6">
+                      <RealTimeMonitor
+                        key={`monitor-${activeContent.id}`}
+                        classId={classId}
+                        contentId={activeContent.id}
+                        recentOnly={true}
+                        limitEntries={10}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

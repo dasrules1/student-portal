@@ -1,5 +1,6 @@
 "use client"
 
+import React from 'react'
 import { useState, useEffect } from "react"
 import { 
   Card, 
@@ -21,8 +22,8 @@ import {
   Activity,
   Users
 } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import {
-  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -52,145 +53,268 @@ interface RealTimeMonitorProps {
   showAllStudents?: boolean
 }
 
-export function RealTimeMonitor({
+// Add error boundary component
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('RealTimeMonitor error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Activity className="w-5 h-5 mr-2" />
+              Real-Time Monitoring
+            </CardTitle>
+            <CardDescription>
+              Error loading real-time data
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center justify-center text-center py-6">
+              <AlertCircle className="w-10 h-10 mb-2 text-destructive" />
+              <p>Unable to load real-time data</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Please try refreshing the page
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Wrap the RealTimeMonitor component with the error boundary
+export function RealTimeMonitor(props: RealTimeMonitorProps) {
+  return (
+    <ErrorBoundary>
+      <RealTimeMonitorContent {...props} />
+    </ErrorBoundary>
+  );
+}
+
+// Rename the original component to RealTimeMonitorContent
+function RealTimeMonitorContent({
   classId,
   contentId,
   recentOnly = false,
   limitEntries = 20,
   showAllStudents = false
 }: RealTimeMonitorProps) {
-  const [realtimeAnswers, setRealtimeAnswers] = useState<Answer[]>([])
-  const [activeStudents, setActiveStudents] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'correct' | 'incorrect' | 'pending'>('all')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [realtimeAnswers, setRealtimeAnswers] = useState<Answer[]>([]);
+  const [activeStudents, setActiveStudents] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'correct' | 'incorrect' | 'pending'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!classId) {
+      setLoading(false);
+      setError('Class ID is required');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
     // Set up real-time listener for student answers
     const answersRef = contentId 
       ? ref(realtimeDb, `student-answers/${classId}/${contentId}`) 
-      : ref(realtimeDb, `student-answers/${classId}`)
+      : ref(realtimeDb, `student-answers/${classId}`);
 
     const onDataChange = (snapshot: any) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val()
-        const answers: Answer[] = []
-        const studentSet = new Set<string>()
+      try {
+        if (!snapshot.exists()) {
+          setRealtimeAnswers([]);
+          setActiveStudents(new Set());
+          setLoading(false);
+          return;
+        }
+
+        const data = snapshot.val();
+        if (!data) {
+          setRealtimeAnswers([]);
+          setActiveStudents(new Set());
+          setLoading(false);
+          return;
+        }
+
+        const answers: Answer[] = [];
+        const studentSet = new Set<string>();
         
         // Process different content types if no specific contentId is provided
         if (!contentId) {
           Object.keys(data).forEach(contentKey => {
+            if (!data[contentKey]) return;
             Object.keys(data[contentKey]).forEach(answerKey => {
-              const answer = data[contentKey][answerKey]
+              const answer = data[contentKey][answerKey];
+              if (!answer || typeof answer !== 'object') return;
               
               // Add active students to the set
               if (answer.studentId) {
-                studentSet.add(answer.studentId)
+                studentSet.add(answer.studentId);
               }
               
               // Only include recent answers if recentOnly is true
-              if (!recentOnly || Date.now() - answer.timestamp < 3600000) { // 1 hour
-                answers.push(answer)
+              if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
+                answers.push({
+                  studentId: answer.studentId || 'unknown',
+                  studentName: answer.studentName || 'Unknown Student',
+                  studentEmail: answer.studentEmail,
+                  studentAvatar: answer.studentAvatar,
+                  questionId: answer.questionId || `question-${answerKey}`,
+                  questionText: answer.questionText || 'Question not available',
+                  answer: answer.answer || 'No answer provided',
+                  answerType: answer.answerType || 'open-ended',
+                  timestamp: answer.timestamp || Date.now(),
+                  correct: answer.correct,
+                  partialCredit: answer.partialCredit
+                });
               }
-            })
-          })
+            });
+          });
         } else {
           // Process answers for a specific content
           Object.keys(data).forEach(answerKey => {
-            const answer = data[answerKey]
+            const answer = data[answerKey];
+            if (!answer || typeof answer !== 'object') return;
             
             // Add active students to the set
             if (answer.studentId) {
-              studentSet.add(answer.studentId)
+              studentSet.add(answer.studentId);
             }
             
             // Only include recent answers if recentOnly is true
-            if (!recentOnly || Date.now() - answer.timestamp < 3600000) { // 1 hour
-              answers.push(answer)
+            if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
+              answers.push({
+                studentId: answer.studentId || 'unknown',
+                studentName: answer.studentName || 'Unknown Student',
+                studentEmail: answer.studentEmail,
+                studentAvatar: answer.studentAvatar,
+                questionId: answer.questionId || `question-${answerKey}`,
+                questionText: answer.questionText || 'Question not available',
+                answer: answer.answer || 'No answer provided',
+                answerType: answer.answerType || 'open-ended',
+                timestamp: answer.timestamp || Date.now(),
+                correct: answer.correct,
+                partialCredit: answer.partialCredit
+              });
             }
-          })
+          });
         }
         
         // Sort by timestamp (newest first)
-        answers.sort((a, b) => b.timestamp - a.timestamp)
+        answers.sort((a, b) => b.timestamp - a.timestamp);
         
         // Apply filters
-        let filteredAnswers = answers
+        let filteredAnswers = answers;
         if (filter !== 'all') {
           filteredAnswers = answers.filter(answer => {
             switch (filter) {
               case 'correct':
-                return answer.correct === true
+                return answer.correct === true;
               case 'incorrect':
-                return answer.correct === false
+                return answer.correct === false;
               case 'pending':
-                return answer.correct === undefined
+                return answer.correct === undefined;
               default:
-                return true
+                return true;
             }
-          })
+          });
         }
         
         // Apply search filter
         if (searchTerm) {
           filteredAnswers = filteredAnswers.filter(answer => 
-            answer.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            answer.questionText.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            answer.answer.toLowerCase().includes(searchTerm.toLowerCase())
-          )
+            (answer.studentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (answer.questionText || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (answer.answer || '').toLowerCase().includes(searchTerm.toLowerCase())
+          );
         }
         
         // Limit the number of entries if needed
-        const limitedAnswers = limitEntries > 0 ? filteredAnswers.slice(0, limitEntries) : filteredAnswers
+        const limitedAnswers = limitEntries > 0 ? filteredAnswers.slice(0, limitEntries) : filteredAnswers;
         
-        setRealtimeAnswers(limitedAnswers)
-        setActiveStudents(studentSet)
-      } else {
-        setRealtimeAnswers([])
-        setActiveStudents(new Set())
+        setRealtimeAnswers(limitedAnswers);
+        setActiveStudents(studentSet);
+      } catch (error) {
+        console.error('Error processing real-time data:', error);
+        setError('Error processing real-time data');
+        setRealtimeAnswers([]);
+        setActiveStudents(new Set());
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false)
-    }
+    };
 
-    onValue(answersRef, onDataChange)
+    // Set up error handler
+    const onError = (error: any) => {
+      console.error('Real-time listener error:', error);
+      setError('Error connecting to real-time updates');
+      setLoading(false);
+    };
+
+    // Set up the listener with error handling
+    onValue(answersRef, onDataChange, onError);
 
     // Clean up listener on component unmount
     return () => {
-      off(answersRef, 'value', onDataChange)
-    }
-  }, [classId, contentId, recentOnly, limitEntries, filter, searchTerm])
+      off(answersRef, 'value', onDataChange);
+    };
+  }, [classId, contentId, recentOnly, limitEntries, filter, searchTerm]);
 
   // Helper function to format answer display based on type
   const formatAnswer = (answer: Answer) => {
+    if (!answer) return 'No answer provided';
+    
     switch (answer.answerType) {
       case 'multiple-choice':
-        return `Option: ${answer.answer}`
+        return `Option: ${answer.answer || 'No option selected'}`;
       case 'math-expression':
-        return `Expression: ${answer.answer}`
+        return `Expression: ${answer.answer || 'No expression entered'}`;
       case 'open-ended':
-        return answer.answer.length > 100 
-          ? `${answer.answer.substring(0, 100)}...` 
-          : answer.answer
+        return (answer.answer || 'No answer provided').length > 100 
+          ? `${(answer.answer || 'No answer provided').substring(0, 100)}...` 
+          : (answer.answer || 'No answer provided');
       default:
-        return answer.answer
+        return answer.answer || 'No answer provided';
     }
-  }
+  };
 
   // Render a status badge based on correctness
   const getStatusBadge = (answer: Answer) => {
+    if (!answer) return null;
+    
     if (answer.correct === true) {
-      return <Badge variant="success" className="flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> Correct</Badge>
+      return <Badge variant="default" className="flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> Correct</Badge>;
     } else if (answer.correct === false) {
       if (answer.partialCredit && answer.partialCredit > 0) {
-        return <Badge variant="warning" className="flex items-center"><Clock className="w-3 h-3 mr-1" /> Partial Credit</Badge>
+        return <Badge variant="secondary" className="flex items-center"><Clock className="w-3 h-3 mr-1" /> Partial Credit</Badge>;
       } else {
-        return <Badge variant="destructive" className="flex items-center"><XCircle className="w-3 h-3 mr-1" /> Incorrect</Badge>
+        return <Badge variant="destructive" className="flex items-center"><XCircle className="w-3 h-3 mr-1" /> Incorrect</Badge>;
       }
     } else {
-      return <Badge variant="outline" className="flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Pending</Badge>
+      return <Badge variant="outline" className="flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Pending</Badge>;
     }
-  }
+  };
 
   if (loading) {
     return (
@@ -214,7 +338,32 @@ export function RealTimeMonitor({
           </div>
         </CardContent>
       </Card>
-    )
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Activity className="w-5 h-5 mr-2" />
+            Real-Time Monitoring
+          </CardTitle>
+          <CardDescription>
+            {error}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center text-center py-6">
+            <AlertCircle className="w-10 h-10 mb-2 text-destructive" />
+            <p>Unable to load real-time data</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Please try refreshing the page
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -232,7 +381,7 @@ export function RealTimeMonitor({
           <Input
             placeholder="Search students or answers..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
             className="max-w-xs"
           />
           <Select value={filter} onValueChange={(value: any) => setFilter(value)}>
@@ -252,7 +401,7 @@ export function RealTimeMonitor({
         {realtimeAnswers.length > 0 ? (
           <div className="space-y-4">
             {realtimeAnswers.map((answer, index) => (
-              <div key={index} className="flex items-start space-x-3 p-3 border rounded-lg">
+              <div key={`${answer.studentId}-${answer.questionId}-${index}`} className="flex items-start space-x-3 p-3 border rounded-lg">
                 <Avatar className="w-8 h-8">
                   <AvatarImage src={answer.studentAvatar || ""} />
                   <AvatarFallback>
@@ -261,15 +410,15 @@ export function RealTimeMonitor({
                 </Avatar>
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm">{answer.studentName}</p>
+                    <p className="font-medium text-sm">{answer.studentName || 'Unknown Student'}</p>
                     <div className="flex items-center space-x-2">
                       <span className="text-xs text-muted-foreground">
-                        {formatDistance(answer.timestamp, Date.now(), { addSuffix: true })}
+                        {formatDistance(answer.timestamp || Date.now(), Date.now(), { addSuffix: true })}
                       </span>
                       {getStatusBadge(answer)}
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">{answer.questionText}</p>
+                  <p className="text-xs text-muted-foreground">{answer.questionText || 'Question not available'}</p>
                   <p className="text-sm">{formatAnswer(answer)}</p>
                   {answer.partialCredit !== undefined && (
                     <p className="text-xs text-muted-foreground">
