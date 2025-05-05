@@ -1,39 +1,46 @@
 "use client"
 
-// Add module declarations
-declare module "react" {}
-declare module "next/navigation" {}
-declare module "next/link" {}
-declare module "lucide-react" {}
-declare module "firebase/database" {}
-
-import { useState, useEffect } from "react"
-import { useRouter, useParams } from "next/navigation"
+import { useEffect, useState } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import Link from "next/link"
 import {
-  ArrowLeft,
-  FileText,
-  BookOpen,
-  PenTool,
-  ClipboardList,
-  BookMarked,
-  FileQuestion,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  Send,
-  Video,
+  ChevronRight,
+  ChevronLeft,
+  Book,
+  PenLine,
+  ClipboardCheck,
+  GraduationCap,
+  CheckCircle,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  Edit,
+  Save,
+  Loader2,
+  Check,
+  X,
 } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { sessionManager } from "@/lib/session"
+import { storage } from "@/lib/storage"
+import { realtimeDb } from "@/lib/firebase"
+import { ref, set, push, serverTimestamp, get, onValue } from "firebase/database"
+
+// Types for state management
+interface RealTimeUpdate {
+  value: string
+  type: 'multiple-choice' | 'math-expression' | 'open-ended'
+  timestamp: string
+  problemId: string
+}
 
 interface Session {
   userId: string
@@ -133,19 +140,40 @@ interface Content {
 
 // Add type for user answers
 interface UserAnswers {
-  [key: string]: {
-    [key: string]: number;
-  };
+  [contentId: string]: {
+    [problemIndex: number]: string
+  }
 }
 
-// Add type for math expression inputs
+interface UserGrades {
+  [contentId: string]: {
+    [problemIndex: number]: {
+      score: number
+      correct: boolean
+    }
+  }
+}
+
+interface AttemptCounts {
+  [contentId: string]: {
+    [problemIndex: number]: number
+  }
+}
+
+interface ProblemScores {
+  [problemId: string]: number
+}
+
+interface SubmittedProblems {
+  [problemId: string]: boolean
+}
+
 interface MathExpressionInputs {
   [key: string]: {
     [key: string]: string;
   };
 }
 
-// Add type for open ended answers
 interface OpenEndedAnswers {
   [key: string]: {
     [key: string]: string;
@@ -259,25 +287,79 @@ export default function StudentCurriculum() {
     }
   }, [])
 
-  const [currentClass, setCurrentClass] = useState<any>(null)
-  const [curriculum, setCurriculum] = useState<any>(null)
-  const [activeLesson, setActiveLesson] = useState(1)
+  // Class and curriculum state
+  const [currentClass, setCurrentClass] = useState<{
+    id: string;
+    name: string;
+    description?: string;
+    curriculum?: Curriculum;
+  } | null>(null)
+  
+  const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
+  const [activeLesson, setActiveLesson] = useState<number>(1)
   const [activeContent, setActiveContent] = useState<Content | null>(null)
-  const [userAnswers, setUserAnswers] = useState<Record<string, any>>({})
-  const [userMathAnswers, setUserMathAnswers] = useState<Record<string, string>>({})
-  const [userOpenEndedAnswers, setUserOpenEndedAnswers] = useState<Record<string, string>>({})
-  const [userMultipleChoiceAnswers, setUserMultipleChoiceAnswers] = useState<Record<string, string>>({})
-  const [userGrades, setUserGrades] = useState<Record<string, any>>({})
-  const [showResults, setShowResults] = useState(false)
-  const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({})
-  const [openEndedAnswers, setOpenEndedAnswers] = useState<OpenEndedAnswers>({})
-  const [attemptCounts, setAttemptCounts] = useState<AttemptCounts>({})
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<string | null>(null)
-  const [lessonsWithContent, setLessonsWithContent] = useState<any[]>([])
-  const [problemScores, setProblemScores] = useState<ProblemScores>({})
-  const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})
+  
+  // Answer state management
+  const [userAnswers, setUserAnswers] = useState<{
+    [contentId: string]: {
+      [problemIndex: number]: string
+    }
+  }>({})  
+  
+  const [userGrades, setUserGrades] = useState<{
+    [contentId: string]: {
+      [problemIndex: number]: {
+        score: number;
+        correct: boolean;
+      }
+    }
+  }>({})  
+  
+  const [showResults, setShowResults] = useState<boolean>(false)  
+  
+  const [attemptCounts, setAttemptCounts] = useState<{
+    [contentId: string]: {
+      [problemIndex: number]: number
+    }
+  }>({})  
+  
+  // User and content state
+  const [currentUser, setCurrentUser] = useState<User | null>(null)  
+  const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<string | null>(null)  
+  const [lessonsWithContent, setLessonsWithContent] = useState<Array<{
+    id: string;
+    title: string;
+    contents: Content[];
+  }>>([])
+  const [problemScores, setProblemScores] = useState<ProblemScores>({})  
+  const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})  
   const [problemState, setProblemState] = useState<ProblemState>({})
+
+  // Real-time updates listener
+  useEffect(() => {
+    if (!currentUser?.id || !activeContent?.id) return
+
+    const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${activeContent.id}`)
+    const unsubscribe = onValue(updatesRef, (snapshot) => {
+      const updates = snapshot.val() as Record<string, RealTimeUpdate>
+      if (!updates) return
+
+      Object.entries(updates).forEach(([problemIndex, update]) => {
+        const index = parseInt(problemIndex)
+        if (isNaN(index)) return
+
+        setUserAnswers(prev => ({
+          ...prev,
+          [activeContent.id]: {
+            ...(prev[activeContent.id] || {}),
+            [index]: update.value
+          }
+        }))
+      })
+    })
+
+    return () => unsubscribe()
+  }, [currentUser?.id, activeContent?.id])
 
   // Load class and curriculum data
   useEffect(() => {
@@ -430,62 +512,97 @@ export default function StudentCurriculum() {
     }
   };
 
-  // Handle selecting a content item
+  // Load saved answers
   const loadSavedAnswers = async (content: Content) => {
-    const userId = sessionManager.getSession()?.userId
-    if (!userId) return
+    if (!currentUser || !content?.id) return
 
-    const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
+    const answersRef = ref(realtimeDb, `answers/${currentUser.id}/${content.id}`)
     const snapshot = await get(answersRef)
     const savedAnswers = snapshot.val()
 
     if (savedAnswers) {
-      setUserAnswers(savedAnswers.userAnswers || {})
-      setUserMathAnswers(savedAnswers.userMathAnswers || {})
-      setUserOpenEndedAnswers(savedAnswers.userOpenEndedAnswers || {})
-      setUserMultipleChoiceAnswers(savedAnswers.userMultipleChoiceAnswers || {})
-      setUserGrades(savedAnswers.userGrades || {})
+      setUserAnswers(prev => ({
+        ...prev,
+        [content.id]: savedAnswers
+      }))
+    }
+
+    // Set up real-time listener for updates
+    const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${content.id}`)
+    const unsubscribe = onValue(updatesRef, (snapshot) => {
+      const updates = snapshot.val() as Record<string, RealTimeUpdate>
+      if (!updates) return
+
+      Object.entries(updates).forEach(([problemIndex, update]) => {
+        const index = parseInt(problemIndex)
+        if (isNaN(index)) return
+
+        setUserAnswers(prev => ({
+          ...prev,
+          [content.id]: {
+            ...(prev[content.id] || {}),
+            [index]: update.value
+          }
+        }))
+      })
+    })
+
+    return () => unsubscribe()
+      }
     } else {
-      // Initialize empty answers if no saved answers found
-      setUserAnswers({})
-      setUserMathAnswers({})
-      setUserOpenEndedAnswers({})
-      setUserMultipleChoiceAnswers({})
-      setUserGrades({})
+      // Initialize empty answers for this content
+      setUserAnswers(prev => ({
+        ...prev,
+        [content.id]: {}
+      }))
+      setUserGrades(prev => ({
+        ...prev,
+        [content.id]: {}
+      }))
     }
   }
 
   // Check if all problems in content are completed
   const checkContentCompletion = (content: Content): boolean => {
-    if (!content.problems) return false;
-    
+    if (!content?.problems || !content.id || !userAnswers[content.id]) return false
+
     return content.problems.every((problem, index) => {
-      if (problem.type === 'multiple-choice') {
-        return userMultipleChoiceAnswers[index] !== undefined;
-      } else if (problem.type === 'math-expression') {
-        return userMathAnswers[index] !== undefined && userMathAnswers[index] !== '';
-      } else if (problem.type === 'open-ended') {
-        return userOpenEndedAnswers[index] !== undefined && userOpenEndedAnswers[index] !== '';
-      }
-      return false;
-    });
+      if (!problem) return false
+      return userAnswers[content.id][index] !== undefined
+    })
   };
 
   // Save answers to Firebase
   const saveAnswers = async (content: Content) => {
     const userId = sessionManager.getSession()?.userId
-    if (!userId) return
+    if (!userId || !content?.id) return
 
-    const isCompleted = checkContentCompletion(content);
+    // Create a sanitized version of answers without undefined values
+    const sanitizedAnswers = Object.entries(userAnswers).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null) {
+        acc[key] = value
+      }
+      return acc
+    }, {} as Record<string, any>)
+
+    // Create a sanitized version of grades without undefined values
+    const sanitizedGrades = Object.entries(userGrades).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null) {
+        acc[key] = value
+      }
+      return acc
+    }, {} as Record<string, any>)
+
     const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
+    const isComplete = checkContentCompletion(content)
+
     await set(answersRef, {
-      userAnswers,
-      userMathAnswers,
-      userOpenEndedAnswers,
-      userMultipleChoiceAnswers,
-      userGrades,
-      lastUpdated: serverTimestamp(),
-      status: isCompleted ? "completed" : "in-progress"
+      userAnswers: sanitizedAnswers,
+      userGrades: sanitizedGrades,
+      status: isComplete ? 'completed' : 'in-progress',
+      lastUpdated: new Date().toISOString(),
+      studentId: userId,  // Explicitly include studentId
+      contentId: content.id  // Explicitly include contentId
     })
   }
 
@@ -591,108 +708,76 @@ export default function StudentCurriculum() {
             ...initialOpenEndedAnswers,
           },
         })
-      }
-    }
-  }
 
   // Handle multiple choice answer selection
-  const handleMultipleChoiceSelect = async (problemIndex: number, optionIndex: number) => {
-    if (!activeContent?.id || !activeContent.problems) return;
-    const key = `${activeContent.id}-${problemIndex}`;
-    const problem = activeContent.problems[problemIndex];
-    if (!problem) return;
-
-    setProblemState(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        answer: optionIndex,
-        submitted: false
-      }
-    }));
-    
+  const handleMultipleChoiceSelect = (value: string, problemIndex: number) => {
+    if (!activeContent) return
     setUserAnswers(prev => ({
       ...prev,
       [activeContent.id]: {
-        ...(prev[activeContent.id] || {}),
-        [problemIndex.toString()]: optionIndex
+        ...prev[activeContent.id],
+        [problemIndex]: value
       }
-    }));
-    
-    // Save to Firebase
-    await saveAnswers(activeContent);
-    
-    // Send real-time update
-    if (currentUser) {
-      sendRealTimeUpdate(problemIndex, optionIndex.toString(), 'multiple-choice', problem);
-    }
+    }))
+    saveAnswers(activeContent)
+    sendRealTimeUpdate(problemIndex, value, 'multiple-choice')
   }
 
   // Handle math expression input
-  const handleMathExpressionInput = async (problemIndex: number, value: string) => {
-    if (!activeContent?.id || !activeContent.problems) return;
-    const key = `${activeContent.id}-${problemIndex}`;
-    const problem = activeContent.problems[problemIndex];
-    if (!problem) return;
-
-    setProblemState(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        answer: value,
-        submitted: false
-      }
-    }));
-    
-    setMathExpressionInputs(prev => ({
+  const handleMathExpressionInput = (value: string, problemIndex: number) => {
+    if (!activeContent) return
+    setUserAnswers(prev => ({
       ...prev,
       [activeContent.id]: {
-        ...(prev[activeContent.id] || {}),
-        [problemIndex.toString()]: value
+        ...prev[activeContent.id],
+        [problemIndex]: value
       }
-    }));
+    }))
+    saveAnswers(activeContent)
+    sendRealTimeUpdate(problemIndex, value, 'math-expression')
+  }
+
+  // Types for real-time updates
+  type RealTimeUpdate = {
+    value: string
+    type: 'multiple-choice' | 'math-expression' | 'open-ended'
+    timestamp: string
+    problemId: string
+  }
+
+  // Send real-time update
+  const sendRealTimeUpdate = async (problemIndex: number, value: string, type: RealTimeUpdate['type']) => {
+    if (!currentUser?.id || !activeContent?.id || !activeContent.problems?.[problemIndex]) return
+
+    const problem = activeContent.problems[problemIndex]
+    const updateRef = ref(realtimeDb, `updates/${currentUser.id}/${activeContent.id}/${problemIndex}`)
     
-    // Save to Firebase
-    await saveAnswers(activeContent);
-    
-    // Send real-time update every few keystrokes
-    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'math-expression', problem);
-      setLastUpdateTimestamp(Date.now().toString());
+    const update: RealTimeUpdate = {
+      value,
+      type,
+      timestamp: new Date().toISOString(),
+      problemId: problem.id || ''
     }
+
+    await set(updateRef, update)
   }
 
   // Handle open ended answer input
-  const handleOpenEndedInput = async (problemIndex: number, value: string) => {
-    if (!activeContent?.id || !activeContent.problems) return;
-    const key = `${activeContent.id}-${problemIndex}`;
-    const problem = activeContent.problems[problemIndex];
-    if (!problem) return;
-
-    setProblemState(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        answer: value,
-        submitted: false
-      }
-    }));
-    
-    setOpenEndedAnswers(prev => ({
+  const handleOpenEndedInput = (value: string, problemIndex: number) => {
+    if (!activeContent) return
+    setUserAnswers(prev => ({
       ...prev,
       [activeContent.id]: {
-        ...(prev[activeContent.id] || {}),
-        [problemIndex.toString()]: value
+        ...prev[activeContent.id],
+        [problemIndex]: value
       }
-    }));
-    
-    // Save to Firebase
-    await saveAnswers(activeContent);
-    
+    }))
+    saveAnswers(activeContent)
+
     // Send real-time update every few keystrokes
     if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'open-ended', problem);
-      setLastUpdateTimestamp(Date.now().toString());
+      sendRealTimeUpdate(problemIndex, value, 'open-ended')
+      setLastUpdateTimestamp(Date.now().toString())
     }
   }
 
@@ -771,47 +856,6 @@ export default function StudentCurriculum() {
     if (foundKeywords.length > 0) {
       const score = (foundKeywords.length / problem.keywords.length) * (problem.points || 1);
       result = { correct: score >= (problem.points || 1) * 0.6, score };
-    }
-    
-    return result;
-  };
-
-  // Handle submitting a single problem
-  const handleSubmitProblem = (problemIndex: number) => {
-    if (!activeContent?.problems) return;
-
-    const problem = activeContent.problems[problemIndex];
-    let result;
-
-    if (problem.type === "multiple-choice") {
-      const selectedOption = userAnswers[activeContent.id]?.[problemIndex];
-      result = selectedOption === problem.answer;
-    } else if (problem.type === "math-expression") {
-      result = gradeMathExpression(problem, mathExpressionInputs[activeContent.id]?.[problemIndex] || "");
-    } else if (problem.type === "open-ended") {
-      result = gradeOpenEnded(problem, openEndedAnswers[activeContent.id]?.[problemIndex] || "");
-    }
-
-    // Update problem scores
-    setProblemScores(prev => ({
-      ...prev,
-      [`${activeContent.id}-${problemIndex}`]: result?.score || 0
-    }));
-
-    // Mark problem as submitted
-    setSubmittedProblems(prev => ({
-      ...prev,
-      [`${activeContent.id}-${problemIndex}`]: true
-    }));
-
-    // Show feedback toast
-    toast({
-      title: result?.correct ? "Correct!" : "Incorrect",
-      description: `You scored ${result?.score || 0} points for this problem.`,
-      variant: result?.correct ? "default" : "destructive",
-    });
-
-    // Send real-time update
     if (currentUser) {
       sendRealTimeUpdate(problemIndex, 
         problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
