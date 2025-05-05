@@ -455,6 +455,40 @@ export default function StudentCurriculum() {
     }
   }
 
+  // Check if all problems in content are completed
+  const checkContentCompletion = (content: Content): boolean => {
+    if (!content.problems) return false;
+    
+    return content.problems.every((problem, index) => {
+      if (problem.type === 'multiple-choice') {
+        return userMultipleChoiceAnswers[index] !== undefined;
+      } else if (problem.type === 'math-expression') {
+        return userMathAnswers[index] !== undefined && userMathAnswers[index] !== '';
+      } else if (problem.type === 'open-ended') {
+        return userOpenEndedAnswers[index] !== undefined && userOpenEndedAnswers[index] !== '';
+      }
+      return false;
+    });
+  };
+
+  // Save answers to Firebase
+  const saveAnswers = async (content: Content) => {
+    const userId = sessionManager.getSession()?.userId
+    if (!userId) return
+
+    const isCompleted = checkContentCompletion(content);
+    const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
+    await set(answersRef, {
+      userAnswers,
+      userMathAnswers,
+      userOpenEndedAnswers,
+      userMultipleChoiceAnswers,
+      userGrades,
+      lastUpdated: serverTimestamp(),
+      status: isCompleted ? "completed" : "in-progress"
+    })
+  }
+
   const handleSelectContent = async (content: Content) => {
     setActiveContent(content)
     await loadSavedAnswers(content)
@@ -562,7 +596,7 @@ export default function StudentCurriculum() {
   }
 
   // Handle multiple choice answer selection
-  const handleMultipleChoiceSelect = (problemIndex: number, optionIndex: number) => {
+  const handleMultipleChoiceSelect = async (problemIndex: number, optionIndex: number) => {
     if (!activeContent?.id || !activeContent.problems) return;
     const key = `${activeContent.id}-${problemIndex}`;
     const problem = activeContent.problems[problemIndex];
@@ -585,14 +619,17 @@ export default function StudentCurriculum() {
       }
     }));
     
-    // Send real-time update to Firebase
+    // Save to Firebase
+    await saveAnswers(activeContent);
+    
+    // Send real-time update
     if (currentUser) {
       sendRealTimeUpdate(problemIndex, optionIndex.toString(), 'multiple-choice', problem);
     }
   }
 
   // Handle math expression input
-  const handleMathExpressionInput = (problemIndex: number, value: string) => {
+  const handleMathExpressionInput = async (problemIndex: number, value: string) => {
     if (!activeContent?.id || !activeContent.problems) return;
     const key = `${activeContent.id}-${problemIndex}`;
     const problem = activeContent.problems[problemIndex];
@@ -615,7 +652,10 @@ export default function StudentCurriculum() {
       }
     }));
     
-    // Send real-time update to Firebase every few keystrokes
+    // Save to Firebase
+    await saveAnswers(activeContent);
+    
+    // Send real-time update every few keystrokes
     if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
       sendRealTimeUpdate(problemIndex, value, 'math-expression', problem);
       setLastUpdateTimestamp(Date.now().toString());
@@ -623,7 +663,7 @@ export default function StudentCurriculum() {
   }
 
   // Handle open ended answer input
-  const handleOpenEndedInput = (problemIndex: number, value: string) => {
+  const handleOpenEndedInput = async (problemIndex: number, value: string) => {
     if (!activeContent?.id || !activeContent.problems) return;
     const key = `${activeContent.id}-${problemIndex}`;
     const problem = activeContent.problems[problemIndex];
@@ -646,7 +686,10 @@ export default function StudentCurriculum() {
       }
     }));
     
-    // Send real-time update to Firebase every few keystrokes
+    // Save to Firebase
+    await saveAnswers(activeContent);
+    
+    // Send real-time update every few keystrokes
     if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
       sendRealTimeUpdate(problemIndex, value, 'open-ended', problem);
       setLastUpdateTimestamp(Date.now().toString());
