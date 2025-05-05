@@ -52,7 +52,8 @@ import {
   collection, 
   query, 
   where,
-  deleteDoc
+  deleteDoc,
+  getDocs
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue } from 'firebase/database';
@@ -279,53 +280,55 @@ export default function TeacherCurriculum() {
     loadData()
   }, [classId, router, toast])
 
-  // Add real-time listener for student submissions
+  // Update the real-time listener to use onValue instead of onSnapshot
   useEffect(() => {
     if (!classId) return;
 
     // Create a query for submissions in this class
-    const submissionsQuery = query(
-      collection(db, 'submissions'),
-      where('classId', '==', classId)
-    );
+    const submissionsRef = ref(realtimeDb, `submissions/${classId}`);
 
     // Set up real-time listener
-    const unsubscribe = onSnapshot(submissionsQuery, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added' || change.type === 'modified') {
-          const submission = { id: change.doc.id, ...change.doc.data() };
+    const unsubscribe = onValue(submissionsRef, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        if (data) {
+          // Transform the data into a more usable format
+          const submissions = Object.entries(data).map(([id, submission]) => ({
+            id,
+            ...submission
+          }));
           
-          // Update the curriculum state with the new submission
+          // Update the curriculum state with the new submissions
           setCurriculum(prevCurriculum => {
             if (!prevCurriculum) return prevCurriculum;
             
             const updatedCurriculum = { ...prevCurriculum };
-            const lessonIndex = updatedCurriculum.lessons.findIndex(
-              lesson => lesson.id === submission.lessonId
-            );
-            
-            if (lessonIndex !== -1) {
-              const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
-                content => content.id === submission.contentId
+            submissions.forEach(submission => {
+              const lessonIndex = updatedCurriculum.lessons.findIndex(
+                lesson => lesson.id === submission.lessonId
               );
               
-              if (contentIndex !== -1) {
-                const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
-                const submissions = content.studentProgress?.submissions || [];
-                const submissionIndex = submissions.findIndex(
-                  sub => sub.studentId === submission.studentId
+              if (lessonIndex !== -1) {
+                const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
+                  content => content.id === submission.contentId
                 );
                 
-                if (submissionIndex !== -1) {
-                  submissions[submissionIndex] = submission;
-                } else {
-                  submissions.push(submission);
-                }
-                
-                updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = submissions;
-                
-                // Show notification for new submissions
-                if (change.type === 'added') {
+                if (contentIndex !== -1) {
+                  const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
+                  const existingSubmissions = content.studentProgress?.submissions || [];
+                  const submissionIndex = existingSubmissions.findIndex(
+                    sub => sub.studentId === submission.studentId
+                  );
+                  
+                  if (submissionIndex !== -1) {
+                    existingSubmissions[submissionIndex] = submission;
+                  } else {
+                    existingSubmissions.push(submission);
+                  }
+                  
+                  updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = existingSubmissions;
+                  
+                  // Show notification for new submissions
                   const student = students.find(s => s.id === submission.studentId);
                   if (student) {
                     toast({
@@ -336,16 +339,20 @@ export default function TeacherCurriculum() {
                   }
                 }
               }
-            }
+            });
             
             return updatedCurriculum;
           });
         }
-      });
+      } catch (error) {
+        console.error("Error processing real-time data:", error);
+      }
     });
 
     // Cleanup listener on unmount
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+    };
   }, [classId, students]);
 
   // Add real-time listener for student progress
