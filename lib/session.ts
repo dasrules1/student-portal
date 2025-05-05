@@ -60,6 +60,13 @@ if (typeof window !== "undefined") {
 
 // Session manager for client-side session management
 class SessionManager {
+  // Get session data
+  getSession(): { userId: string } | null {
+    if (typeof window === "undefined") return null
+    const state = useSession.getState()
+    return state.user ? { userId: state.user.uid } : null
+  }
+
   // Get current user from session
   getCurrentUser() {
     if (typeof window === "undefined") return { user: null, role: null }
