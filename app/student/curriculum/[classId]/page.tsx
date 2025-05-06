@@ -19,6 +19,12 @@ import {
   Loader2,
   Check,
   X,
+  BookOpen,
+  PenTool,
+  ClipboardList,
+  BookMarked,
+  FileQuestion,
+  FileText
 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
@@ -51,9 +57,6 @@ declare module '@/lib/session' {
     getSession(): Session | null
   }
 }
-import { storage } from "@/lib/storage"
-import { realtimeDb } from "@/lib/firebase"
-import { ref, set, push, serverTimestamp, get } from "firebase/database"
 
 // Content types for curriculum
 const getContentTypeIcon = (type: string) => {
