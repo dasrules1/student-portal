@@ -360,6 +360,41 @@ export default function StudentCurriculum() {
 
     return () => unsubscribe()
   }, [currentUser?.id, activeContent?.id])
+  
+  // Save answers when user navigates away or closes tab
+  useEffect(() => {
+    if (!activeContent || !currentUser) return
+    
+    // Function to save answers before unloading
+    const saveBeforeUnload = () => {
+      console.log("Saving answers before unload...")
+      saveAnswers(activeContent)
+    }
+    
+    // Add event listeners for page unload
+    window.addEventListener('beforeunload', saveBeforeUnload)
+    
+    // Clean up event listeners
+    return () => {
+      window.removeEventListener('beforeunload', saveBeforeUnload)
+      // Also save when unmounting component (e.g., navigating to another page)
+      saveBeforeUnload()
+    }
+  }, [activeContent, userAnswers, currentUser])
+  
+  // Auto-save answers periodically
+  useEffect(() => {
+    if (!activeContent || !currentUser) return
+    
+    // Set up auto-save interval (every 30 seconds)
+    const autoSaveInterval = setInterval(() => {
+      console.log("Auto-saving answers...")
+      saveAnswers(activeContent)
+    }, 30000) // 30 seconds
+    
+    // Clean up interval on unmount
+    return () => clearInterval(autoSaveInterval)
+  }, [activeContent, userAnswers, currentUser])
 
   // Load class and curriculum data
   useEffect(() => {
@@ -516,41 +551,64 @@ export default function StudentCurriculum() {
   const loadSavedAnswers = async (content: Content) => {
     if (!currentUser || !content?.id) return
 
-    const answersRef = ref(realtimeDb, `answers/${currentUser.id}/${content.id}`)
-    const snapshot = await get(answersRef)
-    const savedAnswers = snapshot.val()
+    try {
+      const answersRef = ref(realtimeDb, `answers/${currentUser.id}/${content.id}`)
+      const snapshot = await get(answersRef)
+      const savedData = snapshot.val()
 
-    if (savedAnswers) {
-      setUserAnswers(prev => ({
-        ...prev,
-        [content.id]: savedAnswers
-      }))
-    }
+      console.log(`Loading saved answers for content ${content.id}:`, savedData)
 
-    // Set up real-time listener for updates
-    const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${content.id}`)
-    const unsubscribe = onValue(updatesRef, (snapshot) => {
-      const updates = snapshot.val() as Record<string, RealTimeUpdate>
-      if (!updates) return
-
-      Object.entries(updates).forEach(([problemIndex, update]) => {
-        const index = parseInt(problemIndex)
-        if (isNaN(index)) return
-
+      if (savedData && savedData.userAnswers) {
+        // Update the user answers with the saved data
         setUserAnswers(prev => ({
           ...prev,
-          [content.id]: {
-            ...(prev[content.id] || {}),
-            [index]: update.value
-          }
+          [content.id]: savedData.userAnswers
         }))
-      })
-    })
 
-    return () => unsubscribe()
+        // Update user grades if available
+        if (savedData.userGrades) {
+          setUserGrades(prev => ({
+            ...prev,
+            [content.id]: savedData.userGrades
+          }))
+        }
+      } else {
+        // Initialize empty answers for this content
+        setUserAnswers(prev => ({
+          ...prev,
+          [content.id]: {}
+        }))
+        setUserGrades(prev => ({
+          ...prev,
+          [content.id]: {}
+        }))
       }
-    } else {
-      // Initialize empty answers for this content
+
+      // Set up real-time listener for updates
+      const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${content.id}`)
+      const unsubscribe = onValue(updatesRef, (snapshot) => {
+        const updates = snapshot.val() as Record<string, RealTimeUpdate>
+        if (!updates) return
+
+        Object.entries(updates).forEach(([problemIndex, update]) => {
+          const index = parseInt(problemIndex)
+          if (isNaN(index)) return
+
+          setUserAnswers(prev => ({
+            ...prev,
+            [content.id]: {
+              ...(prev[content.id] || {}),
+              [index]: update.value
+            }
+          }))
+        })
+      })
+
+      return () => unsubscribe()
+    } catch (error) {
+      console.error(`Error loading saved answers for content ${content.id}:`, error)
+      
+      // Initialize empty answers for this content as fallback
       setUserAnswers(prev => ({
         ...prev,
         [content.id]: {}
@@ -577,18 +635,24 @@ export default function StudentCurriculum() {
     const userId = sessionManager.getSession()?.userId
     if (!userId || !content?.id) return
 
+    // Get the answers for this specific content
+    const contentAnswers = userAnswers[content.id] || {}
+    
     // Create a sanitized version of answers without undefined values
-    const sanitizedAnswers = Object.entries(userAnswers).reduce((acc, [key, value]) => {
+    const sanitizedAnswers = Object.entries(contentAnswers).reduce((acc, [problemIndex, value]) => {
       if (value !== undefined && value !== null) {
-        acc[key] = value
+        acc[problemIndex] = value
       }
       return acc
     }, {} as Record<string, any>)
 
+    // Get the grades for this specific content
+    const contentGrades = userGrades[content.id] || {}
+    
     // Create a sanitized version of grades without undefined values
-    const sanitizedGrades = Object.entries(userGrades).reduce((acc, [key, value]) => {
+    const sanitizedGrades = Object.entries(contentGrades).reduce((acc, [problemIndex, value]) => {
       if (value !== undefined && value !== null) {
-        acc[key] = value
+        acc[problemIndex] = value
       }
       return acc
     }, {} as Record<string, any>)
@@ -596,6 +660,8 @@ export default function StudentCurriculum() {
     const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
     const isComplete = checkContentCompletion(content)
 
+    console.log(`Saving answers for content ${content.id}:`, sanitizedAnswers)
+    
     await set(answersRef, {
       userAnswers: sanitizedAnswers,
       userGrades: sanitizedGrades,
