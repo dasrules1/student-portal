@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useState, useEffect, FC } from 'react';
 import { useToast } from "@/components/ui/use-toast"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,13 +14,10 @@ import { Input } from "@/components/ui/input"
 import { ref, set, push, serverTimestamp, get, onValue } from "firebase/database";
 import { 
   BookOpen,
-  FileQuestion,
-  FileText,
+  ClipboardCheck,
+  Pencil,
   CheckCircle2,
   Clock,
-  Pencil,
-  Calculator,
-  Loader2,
   Send,
   ArrowLeft,
   ArrowRight,
@@ -28,12 +25,10 @@ import {
   AlertCircle,
   Check,
   X,
-  ClipboardCheck,
-  BookmarkPlus,
-  Bookmark,
-  ClipboardList,
-  PencilLine
+  FileText,
+  FileQuestion
 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { realtimeDb } from '@/lib/firebase';
@@ -67,7 +62,7 @@ declare module '@/lib/session' {
 }
 
 // Content types for curriculum
-const getContentTypeIcon = (type: string) => {
+const getContentIcon = (type: string) => {
   switch (type) {
     case "new-material":
       return <BookOpen className="w-4 h-4 mr-2" />;
@@ -76,7 +71,7 @@ const getContentTypeIcon = (type: string) => {
     case "classwork":
       return <ClipboardList className="w-4 h-4 mr-2" />;
     case "homework":
-      return <Bookmark className="w-4 h-4 mr-2" />;
+      return <FileText className="w-4 h-4 mr-2" />;
     case "quiz":
       return <FileQuestion className="w-4 h-4 mr-2" />;
     case "test":
@@ -97,120 +92,62 @@ type ToasterToast = Toast & {
 interface Content {
   id: string;
   title: string;
-  type: 'lesson' | 'quiz' | 'assignment';
+  type: 'lesson' | 'quiz' | 'assignment' | 'homework' | 'test' | 'classwork';
+  description: string;
   problems?: Problem[];
 }
 
 interface Problem {
-  readonly id: string;
+  id: string;
+  type: 'multiple-choice' | 'math-expression' | 'open-ended';
   question: string;
-  type: 'multiple_choice' | 'math_expression' | 'open_ended';
+  correctAnswer: string;
+  points: number;
   options?: string[];
-  correctAnswer?: string | number;
-  readonly points: number;
   explanation?: string;
 }
 
 interface ProblemSubmission {
-  readonly studentId: string;
-  readonly status: 'completed' | 'in_progress';
-  readonly score: number;
-}
-
-interface ContentState {
-  id: string;
-  title: string;
-  type: 'lesson' | 'quiz' | 'assignment';
-  problems?: Problem[];
-  status: 'not_started' | 'in_progress' | 'completed';
+  problemId: string;
+  answer: string | number;
   score?: number;
-  totalPoints?: number;
+  correct?: boolean;
+  feedback?: string;
+  studentId?: string;
+  status?: 'completed' | 'in_progress';
 }
 
-type MathExpressionInputs = {
-  [key: string]: string;
-};
-
-type OpenEndedAnswers = {
-  [key: string]: string;
-};
-
-type UserAnswers = {
-  [key: string]: (string | number | null)[];
-};
-
-type ProblemType = 'multiple_choice' | 'math_expression' | 'open_ended';
-
-// Update User type to match the actual structure
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  role: "student" | "teacher" | "admin";
-  status?: "active" | "inactive";
-  avatar?: string;
-  classes: string[];
-}
-
-// Update Content type to include problems
-interface Content {
-  id: string;
-  title: string;
-  type: string;
-  description?: string;
-  isPublished?: boolean;
-  dueDate?: string;
-  completed?: boolean;
-  completedAt?: string;
-  problems?: Problem[];
-}
-
-// Add type for user answers
 interface UserAnswers {
   [contentId: string]: {
-    [problemIndex: number]: string
-  }
+    [problemId: string]: ProblemSubmission;
+  };
 }
 
 interface UserGrades {
   [contentId: string]: {
-    [problemIndex: number]: {
-      score: number
-      correct: boolean
-    }
-  }
+    totalScore: number;
+    maxScore: number;
+    submissions: ProblemSubmission[];
+  };
+}
+
+interface GradingResult {
+  correct: boolean;
+  score: number;
+}
+
+interface ProblemScores {
+  [key: string]: number;
+}
+
+interface SubmittedProblems {
+  [problemId: string]: boolean;
 }
 
 interface AttemptCounts {
   [contentId: string]: {
-    [problemIndex: number]: number
-  }
-}
-
-interface ProblemScores {
-  [problemId: string]: number
-}
-
-interface SubmittedProblems {
-  [problemId: string]: boolean
-}
-
-interface MathExpressionInputs {
-  [key: string]: {
-    [key: string]: string;
+    [problemIndex: number]: number;
   };
-}
-
-interface OpenEndedAnswers {
-  [key: string]: {
-    [key: string]: string;
-  };
-}
-
-// Add type for attempt counts
-interface AttemptCounts {
-  [key: string]: number;
 }
 
 interface Lesson {
@@ -232,59 +169,184 @@ interface UserSubmission {
   score?: number;
 }
 
-interface ProblemScores {
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: "student" | "teacher" | "admin";
+  status?: "active" | "inactive";
+  avatar?: string;
+  classes: string[];
+}
+
+type ProblemType = 'multiple-choice' | 'math-expression' | 'open-ended';
+
+interface ContentState {
+  id: string;
+  title: string;
+  type: 'lesson' | 'quiz' | 'assignment';
+  problems?: Problem[];
+  status: 'not_started' | 'in_progress' | 'completed';
+  score?: number;
+  totalPoints?: number;
+}
+
+interface Content {
+  id: string;
+  title: string;
+  type: 'lesson' | 'quiz' | 'assignment';
+  description?: string;
+  isPublished?: boolean;
+  dueDate?: string;
+  completed?: boolean;
+  completedAt?: string;
+  problems?: Problem[];
+}
+
+interface AttemptCounts {
   [key: string]: number;
 }
 
-interface SubmittedProblems {
-  [key: string]: boolean;
+interface StudentCurriculumProps {
+  classId?: string;
 }
 
-interface Problem {
-  readonly id: string;
-  type: 'multiple_choice' | 'math_expression' | 'open_ended';
-  question: string;
-  options?: string[];
-  correctAnswer?: string | number;
-  readonly points: number;
-  explanation?: string;
-  keywords?: string[];
-  correctAnswers?: string[];
-  tolerance?: number;
-}
+const StudentCurriculum: React.FC<StudentCurriculumProps> = ({ classId }) => {
+  const router = useRouter();
+  const [activeContent, setActiveContent] = useState<Content | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
+  const answersRef = useRef<UserAnswers>({});
+  const [problemIndex, setProblemIndex] = useState(0);
 
-interface ProblemState {
-  [key: string]: {
-    answer: string | number;
-    submitted: boolean;
-    score: number;
+  const getContentTypeIcon = (type: Content['type']) => {
+    switch (type) {
+      case 'lesson':
+        return <BookOpen className="w-4 h-4" />;
+      case 'quiz':
+        return <ClipboardCheck className="w-4 h-4" />;
+      case 'assignment':
+        return <Pencil className="w-4 h-4" />;
+      case 'homework':
+        return <FileText className="w-4 h-4" />;
+      case 'test':
+        return <FileQuestion className="w-4 h-4" />;
+      case 'classwork':
+        return <ClipboardCheck className="w-4 h-4" />;
+      default:
+        return <BookOpen className="w-4 h-4" />;
+    }
   };
-}
 
-interface ProblemSubmission {
-  readonly studentId: string;
-  readonly status: 'completed' | 'in_progress';
-  readonly score: number;
-  studentName: string;
-  studentEmail: string;
-  studentAvatar?: string;
-  questionId: string;
-  questionText: string;
-  answer: string | number;
-  answerType: string;
-  timestamp: number;
-  correct?: boolean;
-  partialCredit?: number;
-  problemType: string;
-  problemPoints: number;
-  classId: string;
-  contentId: string;
-  contentTitle: string;
-}
+  const sendRealTimeUpdate = async (contentId: string, problemId: string, answer: string | number) => {
+    if (!activeContent) return;
+    
+    try {
+      // Add real-time update logic here
+      console.log('Sending real-time update:', { contentId, problemId, answer });
+    } catch (error) {
+      console.error('Error sending real-time update:', error);
+    }
+  };
 
-  correct: boolean;
-  score: number;
-}
+  const getProblemScore = (problem: Problem, userAnswer: string | number): number => {
+    if (!problem.correctAnswer) return 0;
+    if (typeof userAnswer === 'string' && typeof problem.correctAnswer === 'string') {
+      return userAnswer.toLowerCase() === problem.correctAnswer.toLowerCase() ? problem.points : 0;
+    }
+    return userAnswer === problem.correctAnswer ? problem.points : 0;
+  };
+
+  useEffect(() => {
+    const loadContent = async () => {
+      if (!classId) return;
+      
+      try {
+        // Add content loading logic here
+        setLoading(false);
+      } catch (error) {
+        setError('Failed to load content');
+        setLoading(false);
+      }
+    };
+
+    loadContent();
+  }, [classId]);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>{error}</div>;
+  if (!activeContent) return <div>No content found</div>;
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex flex-col space-y-4">
+        <h1 className="text-2xl font-bold">{activeContent.title}</h1>
+        {/* Content type indicator */}
+        <div className="flex items-center text-sm text-gray-600">
+          {getContentTypeIcon(activeContent.type)}
+          <span className="ml-1 capitalize">{activeContent.type}</span>
+        </div>
+        {/* Main content */}
+        <div className="prose max-w-none">
+          {activeContent.description}
+        </div>
+      </div>
+    </div>
+  );
+
+  const [content, setContent] = useState<Content | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
+  const [studentInfo, setStudentInfo] = useState({
+    status: 'in_progress' as 'completed' | 'in_progress',
+    score: 0,
+    name: '',
+    id: '',
+    email: '',
+    avatar: '',
+    grade: '',
+    class: '',
+    school: '',
+    district: '',
+    state: '',
+    country: '',
+    isActive: false,
+    lastActive: 0
+  });
+  const [problemState, setProblemState] = useState({
+    type: '',
+    points: 0,
+    classId: '',
+    contentId: '',
+    contentTitle: '',
+    correct: false,
+    score: 0
+  });
+
+  const answersRef = useRef<UserAnswers>({});
+  const [problemIndex, setProblemIndex] = useState(0);
+
+  const renderLatex = (text: string) => {
+    // Add latex rendering logic here
+    return text;
+  };
+
+  const getContentTypeIcon = (type: string) => {
+    switch (type) {
+      case 'lesson':
+        return <BookOpen className="w-4 h-4" />;
+      case 'quiz':
+        return <ClipboardList className="w-4 h-4" />;
+      case 'assignment':
+        return <PencilLine className="w-4 h-4" />;
+      default:
+        return <BookOpen className="w-4 h-4" />;
+    }
+  };
+
 
 const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
   const router = useRouter()
@@ -363,13 +425,13 @@ const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
     title: string;
     contents: Content[];
   }>>([])
-<<<<<<< HEAD
+
   
   const [mathExpressionInputs, setMathExpressionInputs] = useState<Record<string, string[]>>({});
   const [openEndedAnswers, setOpenEndedAnswers] = useState<Record<string, string>>({});
   
   // Load saved answers with offline support
-=======
+
   const [problemScores, setProblemScores] = useState<ProblemScores>({})  
   const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})  
   const [problemState, setProblemState] = useState<ProblemState>({})
@@ -587,15 +649,15 @@ const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
   };
 
   // Load saved answers
->>>>>>> b5d1ba7819c3b4f82ab821ada8b7df7d4bb7913d
+
   const loadSavedAnswers = async (content: Content) => {
     if (!currentUser?.id || !content?.id) return;
 
-<<<<<<< HEAD
+
     const answersPath = `student-answers/${classId}/${content.id}`;
     const answersRef = ref(realtimeDb, answersPath);
 
-=======
+
     try {
       const answersRef = ref(realtimeDb, `answers/${currentUser.id}/${content.id}`)
       const snapshot = await get(answersRef)
@@ -967,16 +1029,16 @@ const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
     if (foundKeywords.length > 0) {
       const score = (foundKeywords.length / problem.keywords.length) * (problem.points || 1);
       result = { correct: score >= (problem.points || 1) * 0.6, score };
-    if (currentUser) {
-      sendRealTimeUpdate(problemIndex, 
-        problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
-        problem.type === "math-expression" ? mathExpressionInputs[activeContent.id]?.[problemIndex] :
-        openEndedAnswers[activeContent.id]?.[problemIndex],
-        problem.type,
-        problem
-      );
-    }
-  };
+  if (currentUser) {
+    sendRealTimeUpdate(problemIndex, 
+      problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
+      problem.type === "math-expression" ? mathExpressionInputs[activeContent.id]?.[problemIndex] :
+      openEndedAnswers[activeContent.id]?.[problemIndex],
+      problem.type,
+      problem
+    );
+  }
+};
 
   // Calculate total score
   const calculateTotalScore = () => {
@@ -1060,7 +1122,7 @@ const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
   const sendRealTimeUpdate = (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
     if (!currentUser || !activeContent || !problem) return;
     
->>>>>>> b5d1ba7819c3b4f82ab821ada8b7df7d4bb7913d
+
     try {
       // Try to load from Firebase first
       const snapshot = await get(answersRef);
