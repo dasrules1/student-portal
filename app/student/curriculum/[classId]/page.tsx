@@ -2,15 +2,16 @@
 
 import * as React from 'react';
 import { useEffect, useState } from 'react';
-import { ref, get, set, onValue, serverTimestamp } from 'firebase/database';
-import { useToast } from '@/components/ui/use-toast';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
+import { useToast } from "@/components/ui/use-toast"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
+import { ref, set, push, serverTimestamp, get, onValue } from "firebase/database";
 import { 
   BookOpen,
   FileQuestion,
@@ -24,12 +25,20 @@ import {
   ArrowLeft,
   ArrowRight,
   Video,
-  AlertCircle
+  AlertCircle,
+  Check,
+  X,
+  ClipboardCheck,
+  BookmarkPlus,
+  Bookmark,
+  ClipboardList,
+  PencilLine
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { realtimeDb } from '@/lib/firebase';
 import { sessionManager } from '@/lib/session';
+import { storage } from '@/lib/storage';
 
 interface Toast {
   id: string;
@@ -37,6 +46,44 @@ interface Toast {
   description?: string;
   action?: React.ReactNode;
   variant?: 'default' | 'destructive';
+}
+
+// Types for state management
+interface RealTimeUpdate {
+  value: string;
+  type: 'multiple_choice' | 'math_expression' | 'open_ended';
+  timestamp: string;
+  problemId: string;
+}
+
+interface Session {
+  userId: string
+}
+
+declare module '@/lib/session' {
+  interface SessionManager {
+    getSession(): Session | null
+  }
+}
+
+// Content types for curriculum
+const getContentTypeIcon = (type: string) => {
+  switch (type) {
+    case "new-material":
+      return <BookOpen className="w-4 h-4 mr-2" />;
+    case "guided-practice":
+      return <PencilLine className="w-4 h-4 mr-2" />;
+    case "classwork":
+      return <ClipboardList className="w-4 h-4 mr-2" />;
+    case "homework":
+      return <Bookmark className="w-4 h-4 mr-2" />;
+    case "quiz":
+      return <FileQuestion className="w-4 h-4 mr-2" />;
+    case "test":
+      return <FileText className="w-4 h-4 mr-2" />;
+    default:
+      return null;
+  }
 };
 
 type ToasterToast = Toast & {
@@ -80,9 +127,18 @@ interface ContentState {
   totalPoints?: number;
 }
 
-type MathExpressionInputs = Record<string, string[]>;
-type OpenEndedAnswers = Record<string, string>;
-type UserAnswers = Record<string, (string | number | null)[]>;
+type MathExpressionInputs = {
+  [key: string]: string;
+};
+
+type OpenEndedAnswers = {
+  [key: string]: string;
+};
+
+type UserAnswers = {
+  [key: string]: (string | number | null)[];
+};
+
 type ProblemType = 'multiple_choice' | 'math_expression' | 'open_ended';
 
 // Update User type to match the actual structure
@@ -185,14 +241,14 @@ interface SubmittedProblems {
 }
 
 interface Problem {
-  id?: string;
-  type: string;
+  readonly id: string;
+  type: 'multiple_choice' | 'math_expression' | 'open_ended';
   question: string;
   options?: string[];
-  answer?: string;
+  correctAnswer?: string | number;
+  readonly points: number;
+  explanation?: string;
   keywords?: string[];
-  points?: number;
-  correctAnswer?: number | string;
   correctAnswers?: string[];
   tolerance?: number;
 }
@@ -206,7 +262,9 @@ interface ProblemState {
 }
 
 interface ProblemSubmission {
-  studentId: string;
+  readonly studentId: string;
+  readonly status: 'completed' | 'in_progress';
+  readonly score: number;
   studentName: string;
   studentEmail: string;
   studentAvatar?: string;
@@ -222,8 +280,6 @@ interface ProblemSubmission {
   classId: string;
   contentId: string;
   contentTitle: string;
-  status?: string;
-  score?: number;
 }
 
   correct: boolean;
@@ -264,6 +320,16 @@ const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
     name: string;
     description?: string;
     curriculum?: Curriculum;
+    teacher?: string;
+    virtualLink?: string;
+    meeting_day?: string;
+    meetingDates?: string[];
+    startTime?: string;
+    endTime?: string;
+    location?: string;
+    startDate?: string;
+    endDate?: string;
+    status?: string;
   } | null>(null)
   
   const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
@@ -297,17 +363,704 @@ const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
     title: string;
     contents: Content[];
   }>>([])
+<<<<<<< HEAD
   
   const [mathExpressionInputs, setMathExpressionInputs] = useState<Record<string, string[]>>({});
   const [openEndedAnswers, setOpenEndedAnswers] = useState<Record<string, string>>({});
   
   // Load saved answers with offline support
+=======
+  const [problemScores, setProblemScores] = useState<ProblemScores>({})  
+  const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})  
+  const [problemState, setProblemState] = useState<ProblemState>({})
+
+  // Real-time updates listener
+  useEffect(() => {
+    if (!currentUser?.id || !activeContent?.id) return
+
+    const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${activeContent.id}`)
+    const unsubscribe = onValue(updatesRef, (snapshot) => {
+      const updates = snapshot.val() as Record<string, RealTimeUpdate>
+      if (!updates) return
+
+      Object.entries(updates).forEach(([problemIndex, update]) => {
+        const index = parseInt(problemIndex)
+        if (isNaN(index)) return
+
+        setUserAnswers(prev => ({
+          ...prev,
+          [activeContent.id]: {
+            ...(prev[activeContent.id] || {}),
+            [index]: update.value
+          }
+        }))
+      })
+    })
+
+    return () => unsubscribe()
+  }, [currentUser?.id, activeContent?.id])
+  
+  // Save answers when user navigates away or closes tab
+  useEffect(() => {
+    if (!activeContent || !currentUser) return
+    
+    // Function to save answers before unloading
+    const saveBeforeUnload = () => {
+      console.log("Saving answers before unload...")
+      saveAnswers(activeContent)
+    }
+    
+    // Add event listeners for page unload
+    window.addEventListener('beforeunload', saveBeforeUnload)
+    
+    // Clean up event listeners
+    return () => {
+      window.removeEventListener('beforeunload', saveBeforeUnload)
+      // Also save when unmounting component (e.g., navigating to another page)
+      saveBeforeUnload()
+    }
+  }, [activeContent, userAnswers, currentUser])
+  
+  // Auto-save answers periodically
+  useEffect(() => {
+    if (!activeContent || !currentUser) return
+    
+    // Set up auto-save interval (every 30 seconds)
+    const autoSaveInterval = setInterval(() => {
+      console.log("Auto-saving answers...")
+      saveAnswers(activeContent)
+    }, 30000) // 30 seconds
+    
+    // Clean up interval on unmount
+    return () => clearInterval(autoSaveInterval)
+  }, [activeContent, userAnswers, currentUser])
+
+  // Load class and curriculum data
+  useEffect(() => {
+    const loadClassAndCurriculum = async () => {
+      // Check if user is a student
+      const user = sessionManager.getCurrentUser()
+      if (!user || user.role !== "student") {
+        toast({
+          title: "Access denied",
+          description: "You must be logged in as a student to view this page",
+          variant: "destructive",
+        })
+        router.push("/student")
+        return
+      }
+
+      // Cast user to User type
+      const typedUser = user.user as unknown as User;
+      setCurrentUser(typedUser);
+
+      // Try to get class from storage
+      try {
+        // Get classes and make sure it's an array before using .find()
+        const classes = await storage.getClasses();
+        console.log("DEBUG - ClassId from URL:", classId);
+        console.log("DEBUG - Retrieved classes count:", Array.isArray(classes) ? classes.length : "Not an array");
+        
+        if (Array.isArray(classes)) {
+          // Log class IDs for debugging
+          console.log("DEBUG - Available class IDs:", classes.map(c => c && c.id).filter(Boolean));
+          
+          // Try to find the class with more flexible matching
+          const foundClass = classes.find((c) => {
+            if (!c) return false;
+            console.log(`DEBUG - Comparing class ID: ${c.id} with URL classId: ${classId}`);
+            return c.id === classId || c.id?.includes(classId) || classId.includes(c.id);
+          });
+          
+          console.log("DEBUG - Found class:", foundClass ? "Yes - " + foundClass.name : "No class found with this ID");
+          
+          if (foundClass) {
+            // Enhanced debug logging for enrollment check
+            console.log("DEBUG - Current user:", JSON.stringify(typedUser));
+            
+            // Check if user has an id directly or nested in user property
+            const userId = typedUser.id;
+            console.log("DEBUG - User ID for enrollment check:", userId);
+            
+            // Debug enrolled students array
+            console.log("DEBUG - Class enrolled students:", 
+              foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) 
+                ? foundClass.enrolledStudents 
+                : "No enrolled students array");
+            
+            // More flexible enrollment check that handles different user ID formats
+            const isEnrolled = 
+              // Standard check
+              (foundClass.enrolledStudents && 
+               Array.isArray(foundClass.enrolledStudents) && 
+               foundClass.enrolledStudents.includes(userId)) ||
+              // Special check for non-standard enrollment format
+              (Array.isArray(foundClass.students) && 
+               foundClass.students.includes(userId)) ||
+              // Check user classes if available
+              (typedUser.classes && Array.isArray(typedUser.classes) && 
+               typedUser.classes.includes(foundClass.id));
+            
+            console.log("DEBUG - Is user enrolled:", isEnrolled);
+            
+            // If we're directly accessing an assignment via URL, bypass enrollment check for better UX
+            // Get URL parameters directly in case our state hasn't updated yet
+            let directLessonParam, directContentParam;
+            if (typeof window !== 'undefined') {
+              const urlParams = new URLSearchParams(window.location.search);
+              directLessonParam = urlParams.get('lesson');
+              directContentParam = urlParams.get('content');
+              console.log("DEBUG - Direct URL parameters check:", { directLessonParam, directContentParam });
+            }
+            
+            // Check both the state-based params and direct URL params
+            const hasDirectAssignmentAccess = 
+              (queryParams.content && queryParams.lesson) || 
+              (directLessonParam && directContentParam);
+            
+            console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess, 
+              "State params:", queryParams, 
+              "URL params:", { lesson: directLessonParam, content: directContentParam });
+            
+            if (isEnrolled || hasDirectAssignmentAccess) {
+              if (!isEnrolled && hasDirectAssignmentAccess) {
+                console.log("DEBUG - Allowing direct access to assignment despite enrollment issue");
+              }
+              setCurrentClass(foundClass);
+              loadCurriculum();
+            } else {
+              toast({
+                title: "Access denied",
+                description: "You are not enrolled in this class",
+                variant: "destructive",
+              });
+              router.push("/student");
+            }
+          } else {
+            toast({
+              title: "Class not found",
+              description: "The requested class could not be found",
+              variant: "destructive",
+            });
+            router.push("/student");
+          }
+        }
+      } catch (error) {
+        console.error("Error loading class:", error);
+        toast({
+          title: "Error loading class",
+          description: "There was an error loading the class data",
+          variant: "destructive",
+        });
+      }
+    };
+
+    loadClassAndCurriculum();
+  }, [classId, router, toast, queryParams]);
+
+  // Load curriculum data
+  const loadCurriculum = async () => {
+    try {
+      // First try the regular curriculum with filtering
+      const curriculumData = await storage.getCurriculum(classId, currentUser?.role);
+      
+      if (curriculumData) {
+        console.log("Loaded curriculum data:", curriculumData);
+        setCurriculum(curriculumData);
+        setLessonsWithContent(curriculumData.content?.lessons || []);
+        setLastUpdateTimestamp(curriculumData.lastUpdated || null);
+      } else {
+        toast({
+          title: "No content available",
+          description: "There is no published curriculum content available for this class yet.",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error("Error loading curriculum:", error);
+      toast({
+        title: "Error loading curriculum",
+        description: "There was a problem loading the curriculum content.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Load saved answers
+>>>>>>> b5d1ba7819c3b4f82ab821ada8b7df7d4bb7913d
   const loadSavedAnswers = async (content: Content) => {
     if (!currentUser?.id || !content?.id) return;
 
+<<<<<<< HEAD
     const answersPath = `student-answers/${classId}/${content.id}`;
     const answersRef = ref(realtimeDb, answersPath);
 
+=======
+    try {
+      const answersRef = ref(realtimeDb, `answers/${currentUser.id}/${content.id}`)
+      const snapshot = await get(answersRef)
+      const savedData = snapshot.val()
+
+      console.log(`Loading saved answers for content ${content.id}:`, savedData)
+
+      if (savedData && savedData.userAnswers) {
+        // Update the user answers with the saved data
+        setUserAnswers(prev => ({
+          ...prev,
+          [content.id]: savedData.userAnswers
+        }))
+
+        // Update user grades if available
+        if (savedData.userGrades) {
+          setUserGrades(prev => ({
+            ...prev,
+            [content.id]: savedData.userGrades
+          }))
+        }
+      } else {
+        // Initialize empty answers for this content
+        setUserAnswers(prev => ({
+          ...prev,
+          [content.id]: {}
+        }))
+        setUserGrades(prev => ({
+          ...prev,
+          [content.id]: {}
+        }))
+      }
+
+      // Set up real-time listener for updates
+      const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${content.id}`)
+      const unsubscribe = onValue(updatesRef, (snapshot) => {
+        const updates = snapshot.val() as Record<string, RealTimeUpdate>
+        if (!updates) return
+
+        Object.entries(updates).forEach(([problemIndex, update]) => {
+          const index = parseInt(problemIndex)
+          if (isNaN(index)) return
+
+          setUserAnswers(prev => ({
+            ...prev,
+            [content.id]: {
+              ...(prev[content.id] || {}),
+              [index]: update.value
+            }
+          }))
+        })
+      })
+
+      return () => unsubscribe()
+    } catch (error) {
+      console.error(`Error loading saved answers for content ${content.id}:`, error)
+      
+      // Initialize empty answers for this content as fallback
+      setUserAnswers(prev => ({
+        ...prev,
+        [content.id]: {}
+      }))
+      setUserGrades(prev => ({
+        ...prev,
+        [content.id]: {}
+      }))
+    }
+  }
+
+  // Check if all problems in content are completed
+  const checkContentCompletion = (content: Content): boolean => {
+    if (!content?.problems || !content.id || !userAnswers[content.id]) return false
+
+    return content.problems.every((problem, index) => {
+      if (!problem) return false
+      return userAnswers[content.id][index] !== undefined
+    })
+  };
+
+  // Save answers to Firebase
+  const saveAnswers = async (content: Content) => {
+    const userId = sessionManager.getSession()?.userId
+    if (!userId || !content?.id) return
+
+    // Get the answers for this specific content
+    const contentAnswers = userAnswers[content.id] || {}
+    
+    // Create a sanitized version of answers without undefined values
+    const sanitizedAnswers = Object.entries(contentAnswers).reduce((acc, [problemIndex, value]) => {
+      if (value !== undefined && value !== null) {
+        acc[problemIndex] = value
+      }
+      return acc
+    }, {} as Record<string, any>)
+
+    // Get the grades for this specific content
+    const contentGrades = userGrades[content.id] || {}
+    
+    // Create a sanitized version of grades without undefined values
+    const sanitizedGrades = Object.entries(contentGrades).reduce((acc, [problemIndex, value]) => {
+      if (value !== undefined && value !== null) {
+        acc[problemIndex] = value
+      }
+      return acc
+    }, {} as Record<string, any>)
+
+    const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
+    const isComplete = checkContentCompletion(content)
+
+    console.log(`Saving answers for content ${content.id}:`, sanitizedAnswers)
+    
+    await set(answersRef, {
+      userAnswers: sanitizedAnswers,
+      userGrades: sanitizedGrades,
+      status: isComplete ? 'completed' : 'in-progress',
+      lastUpdated: new Date().toISOString(),
+      studentId: userId,  // Explicitly include studentId
+      contentId: content.id  // Explicitly include contentId
+    })
+  }
+
+  const handleSelectContent = async (content: Content) => {
+    setActiveContent(content)
+    await loadSavedAnswers(content)
+
+    // Check if this content has already been graded for this student
+    if (currentUser) {
+      const gradedContentKey = `graded-content-${classId}-${content.id}`
+      const gradedData = localStorage.getItem(gradedContentKey)
+
+      if (gradedData) {
+        try {
+          const submissions = JSON.parse(gradedData)
+          const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id)
+
+          if (userSubmission && userSubmission.status === "completed") {
+            // If the student has already completed this content, show the results
+            setShowResults(true)
+
+            // Load their previous answers if available
+            if (userSubmission.answers) {
+              if (userSubmission.answers.multipleChoice) {
+                setUserAnswers({
+                  [content.id]: userSubmission.answers.multipleChoice,
+                })
+              }
+
+              if (userSubmission.answers.mathExpression) {
+                setMathExpressionInputs({
+                  [content.id]: userSubmission.answers.mathExpression,
+                })
+              }
+
+              if (userSubmission.answers.openEnded) {
+                setOpenEndedAnswers({
+                  [content.id]: userSubmission.answers.openEnded,
+                })
+              }
+            }
+
+            return
+          }
+        } catch (error) {
+          console.error("Error loading graded content:", error)
+        }
+      }
+    }
+
+    setShowResults(false)
+
+    // Initialize user answers if not already set
+    if (content.problems && content.problems.length > 0) {
+      // For multiple choice questions
+      const initialMultipleChoiceAnswers = {}
+      // For math expression questions
+      const initialMathExpressionInputs = {}
+      // For open ended questions
+      const initialOpenEndedAnswers = {}
+
+      content.problems.forEach((problem, index) => {
+        if (problem.type === "multiple-choice") {
+          if (!userAnswers[content.id] || userAnswers[content.id][index] === undefined) {
+            initialMultipleChoiceAnswers[index] = -1 // -1 means no answer selected
+          }
+        } else if (problem.type === "math-expression") {
+          if (!mathExpressionInputs[content.id] || mathExpressionInputs[content.id][index] === undefined) {
+            initialMathExpressionInputs[index] = ""
+          }
+        } else if (problem.type === "open-ended") {
+          if (!openEndedAnswers[content.id] || openEndedAnswers[content.id][index] === undefined) {
+            initialOpenEndedAnswers[index] = ""
+          }
+        }
+      })
+
+      if (Object.keys(initialMultipleChoiceAnswers).length > 0) {
+        setUserAnswers({
+          ...userAnswers,
+          [content.id]: {
+            ...(userAnswers[content.id] || {}),
+            ...initialMultipleChoiceAnswers,
+          },
+        })
+      }
+
+      if (Object.keys(initialMathExpressionInputs).length > 0) {
+        setMathExpressionInputs({
+          ...mathExpressionInputs,
+          [content.id]: {
+            ...(mathExpressionInputs[content.id] || {}),
+            ...initialMathExpressionInputs,
+          },
+        })
+      }
+
+      if (Object.keys(initialOpenEndedAnswers).length > 0) {
+        setOpenEndedAnswers({
+          ...openEndedAnswers,
+          [content.id]: {
+            ...(openEndedAnswers[content.id] || {}),
+            ...initialOpenEndedAnswers,
+          },
+        })
+
+  // Handle multiple choice answer selection
+  const handleMultipleChoiceSelect = (value: string, problemIndex: number) => {
+    if (!activeContent) return
+    setUserAnswers(prev => ({
+      ...prev,
+      [activeContent.id]: {
+        ...prev[activeContent.id],
+        [problemIndex]: value
+      }
+    }))
+    saveAnswers(activeContent)
+    sendRealTimeUpdate(problemIndex, value, 'multiple-choice')
+  }
+
+  // Handle math expression input
+  const handleMathExpressionInput = (value: string, problemIndex: number) => {
+    if (!activeContent) return
+    setUserAnswers(prev => ({
+      ...prev,
+      [activeContent.id]: {
+        ...prev[activeContent.id],
+        [problemIndex]: value
+      }
+    }))
+    saveAnswers(activeContent)
+    sendRealTimeUpdate(problemIndex, value, 'math-expression')
+  }
+
+  // Types for real-time updates
+  type RealTimeUpdate = {
+    value: string
+    type: 'multiple-choice' | 'math-expression' | 'open-ended'
+    timestamp: string
+    problemId: string
+  }
+
+  // Send real-time update
+  const sendRealTimeUpdate = async (problemIndex: number, value: string, type: RealTimeUpdate['type']) => {
+    if (!currentUser?.id || !activeContent?.id || !activeContent.problems?.[problemIndex]) return
+
+    const problem = activeContent.problems[problemIndex]
+    const updateRef = ref(realtimeDb, `updates/${currentUser.id}/${activeContent.id}/${problemIndex}`)
+    
+    const update: RealTimeUpdate = {
+      value,
+      type,
+      timestamp: new Date().toISOString(),
+      problemId: problem.id || ''
+    }
+
+    await set(updateRef, update)
+  }
+
+  // Handle open ended answer input
+  const handleOpenEndedInput = (value: string, problemIndex: number) => {
+    if (!activeContent) return
+    setUserAnswers(prev => ({
+      ...prev,
+      [activeContent.id]: {
+        ...prev[activeContent.id],
+        [problemIndex]: value
+      }
+    }))
+    saveAnswers(activeContent)
+
+    // Send real-time update every few keystrokes
+    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
+      sendRealTimeUpdate(problemIndex, value, 'open-ended')
+      setLastUpdateTimestamp(Date.now().toString())
+    }
+  }
+
+  // Auto-grade a math expression answer
+  const gradeMathExpression = (problem: Problem, studentAnswer: string): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentAnswer || !problem) return result;
+
+    // Clean up the student answer
+    const cleanStudentAnswer = studentAnswer.trim().toLowerCase();
+    
+    if (problem.correctAnswers && Array.isArray(problem.correctAnswers)) {
+      // Multiple correct answers
+      for (const correctAnswer of problem.correctAnswers) {
+        const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
+        
+        // Check for exact match
+        if (cleanStudentAnswer === cleanCorrectAnswer) {
+          result = { correct: true, score: problem.points || 0 };
+          return result;
+        }
+        
+        // Try numeric comparison if both are numbers
+        const studentNum = parseFloat(cleanStudentAnswer);
+        const correctNum = parseFloat(cleanCorrectAnswer);
+        
+        if (!isNaN(studentNum) && !isNaN(correctNum)) {
+          const tolerance = problem.tolerance || 0.001;
+          if (Math.abs(correctNum - studentNum) <= tolerance) {
+            result = { correct: true, score: problem.points || 0 };
+            return result;
+          }
+        }
+      }
+    } else if (problem.correctAnswer) {
+      // Legacy support for single correct answer
+      const correctAnswer = problem.correctAnswer.toString();
+      const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
+      
+      // Check for exact match first
+      if (cleanStudentAnswer === cleanCorrectAnswer) {
+        result = { correct: true, score: problem.points || 0 };
+        return result;
+      }
+      
+      // Try numeric comparison if both are numbers
+      const studentNum = parseFloat(cleanStudentAnswer);
+      const correctNum = parseFloat(cleanCorrectAnswer);
+      
+      if (!isNaN(studentNum) && !isNaN(correctNum)) {
+        const tolerance = problem.tolerance || 0.001;
+        if (Math.abs(correctNum - studentNum) <= tolerance) {
+          result = { correct: true, score: problem.points || 0 };
+          return result;
+        }
+      }
+    }
+    
+    return result;
+  };
+
+  // Auto-grade an open ended answer
+  const gradeOpenEnded = (problem: Problem, studentAnswer: string): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentAnswer || !problem || !problem.keywords || !Array.isArray(problem.keywords)) {
+      return result;
+    }
+    
+    // Check for keywords
+    const foundKeywords = problem.keywords.filter(keyword => 
+      studentAnswer.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    if (foundKeywords.length > 0) {
+      const score = (foundKeywords.length / problem.keywords.length) * (problem.points || 1);
+      result = { correct: score >= (problem.points || 1) * 0.6, score };
+    if (currentUser) {
+      sendRealTimeUpdate(problemIndex, 
+        problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
+        problem.type === "math-expression" ? mathExpressionInputs[activeContent.id]?.[problemIndex] :
+        openEndedAnswers[activeContent.id]?.[problemIndex],
+        problem.type,
+        problem
+      );
+    }
+  };
+
+  // Calculate total score
+  const calculateTotalScore = () => {
+    if (!activeContent?.problems) return 0;
+    return activeContent.problems.reduce((total, _, index) => {
+      return total + (problemScores[`${activeContent.id}-${index}`] || 0);
+    }, 0);
+  };
+
+  // Calculate total possible points
+  const calculateTotalPossiblePoints = () => {
+    if (!activeContent?.problems) return 0;
+    return activeContent.problems.reduce((total, problem) => {
+      return total + (problem.points || 0);
+    }, 0);
+  };
+
+  // Check if a problem is submitted
+  const isProblemSubmitted = (problemIndex: number) => {
+    if (!activeContent?.id) return false;
+    const key = `${activeContent.id}-${problemIndex}`;
+    return problemState[key]?.submitted || false;
+  };
+
+  // Get problem score
+  const getProblemScore = (problemIndex: number) => {
+    if (!activeContent?.id) return 0;
+    const key = `${activeContent.id}-${problemIndex}`;
+    return problemState[key]?.score || 0;
+  };
+
+  // Render content type icon
+  const renderContentTypeIcon = (type: string | undefined) => {
+    // Always return a valid React element
+    if (!type) return <FileText className="w-4 h-4 mr-2" />;
+    
+    const icon = getContentTypeIcon(type);
+    if (!icon) return <FileText className="w-4 h-4 mr-2" />;
+    
+    return icon;
+  }
+
+  // Get status badge for content
+  const getStatusBadge = (content: Content) => {
+    if (currentUser) {
+      const gradedContentKey = `graded-content-${classId}-${content.id}`;
+      const gradedData = localStorage.getItem(gradedContentKey);
+
+      if (gradedData) {
+        try {
+          const submissions = JSON.parse(gradedData) as ProblemSubmission[];
+          const userSubmission = submissions.find((sub: ProblemSubmission) => sub.studentId === currentUser.id);
+
+          if (userSubmission) {
+            if (userSubmission.status === "completed") {
+              return (
+                <Badge variant="success" className="bg-green-500">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Completed ({userSubmission.score}%)
+                </Badge>
+              );
+            } else {
+              return (
+                <Badge variant="secondary">
+                  <Clock className="w-3 h-3 mr-1" />
+                  In Progress
+                </Badge>
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Error loading graded content:", error);
+        }
+      }
+    }
+
+    return <Badge variant="outline">Not Started</Badge>;
+  }
+
+  // Add the new function for sending real-time updates
+  const sendRealTimeUpdate = (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
+    if (!currentUser || !activeContent || !problem) return;
+    
+>>>>>>> b5d1ba7819c3b4f82ab821ada8b7df7d4bb7913d
     try {
       // Try to load from Firebase first
       const snapshot = await get(answersRef);
