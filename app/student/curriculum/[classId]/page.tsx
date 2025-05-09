@@ -1,117 +1,89 @@
 "use client"
 
-import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import Link from "next/link"
-import {
-  ChevronRight,
-  ChevronLeft,
-  Book,
-  PenLine,
-  ClipboardCheck,
-  GraduationCap,
-  CheckCircle,
-  XCircle,
-  ChevronDown,
-  ChevronUp,
-  Edit,
-  Save,
+import * as React from 'react';
+import { useEffect, useState } from 'react';
+import { ref, get, set, onValue, serverTimestamp } from 'firebase/database';
+import { useToast } from '@/components/ui/use-toast';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { 
+  BookOpen,
+  FileQuestion,
+  FileText,
+  CheckCircle2,
+  Clock,
+  Pencil,
+  Calculator,
   Loader2,
-  Check,
-  X,
-} from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
-import { sessionManager } from "@/lib/session"
-import { storage } from "@/lib/storage"
-import { realtimeDb } from "@/lib/firebase"
-import { ref, set, push, serverTimestamp, get, onValue } from "firebase/database"
+  Send,
+  ArrowLeft,
+  ArrowRight,
+  Video,
+  AlertCircle
+} from 'lucide-react';
+import Link from 'next/link';
+import { useRouter, useParams } from 'next/navigation';
+import { realtimeDb } from '@/lib/firebase';
+import { sessionManager } from '@/lib/session';
 
-// Types for state management
-interface RealTimeUpdate {
-  value: string
-  type: 'multiple-choice' | 'math-expression' | 'open-ended'
-  timestamp: string
-  problemId: string
-}
-
-interface Session {
-  userId: string
-}
-
-declare module '@/lib/session' {
-  interface SessionManager {
-    getSession(): Session | null
-  }
-}
-import { storage } from "@/lib/storage"
-import { realtimeDb } from "@/lib/firebase"
-import { ref, set, push, serverTimestamp, get } from "firebase/database"
-
-// Content types for curriculum
-const getContentTypeIcon = (type: string) => {
-  switch (type) {
-    case "new-material":
-      return <BookOpen className="w-4 h-4 mr-2" />;
-    case "guided-practice":
-      return <PenTool className="w-4 h-4 mr-2" />;
-    case "classwork":
-      return <ClipboardList className="w-4 h-4 mr-2" />;
-    case "homework":
-      return <BookMarked className="w-4 h-4 mr-2" />;
-    case "quiz":
-      return <FileQuestion className="w-4 h-4 mr-2" />;
-    case "test":
-      return <FileText className="w-4 h-4 mr-2" />;
-    default:
-      return null;
-  }
+interface Toast {
+  id: string;
+  title?: string;
+  description?: string;
+  action?: React.ReactNode;
+  variant?: 'default' | 'destructive';
 };
 
-const contentTypes = [
-  { id: "new-material", name: "New Material" },
-  { id: "guided-practice", name: "Guided Practice" },
-  { id: "classwork", name: "Classwork" },
-  { id: "homework", name: "Homework" },
-  { id: "quiz", name: "Quiz" },
-  { id: "test", name: "Test" },
-];
+type ToasterToast = Toast & {
+  dismiss: () => void;
+  update: (props: Toast) => void;
+};
 
-// Function to render LaTeX in the UI
-const renderLatex = (text: string) => {
-  if (!text) return ""
-
-  // Simple regex to identify LaTeX-like content between $$ delimiters
-  const parts = text.split(/(\$\$.*?\$\$)/g)
-
-  if (parts.length === 1) return text
-
-  return (
-    <>
-      {parts && Array.isArray(parts) && parts.map((part, index) => {
-        if (part && part.startsWith("$$") && part.endsWith("$$")) {
-          const latex = part.slice(2, -2)
-          return (
-            <span
-              key={index}
-              className="inline-block px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-sm"
-            >
-              {latex}
-            </span>
-          )
-        }
-        return part
-      })}
-    </>
-  )
+// Install required type definitions
+// npm install --save-dev @types/lucide-react @types/next
+// Types
+interface Content {
+  id: string;
+  title: string;
+  type: 'lesson' | 'quiz' | 'assignment';
+  problems?: Problem[];
 }
+
+interface Problem {
+  readonly id: string;
+  question: string;
+  type: 'multiple_choice' | 'math_expression' | 'open_ended';
+  options?: string[];
+  correctAnswer?: string | number;
+  readonly points: number;
+  explanation?: string;
+}
+
+interface ProblemSubmission {
+  readonly studentId: string;
+  readonly status: 'completed' | 'in_progress';
+  readonly score: number;
+}
+
+interface ContentState {
+  id: string;
+  title: string;
+  type: 'lesson' | 'quiz' | 'assignment';
+  problems?: Problem[];
+  status: 'not_started' | 'in_progress' | 'completed';
+  score?: number;
+  totalPoints?: number;
+}
+
+type MathExpressionInputs = Record<string, string[]>;
+type OpenEndedAnswers = Record<string, string>;
+type UserAnswers = Record<string, (string | number | null)[]>;
+type ProblemType = 'multiple_choice' | 'math_expression' | 'open_ended';
 
 // Update User type to match the actual structure
 interface User {
@@ -254,12 +226,11 @@ interface ProblemSubmission {
   score?: number;
 }
 
-interface GradingResult {
   correct: boolean;
   score: number;
 }
 
-export default function StudentCurriculum() {
+const StudentCurriculum: React.FC<StudentCurriculumProps> = () => {
   const router = useRouter()
   const params = useParams()
   const { toast } = useToast()
@@ -300,12 +271,7 @@ export default function StudentCurriculum() {
   const [activeContent, setActiveContent] = useState<Content | null>(null)
   
   // Answer state management
-  const [userAnswers, setUserAnswers] = useState<{
-    [contentId: string]: {
-      [problemIndex: number]: string
-    }
-  }>({})  
-  
+  const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
   const [userGrades, setUserGrades] = useState<{
     [contentId: string]: {
       [problemIndex: number]: {
@@ -331,631 +297,176 @@ export default function StudentCurriculum() {
     title: string;
     contents: Content[];
   }>>([])
-  const [problemScores, setProblemScores] = useState<ProblemScores>({})  
-  const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})  
-  const [problemState, setProblemState] = useState<ProblemState>({})
-
-  // Real-time updates listener
-  useEffect(() => {
-    if (!currentUser?.id || !activeContent?.id) return
-
-    const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${activeContent.id}`)
-    const unsubscribe = onValue(updatesRef, (snapshot) => {
-      const updates = snapshot.val() as Record<string, RealTimeUpdate>
-      if (!updates) return
-
-      Object.entries(updates).forEach(([problemIndex, update]) => {
-        const index = parseInt(problemIndex)
-        if (isNaN(index)) return
-
-        setUserAnswers(prev => ({
-          ...prev,
-          [activeContent.id]: {
-            ...(prev[activeContent.id] || {}),
-            [index]: update.value
-          }
-        }))
-      })
-    })
-
-    return () => unsubscribe()
-  }, [currentUser?.id, activeContent?.id])
-
-  // Load class and curriculum data
-  useEffect(() => {
-    const loadClassAndCurriculum = async () => {
-      // Check if user is a student
-      const user = sessionManager.getCurrentUser()
-      if (!user || user.role !== "student") {
-        toast({
-          title: "Access denied",
-          description: "You must be logged in as a student to view this page",
-          variant: "destructive",
-        })
-        router.push("/student")
-        return
-      }
-
-      // Cast user to User type
-      const typedUser = user.user as unknown as User;
-      setCurrentUser(typedUser);
-
-      // Try to get class from storage
-      try {
-        // Get classes and make sure it's an array before using .find()
-        const classes = await storage.getClasses();
-        console.log("DEBUG - ClassId from URL:", classId);
-        console.log("DEBUG - Retrieved classes count:", Array.isArray(classes) ? classes.length : "Not an array");
-        
-        if (Array.isArray(classes)) {
-          // Log class IDs for debugging
-          console.log("DEBUG - Available class IDs:", classes.map(c => c && c.id).filter(Boolean));
-          
-          // Try to find the class with more flexible matching
-          const foundClass = classes.find((c) => {
-            if (!c) return false;
-            console.log(`DEBUG - Comparing class ID: ${c.id} with URL classId: ${classId}`);
-            return c.id === classId || c.id?.includes(classId) || classId.includes(c.id);
-          });
-          
-          console.log("DEBUG - Found class:", foundClass ? "Yes - " + foundClass.name : "No class found with this ID");
-          
-          if (foundClass) {
-            // Enhanced debug logging for enrollment check
-            console.log("DEBUG - Current user:", JSON.stringify(typedUser));
-            
-            // Check if user has an id directly or nested in user property
-            const userId = typedUser.id;
-            console.log("DEBUG - User ID for enrollment check:", userId);
-            
-            // Debug enrolled students array
-            console.log("DEBUG - Class enrolled students:", 
-              foundClass.enrolledStudents && Array.isArray(foundClass.enrolledStudents) 
-                ? foundClass.enrolledStudents 
-                : "No enrolled students array");
-            
-            // More flexible enrollment check that handles different user ID formats
-            const isEnrolled = 
-              // Standard check
-              (foundClass.enrolledStudents && 
-               Array.isArray(foundClass.enrolledStudents) && 
-               foundClass.enrolledStudents.includes(userId)) ||
-              // Special check for non-standard enrollment format
-              (Array.isArray(foundClass.students) && 
-               foundClass.students.includes(userId)) ||
-              // Check user classes if available
-              (typedUser.classes && Array.isArray(typedUser.classes) && 
-               typedUser.classes.includes(foundClass.id));
-            
-            console.log("DEBUG - Is user enrolled:", isEnrolled);
-            
-            // If we're directly accessing an assignment via URL, bypass enrollment check for better UX
-            // Get URL parameters directly in case our state hasn't updated yet
-            let directLessonParam, directContentParam;
-            if (typeof window !== 'undefined') {
-              const urlParams = new URLSearchParams(window.location.search);
-              directLessonParam = urlParams.get('lesson');
-              directContentParam = urlParams.get('content');
-              console.log("DEBUG - Direct URL parameters check:", { directLessonParam, directContentParam });
-            }
-            
-            // Check both the state-based params and direct URL params
-            const hasDirectAssignmentAccess = 
-              (queryParams.content && queryParams.lesson) || 
-              (directLessonParam && directContentParam);
-            
-            console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess, 
-              "State params:", queryParams, 
-              "URL params:", { lesson: directLessonParam, content: directContentParam });
-            
-            if (isEnrolled || hasDirectAssignmentAccess) {
-              if (!isEnrolled && hasDirectAssignmentAccess) {
-                console.log("DEBUG - Allowing direct access to assignment despite enrollment issue");
-              }
-              setCurrentClass(foundClass);
-              loadCurriculum();
-            } else {
-              toast({
-                title: "Access denied",
-                description: "You are not enrolled in this class",
-                variant: "destructive",
-              });
-              router.push("/student");
-            }
-          } else {
-            toast({
-              title: "Class not found",
-              description: "The requested class could not be found",
-              variant: "destructive",
-            });
-            router.push("/student");
-          }
-        }
-      } catch (error) {
-        console.error("Error loading class:", error);
-        toast({
-          title: "Error loading class",
-          description: "There was an error loading the class data",
-          variant: "destructive",
-        });
-      }
-    };
-
-    loadClassAndCurriculum();
-  }, [classId, router, toast, queryParams]);
-
-  // Load curriculum data
-  const loadCurriculum = async () => {
-    try {
-      // First try the regular curriculum with filtering
-      const curriculumData = await storage.getCurriculum(classId, currentUser?.role);
-      
-      if (curriculumData) {
-        console.log("Loaded curriculum data:", curriculumData);
-        setCurriculum(curriculumData);
-        setLessonsWithContent(curriculumData.content?.lessons || []);
-        setLastUpdateTimestamp(curriculumData.lastUpdated || null);
-      } else {
-        toast({
-          title: "No content available",
-          description: "There is no published curriculum content available for this class yet.",
-          variant: "default",
-        });
-      }
-    } catch (error) {
-      console.error("Error loading curriculum:", error);
-      toast({
-        title: "Error loading curriculum",
-        description: "There was a problem loading the curriculum content.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Load saved answers
+  
+  const [mathExpressionInputs, setMathExpressionInputs] = useState<Record<string, string[]>>({});
+  const [openEndedAnswers, setOpenEndedAnswers] = useState<Record<string, string>>({});
+  
+  // Load saved answers with offline support
   const loadSavedAnswers = async (content: Content) => {
-    if (!currentUser || !content?.id) return
+    if (!currentUser?.id || !content?.id) return;
 
-    const answersRef = ref(realtimeDb, `answers/${currentUser.id}/${content.id}`)
-    const snapshot = await get(answersRef)
-    const savedAnswers = snapshot.val()
+    const answersPath = `student-answers/${classId}/${content.id}`;
+    const answersRef = ref(realtimeDb, answersPath);
 
-    if (savedAnswers) {
-      setUserAnswers(prev => ({
-        ...prev,
-        [content.id]: savedAnswers
-      }))
-    }
-
-    // Set up real-time listener for updates
-    const updatesRef = ref(realtimeDb, `updates/${currentUser.id}/${content.id}`)
-    const unsubscribe = onValue(updatesRef, (snapshot) => {
-      const updates = snapshot.val() as Record<string, RealTimeUpdate>
-      if (!updates) return
-
-      Object.entries(updates).forEach(([problemIndex, update]) => {
-        const index = parseInt(problemIndex)
-        if (isNaN(index)) return
-
-        setUserAnswers(prev => ({
-          ...prev,
-          [content.id]: {
-            ...(prev[content.id] || {}),
-            [index]: update.value
-          }
-        }))
-      })
-    })
-
-    return () => unsubscribe()
-      }
-    } else {
-      // Initialize empty answers for this content
-      setUserAnswers(prev => ({
-        ...prev,
-        [content.id]: {}
-      }))
-      setUserGrades(prev => ({
-        ...prev,
-        [content.id]: {}
-      }))
-    }
-  }
-
-  // Check if all problems in content are completed
-  const checkContentCompletion = (content: Content): boolean => {
-    if (!content?.problems || !content.id || !userAnswers[content.id]) return false
-
-    return content.problems.every((problem, index) => {
-      if (!problem) return false
-      return userAnswers[content.id][index] !== undefined
-    })
-  };
-
-  // Save answers to Firebase
-  const saveAnswers = async (content: Content) => {
-    const userId = sessionManager.getSession()?.userId
-    if (!userId || !content?.id) return
-
-    // Create a sanitized version of answers without undefined values
-    const sanitizedAnswers = Object.entries(userAnswers).reduce((acc, [key, value]) => {
-      if (value !== undefined && value !== null) {
-        acc[key] = value
-      }
-      return acc
-    }, {} as Record<string, any>)
-
-    // Create a sanitized version of grades without undefined values
-    const sanitizedGrades = Object.entries(userGrades).reduce((acc, [key, value]) => {
-      if (value !== undefined && value !== null) {
-        acc[key] = value
-      }
-      return acc
-    }, {} as Record<string, any>)
-
-    const answersRef = ref(realtimeDb, `answers/${userId}/${content.id}`)
-    const isComplete = checkContentCompletion(content)
-
-    await set(answersRef, {
-      userAnswers: sanitizedAnswers,
-      userGrades: sanitizedGrades,
-      status: isComplete ? 'completed' : 'in-progress',
-      lastUpdated: new Date().toISOString(),
-      studentId: userId,  // Explicitly include studentId
-      contentId: content.id  // Explicitly include contentId
-    })
-  }
-
-  const handleSelectContent = async (content: Content) => {
-    setActiveContent(content)
-    await loadSavedAnswers(content)
-
-    // Check if this content has already been graded for this student
-    if (currentUser) {
-      const gradedContentKey = `graded-content-${classId}-${content.id}`
-      const gradedData = localStorage.getItem(gradedContentKey)
-
-      if (gradedData) {
-        try {
-          const submissions = JSON.parse(gradedData)
-          const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id)
-
-          if (userSubmission && userSubmission.status === "completed") {
-            // If the student has already completed this content, show the results
-            setShowResults(true)
-
-            // Load their previous answers if available
-            if (userSubmission.answers) {
-              if (userSubmission.answers.multipleChoice) {
-                setUserAnswers({
-                  [content.id]: userSubmission.answers.multipleChoice,
-                })
-              }
-
-              if (userSubmission.answers.mathExpression) {
-                setMathExpressionInputs({
-                  [content.id]: userSubmission.answers.mathExpression,
-                })
-              }
-
-              if (userSubmission.answers.openEnded) {
-                setOpenEndedAnswers({
-                  [content.id]: userSubmission.answers.openEnded,
-                })
-              }
-            }
-
-            return
-          }
-        } catch (error) {
-          console.error("Error loading graded content:", error)
-        }
-      }
-    }
-
-    setShowResults(false)
-
-    // Initialize user answers if not already set
-    if (content.problems && content.problems.length > 0) {
-      // For multiple choice questions
-      const initialMultipleChoiceAnswers = {}
-      // For math expression questions
-      const initialMathExpressionInputs = {}
-      // For open ended questions
-      const initialOpenEndedAnswers = {}
-
-      content.problems.forEach((problem, index) => {
-        if (problem.type === "multiple-choice") {
-          if (!userAnswers[content.id] || userAnswers[content.id][index] === undefined) {
-            initialMultipleChoiceAnswers[index] = -1 // -1 means no answer selected
-          }
-        } else if (problem.type === "math-expression") {
-          if (!mathExpressionInputs[content.id] || mathExpressionInputs[content.id][index] === undefined) {
-            initialMathExpressionInputs[index] = ""
-          }
-        } else if (problem.type === "open-ended") {
-          if (!openEndedAnswers[content.id] || openEndedAnswers[content.id][index] === undefined) {
-            initialOpenEndedAnswers[index] = ""
-          }
-        }
-      })
-
-      if (Object.keys(initialMultipleChoiceAnswers).length > 0) {
-        setUserAnswers({
-          ...userAnswers,
-          [content.id]: {
-            ...(userAnswers[content.id] || {}),
-            ...initialMultipleChoiceAnswers,
-          },
-        })
-      }
-
-      if (Object.keys(initialMathExpressionInputs).length > 0) {
-        setMathExpressionInputs({
-          ...mathExpressionInputs,
-          [content.id]: {
-            ...(mathExpressionInputs[content.id] || {}),
-            ...initialMathExpressionInputs,
-          },
-        })
-      }
-
-      if (Object.keys(initialOpenEndedAnswers).length > 0) {
-        setOpenEndedAnswers({
-          ...openEndedAnswers,
-          [content.id]: {
-            ...(openEndedAnswers[content.id] || {}),
-            ...initialOpenEndedAnswers,
-          },
-        })
-
-  // Handle multiple choice answer selection
-  const handleMultipleChoiceSelect = (value: string, problemIndex: number) => {
-    if (!activeContent) return
-    setUserAnswers(prev => ({
-      ...prev,
-      [activeContent.id]: {
-        ...prev[activeContent.id],
-        [problemIndex]: value
-      }
-    }))
-    saveAnswers(activeContent)
-    sendRealTimeUpdate(problemIndex, value, 'multiple-choice')
-  }
-
-  // Handle math expression input
-  const handleMathExpressionInput = (value: string, problemIndex: number) => {
-    if (!activeContent) return
-    setUserAnswers(prev => ({
-      ...prev,
-      [activeContent.id]: {
-        ...prev[activeContent.id],
-        [problemIndex]: value
-      }
-    }))
-    saveAnswers(activeContent)
-    sendRealTimeUpdate(problemIndex, value, 'math-expression')
-  }
-
-  // Types for real-time updates
-  type RealTimeUpdate = {
-    value: string
-    type: 'multiple-choice' | 'math-expression' | 'open-ended'
-    timestamp: string
-    problemId: string
-  }
-
-  // Send real-time update
-  const sendRealTimeUpdate = async (problemIndex: number, value: string, type: RealTimeUpdate['type']) => {
-    if (!currentUser?.id || !activeContent?.id || !activeContent.problems?.[problemIndex]) return
-
-    const problem = activeContent.problems[problemIndex]
-    const updateRef = ref(realtimeDb, `updates/${currentUser.id}/${activeContent.id}/${problemIndex}`)
-    
-    const update: RealTimeUpdate = {
-      value,
-      type,
-      timestamp: new Date().toISOString(),
-      problemId: problem.id || ''
-    }
-
-    await set(updateRef, update)
-  }
-
-  // Handle open ended answer input
-  const handleOpenEndedInput = (value: string, problemIndex: number) => {
-    if (!activeContent) return
-    setUserAnswers(prev => ({
-      ...prev,
-      [activeContent.id]: {
-        ...prev[activeContent.id],
-        [problemIndex]: value
-      }
-    }))
-    saveAnswers(activeContent)
-
-    // Send real-time update every few keystrokes
-    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'open-ended')
-      setLastUpdateTimestamp(Date.now().toString())
-    }
-  }
-
-  // Auto-grade a math expression answer
-  const gradeMathExpression = (problem: Problem, studentAnswer: string): GradingResult => {
-    let result: GradingResult = { correct: false, score: 0 };
-    
-    if (!studentAnswer || !problem) return result;
-
-    // Clean up the student answer
-    const cleanStudentAnswer = studentAnswer.trim().toLowerCase();
-    
-    if (problem.correctAnswers && Array.isArray(problem.correctAnswers)) {
-      // Multiple correct answers
-      for (const correctAnswer of problem.correctAnswers) {
-        const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
-        
-        // Check for exact match
-        if (cleanStudentAnswer === cleanCorrectAnswer) {
-          result = { correct: true, score: problem.points || 0 };
-          return result;
-        }
-        
-        // Try numeric comparison if both are numbers
-        const studentNum = parseFloat(cleanStudentAnswer);
-        const correctNum = parseFloat(cleanCorrectAnswer);
-        
-        if (!isNaN(studentNum) && !isNaN(correctNum)) {
-          const tolerance = problem.tolerance || 0.001;
-          if (Math.abs(correctNum - studentNum) <= tolerance) {
-            result = { correct: true, score: problem.points || 0 };
-            return result;
-          }
-        }
-      }
-    } else if (problem.correctAnswer) {
-      // Legacy support for single correct answer
-      const correctAnswer = problem.correctAnswer.toString();
-      const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
-      
-      // Check for exact match first
-      if (cleanStudentAnswer === cleanCorrectAnswer) {
-        result = { correct: true, score: problem.points || 0 };
-        return result;
-      }
-      
-      // Try numeric comparison if both are numbers
-      const studentNum = parseFloat(cleanStudentAnswer);
-      const correctNum = parseFloat(cleanCorrectAnswer);
-      
-      if (!isNaN(studentNum) && !isNaN(correctNum)) {
-        const tolerance = problem.tolerance || 0.001;
-        if (Math.abs(correctNum - studentNum) <= tolerance) {
-          result = { correct: true, score: problem.points || 0 };
-          return result;
-        }
-      }
-    }
-    
-    return result;
-  };
-
-  // Auto-grade an open ended answer
-  const gradeOpenEnded = (problem: Problem, studentAnswer: string): GradingResult => {
-    let result: GradingResult = { correct: false, score: 0 };
-    
-    if (!studentAnswer || !problem || !problem.keywords || !Array.isArray(problem.keywords)) {
-      return result;
-    }
-    
-    // Check for keywords
-    const foundKeywords = problem.keywords.filter(keyword => 
-      studentAnswer.toLowerCase().includes(keyword.toLowerCase())
-    );
-    
-    if (foundKeywords.length > 0) {
-      const score = (foundKeywords.length / problem.keywords.length) * (problem.points || 1);
-      result = { correct: score >= (problem.points || 1) * 0.6, score };
-    if (currentUser) {
-      sendRealTimeUpdate(problemIndex, 
-        problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
-        problem.type === "math-expression" ? mathExpressionInputs[activeContent.id]?.[problemIndex] :
-        openEndedAnswers[activeContent.id]?.[problemIndex],
-        problem.type,
-        problem
-      );
-    }
-  };
-
-  // Calculate total score
-  const calculateTotalScore = () => {
-    if (!activeContent?.problems) return 0;
-    return activeContent.problems.reduce((total, _, index) => {
-      return total + (problemScores[`${activeContent.id}-${index}`] || 0);
-    }, 0);
-  };
-
-  // Calculate total possible points
-  const calculateTotalPossiblePoints = () => {
-    if (!activeContent?.problems) return 0;
-    return activeContent.problems.reduce((total, problem) => {
-      return total + (problem.points || 0);
-    }, 0);
-  };
-
-  // Check if a problem is submitted
-  const isProblemSubmitted = (problemIndex: number) => {
-    if (!activeContent?.id) return false;
-    const key = `${activeContent.id}-${problemIndex}`;
-    return problemState[key]?.submitted || false;
-  };
-
-  // Get problem score
-  const getProblemScore = (problemIndex: number) => {
-    if (!activeContent?.id) return 0;
-    const key = `${activeContent.id}-${problemIndex}`;
-    return problemState[key]?.score || 0;
-  };
-
-  // Render content type icon
-  const renderContentTypeIcon = (type: string | undefined) => {
-    // Always return a valid React element
-    if (!type) return <FileText className="w-4 h-4 mr-2" />;
-    
-    const icon = getContentTypeIcon(type);
-    if (!icon) return <FileText className="w-4 h-4 mr-2" />;
-    
-    return icon;
-  }
-
-  // Get status badge for content
-  const getStatusBadge = (content: Content) => {
-    if (currentUser) {
-      const gradedContentKey = `graded-content-${classId}-${content.id}`;
-      const gradedData = localStorage.getItem(gradedContentKey);
-
-      if (gradedData) {
-        try {
-          const submissions = JSON.parse(gradedData) as ProblemSubmission[];
-          const userSubmission = submissions.find((sub: ProblemSubmission) => sub.studentId === currentUser.id);
-
-          if (userSubmission) {
-            if (userSubmission.status === "completed") {
-              return (
-                <Badge variant="success" className="bg-green-500">
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  Completed ({userSubmission.score}%)
-                </Badge>
-              );
-            } else {
-              return (
-                <Badge variant="secondary">
-                  <Clock className="w-3 h-3 mr-1" />
-                  In Progress
-                </Badge>
-              );
-            }
-          }
-        } catch (error) {
-          console.error("Error loading graded content:", error);
-        }
-      }
-    }
-
-    return <Badge variant="outline">Not Started</Badge>;
-  }
-
-  // Add the new function for sending real-time updates
-  const sendRealTimeUpdate = (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
-    if (!currentUser || !activeContent || !problem) return;
-    
     try {
-      const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
-      const newAnswerRef = push(answersRef);
+      // Try to load from Firebase first
+      const snapshot = await get(answersRef);
       
-      // Get the question text from the problem
-      const questionText = problem.question || 'Question not available';
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        if (data?.answers) {
+          setUserAnswers(prev => ({
+            ...prev,
+            [content.id]: data.answers
+          }));
+          return;
+        }
+      }
+
+      // If Firebase load fails or no data, try local storage
+      if (typeof window !== 'undefined') {
+        const localData = localStorage.getItem(`progress_${content.id}`);
+        if (localData) {
+          try {
+            const parsedData = JSON.parse(localData);
+            if (parsedData?.answers) {
+              setUserAnswers(prev => ({
+                ...prev,
+                [content.id]: parsedData.answers
+              }));
+              
+              // Sync local data back to Firebase
+              await saveAnswers(content);
+              return;
+            }
+          } catch (e) {
+            console.error('Error parsing local storage data:', e);
+          }
+        }
+      }
+
+      // If no saved data found, initialize empty answers
+      setUserAnswers(prev => ({
+        ...prev,
+        [content.id]: {}
+      }));
+    } catch (error) {
+      console.error('Error loading saved answers:', error);
+      toast.error({
+        title: 'Error loading progress',
+        description: 'Unable to load your previous work. Starting fresh.'
+      });
       
+      // Initialize empty answers on error
+      setUserAnswers(prev => ({
+        ...prev,
+        [content.id]: {}
+      }));
+    }
+}
+
+// Save answers to Firebase with proper error handling and retry logic
+const saveAnswers = async (content: Content, retryCount = 3) => {
+  const userId = sessionManager.getSession()?.userId;
+  if (!userId || !content?.id) return;
+
+  const savePath = `student-answers/${classId}/${content.id}`;
+  const answersRef = ref(realtimeDb, savePath);
+
+  try {
+    // Create a sanitized version of answers without undefined values
+    const currentAnswers = userAnswers[content.id] || {};
+    const sanitizedAnswers = Object.entries(currentAnswers).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as Record<string, any>);
+
+    // Save the current state
+    await set(answersRef, {
+      answers: sanitizedAnswers,
+      lastUpdated: serverTimestamp(),
+      completed: checkContentCompletion(content),
+      contentType: content.type,
+      contentTitle: content.title
+    });
+
+    // Update local storage as backup
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`progress_${content.id}`, JSON.stringify({
+        answers: sanitizedAnswers,
+        lastUpdated: new Date().toISOString(),
+        completed: checkContentCompletion(content)
+      }));
+    }
+  } catch (error) {
+    console.error('Error saving answers:', error);
+    if (retryCount > 0) {
+      await saveAnswers(content, retryCount - 1);
+    }
+  }
+}
+
+const checkContentCompletion = (content: Content): boolean => {
+  if (!content.problems || content.problems.length === 0) return true;
+  return content.problems.every((problem, index) => {
+    const answer = userAnswers[content.id]?.[index];
+    return answer !== undefined && answer !== null;
+  });
+};
+
+const getProblemScore = (problem: Problem, answer: any): number => {
+  if (!problem.correctAnswer) return 0;
+  return answer === problem.correctAnswer ? problem.points : 0;
+};
+
+const handleSubmitProblem = async (problemIndex: number) => {
+  if (!activeContent?.problems?.[problemIndex] || !currentUser?.id) return;
+  
+  const problem = activeContent.problems[problemIndex];
+  const answer = userAnswers[activeContent.id]?.[problemIndex];
+  
+  try {
+    await set(
+      ref(realtimeDb, `submissions/${currentUser.id}/${activeContent.id}/${problemIndex}`),
+      {
+        answer,
+        timestamp: serverTimestamp(),
+        status: 'completed' as const,
+        score: getProblemScore(problem, answer)
+      }
+    );
+  } catch (error) {
+    console.error('Error submitting problem:', error);
+    toast({
+      title: 'Error',
+      description: 'Failed to submit answer. Please try again.',
+      error: true
+    });
+  }
+}
+
+const handleSelectContent = async (content: Content) => {
+  if (!content?.id) return;
+  
+  setActiveContent(content);
+  await loadSavedAnswers(content);
+  
+  // Save initial state
+  await saveAnswers(content);
+}
+
+// ... rest of the code remains the same ...
+
+  // Handle real-time updates and auto-save
+  useEffect(() => {
+    if (!currentUser?.id || !activeContent?.id) return;
+
+    // Set up auto-save timer
+    const autoSaveInterval = setInterval(() => {
+      if (activeContent) {
+        saveAnswers(activeContent);
       // Determine if the answer is correct (for multiple choice)
       let isCorrect: boolean | undefined = undefined;
       let partialCredit: number | undefined = undefined;
@@ -1202,7 +713,7 @@ export default function StudentCurriculum() {
                       {activeContent.problems.map((problem, problemIndex) => {
                         if (!problem) return null;
                         const isSubmitted = isProblemSubmitted(problemIndex);
-                        const problemScore = getProblemScore(problemIndex);
+                        const problemScore = getProblemScore(problem, userAnswers[activeContent.id]?.[problemIndex]);
                         
                         return (
                           <div key={problemIndex} className="p-4 border rounded-lg">
@@ -1383,15 +894,15 @@ export default function StudentCurriculum() {
                                     className="mt-4"
                                     onClick={() => handleSubmitProblem(problemIndex)}
                                     disabled={
-                                      (problem.type === "multiple-choice" && 
-                                       (userAnswers[activeContent.id]?.[problemIndex] === undefined || 
-                                        userAnswers[activeContent.id]?.[problemIndex] === -1)) ||
-                                      (problem.type === "math-expression" && 
-                                       (!mathExpressionInputs[activeContent.id]?.[problemIndex] || 
-                                        mathExpressionInputs[activeContent.id]?.[problemIndex] === "")) ||
-                                      (problem.type === "open-ended" && 
-                                       (!openEndedAnswers[activeContent.id]?.[problemIndex] || 
-                                        openEndedAnswers[activeContent.id]?.[problemIndex] === ""))
+                                      problem.type === 'multiple_choice' && 
+                                      (userAnswers[activeContent.id]?.[problemIndex] === undefined || 
+                                       userAnswers[activeContent.id]?.[problemIndex] === -1) ||
+                                      problem.type === 'math_expression' && 
+                                      (!mathExpressionInputs[activeContent.id]?.[problemIndex] || 
+                                       mathExpressionInputs[activeContent.id]?.[problemIndex] === "") ||
+                                      problem.type === 'open_ended' && 
+                                      (!openEndedAnswers[activeContent.id]?.[problemIndex] || 
+                                       openEndedAnswers[activeContent.id]?.[problemIndex] === "")
                                     }
                                   >
                                     Submit Answer
