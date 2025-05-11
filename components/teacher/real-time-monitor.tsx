@@ -1,7 +1,6 @@
 "use client"
 
-import React from 'react'
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from 'react'
 import { 
   Card, 
   CardContent, 
@@ -15,10 +14,10 @@ import { realtimeDb } from "@/lib/firebase"
 import { ref, onValue, off } from "firebase/database"
 import { formatDistance } from "date-fns"
 import {
-  CheckCircle,
+  CheckCircle2,
   Clock,
   AlertCircle,
-  XCircle,
+  XCircle2,
   Activity,
   Users
 } from "lucide-react"
@@ -160,74 +159,46 @@ function RealTimeMonitorContent({
         const answers: Answer[] = [];
         const studentSet = new Set<string>();
         
-        // Process different content types if no specific contentId is provided
-        if (!contentId) {
-          Object.keys(data).forEach(contentKey => {
-            if (!data[contentKey]) return;
-            Object.keys(data[contentKey]).forEach(answerKey => {
-              const answer = data[contentKey][answerKey];
-              if (!answer || typeof answer !== 'object') return;
-              
-              // Add active students to the set
-              if (answer.studentId) {
-                studentSet.add(answer.studentId);
-              }
+        // Process the data structure
+        Object.entries(data).forEach(([studentId, studentData]: [string, any]) => {
+          if (!studentData || typeof studentData !== 'object') return;
+          
+          // Add active students to the set
+          studentSet.add(studentId);
+          
+          // Process answers
+          if (studentData.answers) {
+            Object.entries(studentData.answers).forEach(([problemIndex, answerData]: [string, any]) => {
+              if (!answerData) return;
               
               // Only include recent answers if recentOnly is true
-              if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
+              if (!recentOnly || Date.now() - (studentData.lastUpdated || Date.now()) < 3600000) { // 1 hour
                 answers.push({
-                  studentId: answer.studentId || 'unknown',
-                  studentName: answer.studentName || 'Unknown Student',
-                  studentEmail: answer.studentEmail,
-                  studentAvatar: answer.studentAvatar,
-                  questionId: answer.questionId || `question-${answerKey}`,
-                  questionText: answer.questionText || 'Question not available',
-                  answer: answer.answer || 'No answer provided',
-                  answerType: answer.answerType || 'open-ended',
-                  timestamp: answer.timestamp || Date.now(),
-                  correct: answer.correct,
-                  partialCredit: answer.partialCredit
+                  studentId: studentId,
+                  studentName: studentData.studentName || 'Unknown Student',
+                  studentEmail: studentData.studentEmail,
+                  studentAvatar: studentData.studentAvatar,
+                  questionId: `problem-${problemIndex}`,
+                  questionText: studentData.questionText || 'Question not available',
+                  answer: answerData.toString(),
+                  answerType: studentData.answerType || 'open-ended',
+                  timestamp: studentData.lastUpdated || Date.now(),
+                  correct: studentData.correct,
+                  partialCredit: studentData.partialCredit
                 });
               }
             });
-          });
-        } else {
-          // Process answers for a specific content
-          Object.keys(data).forEach(answerKey => {
-            const answer = data[answerKey];
-            if (!answer || typeof answer !== 'object') return;
-            
-            // Add active students to the set
-            if (answer.studentId) {
-              studentSet.add(answer.studentId);
-            }
-            
-            // Only include recent answers if recentOnly is true
-            if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
-              answers.push({
-                studentId: answer.studentId || 'unknown',
-                studentName: answer.studentName || 'Unknown Student',
-                studentEmail: answer.studentEmail,
-                studentAvatar: answer.studentAvatar,
-                questionId: answer.questionId || `question-${answerKey}`,
-                questionText: answer.questionText || 'Question not available',
-                answer: answer.answer || 'No answer provided',
-                answerType: answer.answerType || 'open-ended',
-                timestamp: answer.timestamp || Date.now(),
-                correct: answer.correct,
-                partialCredit: answer.partialCredit
-              });
-            }
-          });
-        }
-        
-        // Sort by timestamp (newest first)
+          }
+        });
+
+        // Sort answers by timestamp
         answers.sort((a, b) => b.timestamp - a.timestamp);
         
         // Apply filters
         let filteredAnswers = answers;
+        
         if (filter !== 'all') {
-          filteredAnswers = answers.filter(answer => {
+          filteredAnswers = filteredAnswers.filter(answer => {
             switch (filter) {
               case 'correct':
                 return answer.correct === true;
@@ -304,12 +275,12 @@ function RealTimeMonitorContent({
     if (!answer) return null;
     
     if (answer.correct === true) {
-      return <Badge variant="default" className="flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> Correct</Badge>;
+      return <Badge variant="default" className="flex items-center"><CheckCircle2 className="w-3 h-3 mr-1" /> Correct</Badge>;
     } else if (answer.correct === false) {
       if (answer.partialCredit && answer.partialCredit > 0) {
         return <Badge variant="secondary" className="flex items-center"><Clock className="w-3 h-3 mr-1" /> Partial Credit</Badge>;
       } else {
-        return <Badge variant="destructive" className="flex items-center"><XCircle className="w-3 h-3 mr-1" /> Incorrect</Badge>;
+        return <Badge variant="destructive" className="flex items-center"><XCircle2 className="w-3 h-3 mr-1" /> Incorrect</Badge>;
       }
     } else {
       return <Badge variant="outline" className="flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Pending</Badge>;
