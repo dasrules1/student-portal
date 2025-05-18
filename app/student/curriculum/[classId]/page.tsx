@@ -933,29 +933,25 @@ export default function StudentCurriculum() {
         contentId: activeContent.id,
         contentTitle: activeContent.title || 'Untitled Content',
         status: "in-progress",
-        score: score,
-        // Store all answers and states
-        answers: {
-          multipleChoice: userAnswers[activeContent.id] || {},
-          mathExpression: mathExpressionInputs[activeContent.id] || {},
-          openEnded: openEndedAnswers[activeContent.id] || {}
-        },
-        problemStates: problemState,
-        submittedProblems: submittedProblems,
-        lastUpdated: serverTimestamp()
+        score: score
       };
 
       // Save to Realtime Database for real-time updates
-      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
+      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problem-${problemIndex}`);
       await set(realtimeRef, answerData);
 
       // Save to Firestore for persistence
-      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
+      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problem-${problemIndex}`);
       await setDoc(firestoreRef, answerData, { merge: true });
       
       console.log(`Answer saved and real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
       console.error('Error saving answer:', error);
+      toast({
+        title: "Error saving answer",
+        description: "There was a problem saving your answer. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
