@@ -216,6 +216,22 @@ interface GradingResult {
   score: number;
 }
 
+interface StudentSubmission {
+  studentId: string;
+  problemResults: Array<{
+    type: string;
+    correct: boolean;
+    points: number;
+    maxPoints: number;
+    studentAnswer: string;
+    timestamp: number;
+  }>;
+  score: number;
+  status: string;
+  submittedAt: number;
+  lastUpdated: number;
+}
+
 export default function StudentCurriculum() {
   const router = useRouter()
   const params = useParams()
@@ -881,6 +897,23 @@ export default function StudentCurriculum() {
     if (!currentUser || !activeContent || !problem) return;
     
     try {
+      // Determine if the answer is correct based on the problem type
+      let isCorrect = false;
+      let score = 0;
+
+      if (type === 'multiple-choice') {
+        isCorrect = Number(answer) === problem.correctAnswer;
+        score = isCorrect ? (problem.points || 1) : 0;
+      } else if (type === 'math-expression') {
+        const result = gradeMathExpression(problem, answer.toString());
+        isCorrect = result.correct;
+        score = result.score;
+      } else if (type === 'open-ended') {
+        const result = gradeOpenEnded(problem, answer.toString());
+        isCorrect = result.correct;
+        score = result.score;
+      }
+
       // Create the answer object with all required fields
       const answerData = {
         studentId: currentUser.id || 'unknown',
@@ -892,7 +925,7 @@ export default function StudentCurriculum() {
         answer: answer?.toString() || '',
         answerType: type,
         timestamp: Date.now(),
-        correct: type === 'multiple-choice' ? Number(answer) === problem.correctAnswer : undefined,
+        correct: isCorrect,
         partialCredit: 0,
         problemType: problem.type,
         problemPoints: problem.points || 1,
@@ -900,7 +933,7 @@ export default function StudentCurriculum() {
         contentId: activeContent.id,
         contentTitle: activeContent.title || 'Untitled Content',
         status: "in-progress",
-        score: 0,
+        score: score,
         // Store all answers and states
         answers: {
           multipleChoice: userAnswers[activeContent.id] || {},
