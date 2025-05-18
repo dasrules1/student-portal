@@ -23,9 +23,13 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
     }
 
-    // Users collection
+    // Users collection - Teachers can read all users
     match /users/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isTeacher() || 
+        isAdmin()
+      );
       allow write: if isAdmin();
     }
 
@@ -41,7 +45,7 @@ service cloud.firestore {
       );
     }
 
-    // Students collection
+    // Students collection - Teachers can read all students
     match /students/{studentId} {
       allow read: if isAuthenticated() && (
         request.auth.uid == studentId || 
@@ -79,16 +83,10 @@ service cloud.firestore {
       allow write: if isTeacher() || isAdmin();
     }
 
-    // Student Answers collection
-    match /student-answers/{classId}/{contentId}/{answerId} {
-      allow read: if isAuthenticated() && (
-        isTeacher() || 
-        isAdmin() || 
-        (isStudent() && resource.data.studentId == request.auth.uid)
-      );
-      allow write: if isAuthenticated() && (
-        isStudent() && request.resource.data.studentId == request.auth.uid
-      );
+    // Student Answers collection - More permissive rules for testing
+    match /student-answers/{classId}/{contentId}/{studentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
   }
 } 
