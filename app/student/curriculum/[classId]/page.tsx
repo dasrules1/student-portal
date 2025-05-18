@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input"
 import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
-import { ref, set, push, serverTimestamp } from "firebase/database"
+import { ref, set, push, serverTimestamp, get } from "firebase/database"
 
 // Content types for curriculum
 const getContentTypeIcon = (type: string) => {
@@ -410,78 +410,131 @@ export default function StudentCurriculum() {
   };
 
   // Handle selecting a content item
-  const handleSelectContent = (content: Content) => {
+  const handleSelectContent = async (content: Content) => {
     setActiveContent(content)
 
     // Check if this content has already been graded for this student
     if (currentUser) {
-      const gradedContentKey = `graded-content-${classId}-${content.id}`
-      const gradedData = localStorage.getItem(gradedContentKey)
+      try {
+        // First check Firebase for existing answers
+        const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}`);
+        const snapshot = await get(answersRef);
+        const existingAnswers = snapshot.val();
 
-      if (gradedData) {
-        try {
-          const submissions = JSON.parse(gradedData)
-          const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id)
+        if (existingAnswers) {
+          // Find the student's answers
+          const studentAnswers = Object.values(existingAnswers).find(
+            (answer: any) => answer.studentId === currentUser.id
+          );
 
-          if (userSubmission && userSubmission.status === "completed") {
+          if (studentAnswers) {
             // If the student has already completed this content, show the results
-            setShowResults(true)
+            setShowResults(true);
 
-            // Load their previous answers if available
-            if (userSubmission.answers) {
-              if (userSubmission.answers.multipleChoice) {
+            // Load their previous answers
+            if (studentAnswers.answers) {
+              if (studentAnswers.answers.multipleChoice) {
                 setUserAnswers({
-                  [content.id]: userSubmission.answers.multipleChoice,
-                })
+                  [content.id]: studentAnswers.answers.multipleChoice,
+                });
               }
 
-              if (userSubmission.answers.mathExpression) {
+              if (studentAnswers.answers.mathExpression) {
                 setMathExpressionInputs({
-                  [content.id]: userSubmission.answers.mathExpression,
-                })
+                  [content.id]: studentAnswers.answers.mathExpression,
+                });
               }
 
-              if (userSubmission.answers.openEnded) {
+              if (studentAnswers.answers.openEnded) {
                 setOpenEndedAnswers({
-                  [content.id]: userSubmission.answers.openEnded,
-                })
+                  [content.id]: studentAnswers.answers.openEnded,
+                });
               }
             }
 
-            return
+            // Update problem states
+            if (studentAnswers.problemStates) {
+              setProblemState(studentAnswers.problemStates);
+            }
+
+            // Update submitted problems
+            if (studentAnswers.submittedProblems) {
+              setSubmittedProblems(studentAnswers.submittedProblems);
+            }
+
+            return;
           }
-        } catch (error) {
-          console.error("Error loading graded content:", error)
         }
+
+        // If no Firebase data, check localStorage as fallback
+        const gradedContentKey = `graded-content-${classId}-${content.id}`;
+        const gradedData = localStorage.getItem(gradedContentKey);
+
+        if (gradedData) {
+          try {
+            const submissions = JSON.parse(gradedData);
+            const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id);
+
+            if (userSubmission && userSubmission.status === "completed") {
+              setShowResults(true);
+
+              if (userSubmission.answers) {
+                if (userSubmission.answers.multipleChoice) {
+                  setUserAnswers({
+                    [content.id]: userSubmission.answers.multipleChoice,
+                  });
+                }
+
+                if (userSubmission.answers.mathExpression) {
+                  setMathExpressionInputs({
+                    [content.id]: userSubmission.answers.mathExpression,
+                  });
+                }
+
+                if (userSubmission.answers.openEnded) {
+                  setOpenEndedAnswers({
+                    [content.id]: userSubmission.answers.openEnded,
+                  });
+                }
+              }
+
+              return;
+            }
+          } catch (error) {
+            console.error("Error loading graded content:", error);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading student answers:", error);
       }
     }
 
-    setShowResults(false)
+    setShowResults(false);
 
     // Initialize user answers if not already set
     if (content.problems && content.problems.length > 0) {
       // For multiple choice questions
-      const initialMultipleChoiceAnswers = {}
+      const initialMultipleChoiceAnswers = {};
       // For math expression questions
-      const initialMathExpressionInputs = {}
+      const initialMathExpressionInputs = {};
       // For open ended questions
-      const initialOpenEndedAnswers = {}
+      const initialOpenEndedAnswers = {};
 
       content.problems.forEach((problem, index) => {
         if (problem.type === "multiple-choice") {
           if (!userAnswers[content.id] || userAnswers[content.id][index] === undefined) {
-            initialMultipleChoiceAnswers[index] = -1 // -1 means no answer selected
+            initialMultipleChoiceAnswers[index] = -1; // -1 means no answer selected
           }
         } else if (problem.type === "math-expression") {
           if (!mathExpressionInputs[content.id] || mathExpressionInputs[content.id][index] === undefined) {
-            initialMathExpressionInputs[index] = ""
+            initialMathExpressionInputs[index] = "";
           }
         } else if (problem.type === "open-ended") {
           if (!openEndedAnswers[content.id] || openEndedAnswers[content.id][index] === undefined) {
-            initialOpenEndedAnswers[index] = ""
+            initialOpenEndedAnswers[index] = "";
           }
         }
-      })
+      });
 
       if (Object.keys(initialMultipleChoiceAnswers).length > 0) {
         setUserAnswers({
@@ -490,7 +543,7 @@ export default function StudentCurriculum() {
             ...(userAnswers[content.id] || {}),
             ...initialMultipleChoiceAnswers,
           },
-        })
+        });
       }
 
       if (Object.keys(initialMathExpressionInputs).length > 0) {
@@ -500,7 +553,7 @@ export default function StudentCurriculum() {
             ...(mathExpressionInputs[content.id] || {}),
             ...initialMathExpressionInputs,
           },
-        })
+        });
       }
 
       if (Object.keys(initialOpenEndedAnswers).length > 0) {
@@ -510,10 +563,10 @@ export default function StudentCurriculum() {
             ...(openEndedAnswers[content.id] || {}),
             ...initialOpenEndedAnswers,
           },
-        })
+        });
       }
     }
-  }
+  };
 
   // Handle multiple choice answer selection
   const handleMultipleChoiceSelect = (problemIndex: number, optionIndex: number) => {
@@ -813,7 +866,7 @@ export default function StudentCurriculum() {
   }
 
   // Add the new function for sending real-time updates
-  const sendRealTimeUpdate = (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
+  const sendRealTimeUpdate = async (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
     if (!currentUser || !activeContent || !problem) return;
     
     try {
@@ -842,19 +895,27 @@ export default function StudentCurriculum() {
         answer: answer?.toString() || '',
         answerType: type,
         timestamp: Date.now(),
-        correct: isCorrect,
-        partialCredit: partialCredit,
+        correct: isCorrect || false,
+        partialCredit: partialCredit || 0,
         problemType: problem.type,
         problemPoints: problem.points || 1,
         classId: classId,
         contentId: activeContent.id,
         contentTitle: activeContent.title || 'Untitled Content',
         status: isCorrect ? "completed" : "in-progress",
-        score: isCorrect ? (problem.points || 0) : undefined
+        score: isCorrect ? (problem.points || 0) : 0,
+        // Store all answers and states
+        answers: {
+          multipleChoice: userAnswers[activeContent.id] || {},
+          mathExpression: mathExpressionInputs[activeContent.id] || {},
+          openEnded: openEndedAnswers[activeContent.id] || {}
+        },
+        problemStates: problemState,
+        submittedProblems: submittedProblems
       };
       
       // Send the update
-      set(newAnswerRef, answerData);
+      await set(newAnswerRef, answerData);
       
       console.log(`Real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
