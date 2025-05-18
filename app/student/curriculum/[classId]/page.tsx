@@ -419,7 +419,16 @@ export default function StudentCurriculum() {
         // First check Firebase for existing answers
         const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}`);
         const snapshot = await get(answersRef);
-        const existingAnswers = snapshot.val();
+        const existingAnswers = snapshot.val() as Record<string, {
+          studentId: string;
+          answers?: {
+            multipleChoice?: Record<string, number>;
+            mathExpression?: Record<string, string>;
+            openEnded?: Record<string, string>;
+          };
+          problemStates?: Record<string, any>;
+          submittedProblems?: Record<string, boolean>;
+        }> | null;
 
         if (existingAnswers) {
           // Find the student's answers
@@ -871,7 +880,29 @@ export default function StudentCurriculum() {
     
     try {
       const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
-      const newAnswerRef = push(answersRef);
+      
+      // First, try to get existing answers for this student
+      const snapshot = await get(answersRef);
+      const existingAnswers = snapshot.val() as Record<string, {
+        studentId: string;
+        answers?: {
+          multipleChoice?: Record<string, number>;
+          mathExpression?: Record<string, string>;
+          openEnded?: Record<string, string>;
+        };
+        problemStates?: Record<string, any>;
+        submittedProblems?: Record<string, boolean>;
+      }> | null;
+      let studentAnswerKey = null;
+      
+      // Find the existing answer key for this student
+      if (existingAnswers) {
+        Object.entries(existingAnswers).forEach(([key, value]) => {
+          if (value.studentId === currentUser.id) {
+            studentAnswerKey = key;
+          }
+        });
+      }
       
       // Get the question text from the problem
       const questionText = problem.question || 'Question not available';
@@ -914,8 +945,13 @@ export default function StudentCurriculum() {
         submittedProblems: submittedProblems
       };
       
-      // Send the update
-      await set(newAnswerRef, answerData);
+      // If we found an existing answer key, update it. Otherwise, create a new one
+      if (studentAnswerKey) {
+        await set(ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${studentAnswerKey}`), answerData);
+      } else {
+        const newAnswerRef = push(answersRef);
+        await set(newAnswerRef, answerData);
+      }
       
       console.log(`Real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
