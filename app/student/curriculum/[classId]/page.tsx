@@ -933,16 +933,27 @@ export default function StudentCurriculum() {
         contentId: activeContent.id,
         contentTitle: activeContent.title || 'Untitled Content',
         status: "in-progress",
-        score: score
+        score: score,
+        problemIndex: problemIndex
       };
 
       // Save to Realtime Database for real-time updates
-      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problem-${problemIndex}`);
-      await set(realtimeRef, answerData);
+      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
+      await set(realtimeRef, {
+        ...answerData,
+        problems: {
+          [`problem-${problemIndex}`]: answerData
+        }
+      });
 
       // Save to Firestore for persistence
-      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problem-${problemIndex}`);
-      await setDoc(firestoreRef, answerData, { merge: true });
+      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
+      await setDoc(firestoreRef, {
+        ...answerData,
+        problems: {
+          [`problem-${problemIndex}`]: answerData
+        }
+      }, { merge: true });
       
       console.log(`Answer saved and real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
