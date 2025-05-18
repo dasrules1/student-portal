@@ -831,15 +831,15 @@ export default function StudentCurriculum() {
         isCorrect = Number(answer) === problem.correctAnswer;
       }
       
-      // Create the answer object
-      const answerData: ProblemSubmission = {
-        studentId: currentUser.id,
-        studentName: currentUser.name || 'Student',
-        studentEmail: currentUser.email,
-        studentAvatar: currentUser.avatar,
+      // Create the answer object with all required fields
+      const answerData = {
+        studentId: currentUser.id || 'unknown',
+        studentName: currentUser.name || 'Unknown Student',
+        studentEmail: currentUser.email || '',
+        studentAvatar: currentUser.avatar || '',
         questionId: problem.id || `problem-${problemIndex}`,
         questionText: questionText,
-        answer: answer,
+        answer: answer?.toString() || '',
         answerType: type,
         timestamp: Date.now(),
         correct: isCorrect,
@@ -848,7 +848,7 @@ export default function StudentCurriculum() {
         problemPoints: problem.points || 1,
         classId: classId,
         contentId: activeContent.id,
-        contentTitle: activeContent.title,
+        contentTitle: activeContent.title || 'Untitled Content',
         status: isCorrect ? "completed" : "in-progress",
         score: isCorrect ? (problem.points || 0) : undefined
       };

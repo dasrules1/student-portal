@@ -43,6 +43,13 @@ interface Answer {
   timestamp: number
   correct?: boolean
   partialCredit?: number
+  problemType?: string
+  problemPoints?: number
+  classId?: string
+  contentId?: string
+  contentTitle?: string
+  status?: 'in-progress' | 'completed'
+  score?: number
 }
 
 interface RealTimeMonitorProps {
@@ -186,7 +193,14 @@ function RealTimeMonitorContent({
                   answerType: answer.answerType || 'open-ended',
                   timestamp: answer.timestamp || Date.now(),
                   correct: answer.correct,
-                  partialCredit: answer.partialCredit
+                  partialCredit: answer.partialCredit,
+                  problemType: answer.problemType,
+                  problemPoints: answer.problemPoints,
+                  classId: answer.classId,
+                  contentId: answer.contentId,
+                  contentTitle: answer.contentTitle,
+                  status: answer.status,
+                  score: answer.score
                 });
               }
             });
@@ -215,7 +229,14 @@ function RealTimeMonitorContent({
                 answerType: answer.answerType || 'open-ended',
                 timestamp: answer.timestamp || Date.now(),
                 correct: answer.correct,
-                partialCredit: answer.partialCredit
+                partialCredit: answer.partialCredit,
+                problemType: answer.problemType,
+                problemPoints: answer.problemPoints,
+                classId: answer.classId,
+                contentId: answer.contentId,
+                contentTitle: answer.contentTitle,
+                status: answer.status,
+                score: answer.score
               });
             }
           });
