@@ -78,5 +78,17 @@ service cloud.firestore {
       );
       allow write: if isTeacher() || isAdmin();
     }
+
+    // Student Answers collection
+    match /student-answers/{classId}/{contentId}/{answerId} {
+      allow read: if isAuthenticated() && (
+        isTeacher() || 
+        isAdmin() || 
+        (isStudent() && resource.data.studentId == request.auth.uid)
+      );
+      allow write: if isAuthenticated() && (
+        isStudent() && request.resource.data.studentId == request.auth.uid
+      );
+    }
   }
 } 

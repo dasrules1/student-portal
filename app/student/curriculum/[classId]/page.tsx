@@ -30,6 +30,8 @@ import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
 import { ref, set, push, serverTimestamp, get } from "firebase/database"
+import { doc, setDoc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 
 // Content types for curriculum
 const getContentTypeIcon = (type: string) => {
@@ -942,20 +944,25 @@ export default function StudentCurriculum() {
           openEnded: openEndedAnswers[activeContent.id] || {}
         },
         problemStates: problemState,
-        submittedProblems: submittedProblems
+        submittedProblems: submittedProblems,
+        lastUpdated: serverTimestamp()
       };
       
-      // If we found an existing answer key, update it. Otherwise, create a new one
+      // Save to Realtime Database for real-time updates
       if (studentAnswerKey) {
         await set(ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${studentAnswerKey}`), answerData);
       } else {
         const newAnswerRef = push(answersRef);
         await set(newAnswerRef, answerData);
       }
+
+      // Save to Firestore for persistence
+      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
+      await setDoc(firestoreRef, answerData, { merge: true });
       
-      console.log(`Real-time update sent for problem ${problemIndex}:`, answerData);
+      console.log(`Answer saved and real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
-      console.error('Error sending real-time update:', error);
+      console.error('Error saving answer:', error);
     }
   };
 
