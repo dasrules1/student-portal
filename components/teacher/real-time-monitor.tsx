@@ -167,80 +167,40 @@ function RealTimeMonitorContent({
         const answers: Answer[] = [];
         const studentSet = new Set<string>();
         
-        // Process different content types if no specific contentId is provided
-        if (!contentId) {
-          Object.keys(data).forEach(contentKey => {
-            if (!data[contentKey]) return;
-            Object.keys(data[contentKey]).forEach(answerKey => {
-              const answer = data[contentKey][answerKey];
-              if (!answer || typeof answer !== 'object') return;
-              
-              // Add active students to the set
-              if (answer.studentId) {
-                studentSet.add(answer.studentId);
-              }
-              
-              // Only include recent answers if recentOnly is true
-              if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
-                answers.push({
-                  studentId: answer.studentId || 'unknown',
-                  studentName: answer.studentName || 'Unknown Student',
-                  studentEmail: answer.studentEmail,
-                  studentAvatar: answer.studentAvatar,
-                  questionId: answer.questionId || `question-${answerKey}`,
-                  questionText: answer.questionText || 'Question not available',
-                  answer: answer.answer || 'No answer provided',
-                  answerType: answer.answerType || 'open-ended',
-                  timestamp: answer.timestamp || Date.now(),
-                  correct: answer.correct,
-                  partialCredit: answer.partialCredit,
-                  problemType: answer.problemType,
-                  problemPoints: answer.problemPoints,
-                  classId: answer.classId,
-                  contentId: answer.contentId,
-                  contentTitle: answer.contentTitle,
-                  status: answer.status,
-                  score: answer.score
-                });
-              }
-            });
-          });
-        } else {
-          // Process answers for a specific content
-          Object.keys(data).forEach(answerKey => {
-            const answer = data[answerKey];
-            if (!answer || typeof answer !== 'object') return;
-            
-            // Add active students to the set
-            if (answer.studentId) {
-              studentSet.add(answer.studentId);
-            }
-            
-            // Only include recent answers if recentOnly is true
-            if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
-              answers.push({
-                studentId: answer.studentId || 'unknown',
-                studentName: answer.studentName || 'Unknown Student',
-                studentEmail: answer.studentEmail,
-                studentAvatar: answer.studentAvatar,
-                questionId: answer.questionId || `question-${answerKey}`,
-                questionText: answer.questionText || 'Question not available',
-                answer: answer.answer || 'No answer provided',
-                answerType: answer.answerType || 'open-ended',
-                timestamp: answer.timestamp || Date.now(),
-                correct: answer.correct,
-                partialCredit: answer.partialCredit,
-                problemType: answer.problemType,
-                problemPoints: answer.problemPoints,
-                classId: answer.classId,
-                contentId: answer.contentId,
-                contentTitle: answer.contentTitle,
-                status: answer.status,
-                score: answer.score
-              });
-            }
-          });
-        }
+        // Process answers for each student
+        Object.entries(data).forEach(([studentId, studentData]: [string, any]) => {
+          if (!studentData || typeof studentData !== 'object') return;
+          
+          // Add student to active set
+          studentSet.add(studentId);
+          
+          // Create answer object
+          const answer: Answer = {
+            studentId: studentData.studentId || studentId,
+            studentName: studentData.studentName || 'Unknown Student',
+            studentEmail: studentData.studentEmail,
+            studentAvatar: studentData.studentAvatar,
+            questionId: studentData.questionId,
+            questionText: studentData.questionText,
+            answer: studentData.answer,
+            answerType: studentData.answerType,
+            timestamp: studentData.timestamp,
+            correct: studentData.correct,
+            partialCredit: studentData.partialCredit,
+            problemType: studentData.problemType,
+            problemPoints: studentData.problemPoints,
+            classId: studentData.classId,
+            contentId: studentData.contentId,
+            contentTitle: studentData.contentTitle,
+            status: studentData.status,
+            score: studentData.score
+          };
+          
+          // Only include recent answers if recentOnly is true
+          if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
+            answers.push(answer);
+          }
+        });
         
         // Sort by timestamp (newest first)
         answers.sort((a, b) => b.timestamp - a.timestamp);

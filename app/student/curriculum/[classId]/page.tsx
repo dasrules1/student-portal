@@ -881,42 +881,6 @@ export default function StudentCurriculum() {
     if (!currentUser || !activeContent || !problem) return;
     
     try {
-      const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
-      
-      // First, try to get existing answers for this student
-      const snapshot = await get(answersRef);
-      const existingAnswers = snapshot.val() as Record<string, {
-        studentId: string;
-        answers?: {
-          multipleChoice?: Record<string, number>;
-          mathExpression?: Record<string, string>;
-          openEnded?: Record<string, string>;
-        };
-        problemStates?: Record<string, any>;
-        submittedProblems?: Record<string, boolean>;
-      }> | null;
-      let studentAnswerKey = null;
-      
-      // Find the existing answer key for this student
-      if (existingAnswers) {
-        Object.entries(existingAnswers).forEach(([key, value]) => {
-          if (value.studentId === currentUser.id) {
-            studentAnswerKey = key;
-          }
-        });
-      }
-      
-      // Get the question text from the problem
-      const questionText = problem.question || 'Question not available';
-      
-      // Determine if the answer is correct (for multiple choice)
-      let isCorrect: boolean | undefined = undefined;
-      let partialCredit: number | undefined = undefined;
-      
-      if (type === 'multiple-choice' && typeof problem.correctAnswer !== 'undefined') {
-        isCorrect = Number(answer) === problem.correctAnswer;
-      }
-      
       // Create the answer object with all required fields
       const answerData = {
         studentId: currentUser.id || 'unknown',
@@ -924,19 +888,19 @@ export default function StudentCurriculum() {
         studentEmail: currentUser.email || '',
         studentAvatar: currentUser.avatar || '',
         questionId: problem.id || `problem-${problemIndex}`,
-        questionText: questionText,
+        questionText: problem.question || 'Question not available',
         answer: answer?.toString() || '',
         answerType: type,
         timestamp: Date.now(),
-        correct: isCorrect || false,
-        partialCredit: partialCredit || 0,
+        correct: type === 'multiple-choice' ? Number(answer) === problem.correctAnswer : undefined,
+        partialCredit: 0,
         problemType: problem.type,
         problemPoints: problem.points || 1,
         classId: classId,
         contentId: activeContent.id,
         contentTitle: activeContent.title || 'Untitled Content',
-        status: isCorrect ? "completed" : "in-progress",
-        score: isCorrect ? (problem.points || 0) : 0,
+        status: "in-progress",
+        score: 0,
         // Store all answers and states
         answers: {
           multipleChoice: userAnswers[activeContent.id] || {},
@@ -947,14 +911,10 @@ export default function StudentCurriculum() {
         submittedProblems: submittedProblems,
         lastUpdated: serverTimestamp()
       };
-      
+
       // Save to Realtime Database for real-time updates
-      if (studentAnswerKey) {
-        await set(ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${studentAnswerKey}`), answerData);
-      } else {
-        const newAnswerRef = push(answersRef);
-        await set(newAnswerRef, answerData);
-      }
+      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
+      await set(realtimeRef, answerData);
 
       // Save to Firestore for persistence
       const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
