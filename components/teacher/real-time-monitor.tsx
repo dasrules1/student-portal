@@ -145,24 +145,57 @@ function RealTimeMonitorContent({
 
     // Set up real-time listener for student answers
     const answersRef = ref(realtimeDb, `student-answers/${classId}/${contentId}`);
-    const unsubscribe = onValue(answersRef, (snapshot) => {
+    const progressRef = ref(realtimeDb, `student-progress/${classId}/${contentId}`);
+    
+    console.log('Listening to paths:', {
+      answers: `student-answers/${classId}/${contentId}`,
+      progress: `student-progress/${classId}/${contentId}`
+    });
+
+    // Listen to both paths
+    const unsubscribeAnswers = onValue(answersRef, (snapshot) => {
       try {
         const data = snapshot.val();
-        console.log('Received real-time data:', data);
+        console.log('Received real-time answers data:', data);
 
         if (!data) {
           console.log('No student answers found');
-          setRealtimeAnswers([]);
-          setActiveStudents(new Set());
           return;
         }
 
+        processStudentData(data);
+      } catch (error) {
+        console.error('Error processing real-time answers:', error);
+      }
+    });
+
+    const unsubscribeProgress = onValue(progressRef, (snapshot) => {
+      try {
+        const data = snapshot.val();
+        console.log('Received real-time progress data:', data);
+
+        if (!data) {
+          console.log('No student progress found');
+          return;
+        }
+
+        processStudentData(data);
+      } catch (error) {
+        console.error('Error processing real-time progress:', error);
+      }
+    });
+
+    // Helper function to process student data
+    const processStudentData = (data: any) => {
+      try {
         // Process student answers
         const processedAnswers: Answer[] = [];
         const studentSet = new Set<string>();
 
         // Iterate through each student's answers
         Object.entries(data).forEach(([studentId, studentData]: [string, any]) => {
+          console.log('Processing student data:', { studentId, studentData });
+          
           if (!studentData?.problems) {
             console.warn(`No problems found for student ${studentId}`);
             return;
@@ -184,7 +217,7 @@ function RealTimeMonitorContent({
 
             // Create answer object
             const answer: Answer = {
-              id: studentId,
+              id: `${studentId}-${problemKey}`,
               studentId: studentId,
               studentName: problemData.studentName || 'Unknown Student',
               studentEmail: problemData.studentEmail || '',
@@ -234,29 +267,19 @@ function RealTimeMonitorContent({
         setActiveStudents(new Set(Array.from(studentSet)));
         console.log('Processed answers:', maxAnswers);
       } catch (error) {
-        console.error('Error processing real-time data:', error);
+        console.error('Error processing student data:', error);
         toast({
           title: "Error",
           description: "There was a problem processing student answers.",
           variant: "destructive",
         });
-        setRealtimeAnswers([]);
-        setActiveStudents(new Set());
       }
-    }, (error) => {
-      console.error('Real-time listener error:', error);
-      toast({
-        title: "Connection Error",
-        description: "Lost connection to student answers. Please refresh the page.",
-        variant: "destructive",
-      });
-      setRealtimeAnswers([]);
-      setActiveStudents(new Set());
-    });
+    };
 
     return () => {
-      console.log('Cleaning up real-time listener');
-      unsubscribe();
+      console.log('Cleaning up real-time listeners');
+      unsubscribeAnswers();
+      unsubscribeProgress();
     };
   }, [classId, contentId, searchTerm, filter, limitEntries]);
 

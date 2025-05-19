@@ -900,10 +900,10 @@ export default function StudentCurriculum() {
     console.log('Problem data:', problem);
     
     // Get user ID from all possible sources
-    const userId = currentUser?.id || currentUser?.uid || currentUser?.user?.uid;
-    const userName = currentUser?.name || currentUser?.displayName || currentUser?.user?.displayName || 'Unknown Student';
+    const userId = currentUser?.uid || currentUser?.id || currentUser?.user?.uid;
+    const userName = currentUser?.displayName || currentUser?.name || currentUser?.user?.displayName || 'Unknown Student';
     const userEmail = currentUser?.email || currentUser?.user?.email || '';
-    const userAvatar = currentUser?.avatar || currentUser?.user?.photoURL || '';
+    const userAvatar = currentUser?.photoURL || currentUser?.avatar || currentUser?.user?.photoURL || '';
     
     if (!userId) {
       console.error('No user ID found in current user data:', currentUser);
@@ -972,9 +972,9 @@ export default function StudentCurriculum() {
       const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
       await set(realtimeRef, answerData);
 
-      // Save to Firestore for persistence
-      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
-      await setDoc(firestoreRef, answerData, { merge: true });
+      // Also save to student-progress for the progress table
+      const progressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
+      await set(progressRef, answerData);
       
       console.log(`Answer saved successfully for problem ${problemIndex}`);
     } catch (error) {
