@@ -894,7 +894,10 @@ export default function StudentCurriculum() {
 
   // Add the new function for sending real-time updates
   const sendRealTimeUpdate = async (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
-    if (!currentUser || !activeContent || !problem) return;
+    if (!currentUser || !activeContent || !problem) {
+      console.error('Missing required data:', { currentUser, activeContent, problem });
+      return;
+    }
     
     try {
       // Determine if the answer is correct based on the problem type
@@ -916,7 +919,7 @@ export default function StudentCurriculum() {
 
       // Create the answer object with all required fields
       const answerData = {
-        studentId: currentUser.id || 'unknown',
+        studentId: currentUser.id,
         studentName: currentUser.name || 'Unknown Student',
         studentEmail: currentUser.email || '',
         studentAvatar: currentUser.avatar || '',
@@ -938,22 +941,12 @@ export default function StudentCurriculum() {
       };
 
       // Save to Realtime Database for real-time updates
-      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
-      await set(realtimeRef, {
-        ...answerData,
-        problems: {
-          [`problem-${problemIndex}`]: answerData
-        }
-      });
+      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problems/problem-${problemIndex}`);
+      await set(realtimeRef, answerData);
 
       // Save to Firestore for persistence
-      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}`);
-      await setDoc(firestoreRef, {
-        ...answerData,
-        problems: {
-          [`problem-${problemIndex}`]: answerData
-        }
-      }, { merge: true });
+      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problems/problem-${problemIndex}`);
+      await setDoc(firestoreRef, answerData, { merge: true });
       
       console.log(`Answer saved and real-time update sent for problem ${problemIndex}:`, answerData);
     } catch (error) {
