@@ -975,6 +975,34 @@ export default function StudentCurriculum() {
       // Also save to student-progress for the progress table
       const progressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
       await set(progressRef, answerData);
+
+      // Check if all problems are answered
+      const allProblemsRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/problems`);
+      const allProblemsSnapshot = await get(allProblemsRef);
+      const allProblems = allProblemsSnapshot.val() || {};
+      
+      const totalProblems = activeContent.problems?.length || 0;
+      const answeredProblems = Object.keys(allProblems).length;
+      
+      // If all problems are answered, update the status to completed
+      if (answeredProblems >= totalProblems) {
+        const completionData = {
+          ...answerData,
+          status: "completed",
+          completedAt: Date.now()
+        };
+        
+        // Update both paths with completion status
+        await set(realtimeRef, completionData);
+        await set(progressRef, completionData);
+        
+        // Also update the parent node status
+        const parentRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}`);
+        await set(parentRef, { status: "completed", completedAt: Date.now() });
+        
+        const parentProgressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}`);
+        await set(parentProgressRef, { status: "completed", completedAt: Date.now() });
+      }
       
       console.log(`Answer saved successfully for problem ${problemIndex}`);
     } catch (error) {

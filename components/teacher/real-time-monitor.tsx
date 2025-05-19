@@ -252,7 +252,8 @@ function RealTimeMonitorContent({
           
           const matchesFilter = filter === 'all' ||
             (filter === 'correct' && answer.correct) ||
-            (filter === 'incorrect' && !answer.correct);
+            (filter === 'incorrect' && !answer.correct) ||
+            (filter === 'pending' && answer.status === 'in-progress');
           
           return matchesSearch && matchesFilter;
         });
