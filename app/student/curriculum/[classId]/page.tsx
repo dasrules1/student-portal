@@ -894,8 +894,34 @@ export default function StudentCurriculum() {
 
   // Add the new function for sending real-time updates
   const sendRealTimeUpdate = async (problemIndex: number, answer: string | number, type: string, problem: Problem) => {
-    if (!currentUser || !activeContent || !problem) {
-      console.error('Missing required data:', { currentUser, activeContent, problem });
+    // Add detailed validation logging
+    console.log('Current user data:', currentUser);
+    console.log('Active content:', activeContent);
+    console.log('Problem data:', problem);
+    
+    // Get user ID from all possible sources
+    const userId = currentUser?.id || currentUser?.uid || currentUser?.user?.uid;
+    const userName = currentUser?.name || currentUser?.displayName || currentUser?.user?.displayName || 'Unknown Student';
+    const userEmail = currentUser?.email || currentUser?.user?.email || '';
+    const userAvatar = currentUser?.avatar || currentUser?.user?.photoURL || '';
+    
+    if (!userId) {
+      console.error('No user ID found in current user data:', currentUser);
+      toast({
+        title: "Authentication Error",
+        description: "Please log in again to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!activeContent?.id) {
+      console.error('No active content ID');
+      return;
+    }
+
+    if (!problem) {
+      console.error('No problem data provided');
       return;
     }
     
@@ -919,10 +945,10 @@ export default function StudentCurriculum() {
 
       // Create the answer object with all required fields
       const answerData = {
-        studentId: currentUser.id,
-        studentName: currentUser.name || 'Unknown Student',
-        studentEmail: currentUser.email || '',
-        studentAvatar: currentUser.avatar || '',
+        studentId: userId,
+        studentName: userName,
+        studentEmail: userEmail,
+        studentAvatar: userAvatar,
         questionId: problem.id || `problem-${problemIndex}`,
         questionText: problem.question || 'Question not available',
         answer: answer?.toString() || '',
@@ -940,15 +966,17 @@ export default function StudentCurriculum() {
         problemIndex: problemIndex
       };
 
+      console.log('Attempting to save answer data:', answerData);
+
       // Save to Realtime Database for real-time updates
-      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problems/problem-${problemIndex}`);
+      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
       await set(realtimeRef, answerData);
 
       // Save to Firestore for persistence
-      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${currentUser.id}/problems/problem-${problemIndex}`);
+      const firestoreRef = doc(db, `student-answers/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
       await setDoc(firestoreRef, answerData, { merge: true });
       
-      console.log(`Answer saved and real-time update sent for problem ${problemIndex}:`, answerData);
+      console.log(`Answer saved successfully for problem ${problemIndex}`);
     } catch (error) {
       console.error('Error saving answer:', error);
       toast({

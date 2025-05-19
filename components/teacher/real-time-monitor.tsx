@@ -30,26 +30,29 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select"
+import { toast } from "@/components/ui/use-toast"
 
 interface Answer {
-  studentId: string
-  studentName: string
-  studentEmail?: string
-  studentAvatar?: string
-  questionId: string
-  questionText: string
-  answer: string
-  answerType: 'multiple-choice' | 'open-ended' | 'math-expression'
-  timestamp: number
-  correct?: boolean
-  partialCredit?: number
-  problemType?: string
-  problemPoints?: number
-  classId?: string
-  contentId?: string
-  contentTitle?: string
-  status?: 'in-progress' | 'completed'
-  score?: number
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  studentAvatar: string;
+  questionId: string;
+  questionText: string;
+  answer: string;
+  answerType: string;
+  timestamp: number;
+  correct: boolean;
+  partialCredit: number;
+  problemType: string;
+  problemPoints: number;
+  classId: string;
+  contentId: string;
+  contentTitle: string;
+  status: string;
+  score: number;
+  problemIndex: number;
 }
 
 interface RealTimeMonitorProps {
@@ -133,141 +136,129 @@ function RealTimeMonitorContent({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!classId) {
-      setLoading(false);
-      setError('Class ID is required');
+    if (!classId || !contentId) {
+      console.error('Missing required IDs for real-time monitoring');
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    console.log('Setting up real-time listener for:', { classId, contentId });
 
     // Set up real-time listener for student answers
-    const answersRef = contentId 
-      ? ref(realtimeDb, `student-answers/${classId}/${contentId}`) 
-      : ref(realtimeDb, `student-answers/${classId}`);
-
-    const onDataChange = (snapshot: any) => {
+    const answersRef = ref(realtimeDb, `student-answers/${classId}/${contentId}`);
+    const unsubscribe = onValue(answersRef, (snapshot) => {
       try {
-        if (!snapshot.exists()) {
-          setRealtimeAnswers([]);
-          setActiveStudents(new Set());
-          setLoading(false);
-          return;
-        }
-
         const data = snapshot.val();
+        console.log('Received real-time data:', data);
+
         if (!data) {
+          console.log('No student answers found');
           setRealtimeAnswers([]);
           setActiveStudents(new Set());
-          setLoading(false);
           return;
         }
 
-        const answers: Answer[] = [];
+        // Process student answers
+        const processedAnswers: Answer[] = [];
         const studentSet = new Set<string>();
-        
-        // Process answers for each student
+
+        // Iterate through each student's answers
         Object.entries(data).forEach(([studentId, studentData]: [string, any]) => {
-          if (!studentData || typeof studentData !== 'object') return;
-          
-          // Add student to active set
-          studentSet.add(studentId);
-          
-          // Process problems if they exist
-          if (studentData.problems && typeof studentData.problems === 'object') {
-            Object.entries(studentData.problems).forEach(([problemKey, problemData]: [string, any]) => {
-              if (!problemData || typeof problemData !== 'object') return;
-              
-              // Create answer object
-              const answer: Answer = {
-                studentId: problemData.studentId || studentId,
-                studentName: problemData.studentName || 'Unknown Student',
-                studentEmail: problemData.studentEmail,
-                studentAvatar: problemData.studentAvatar,
-                questionId: problemData.questionId,
-                questionText: problemData.questionText,
-                answer: problemData.answer,
-                answerType: problemData.answerType,
-                timestamp: problemData.timestamp,
-                correct: problemData.correct,
-                partialCredit: problemData.partialCredit,
-                problemType: problemData.problemType,
-                problemPoints: problemData.problemPoints,
-                classId: problemData.classId,
-                contentId: problemData.contentId,
-                contentTitle: problemData.contentTitle,
-                status: problemData.status,
-                score: problemData.score
-              };
-              
-              // Only include recent answers if recentOnly is true
-              if (!recentOnly || Date.now() - (answer.timestamp || Date.now()) < 3600000) { // 1 hour
-                answers.push(answer);
-              }
-            });
+          if (!studentData?.problems) {
+            console.warn(`No problems found for student ${studentId}`);
+            return;
           }
-        });
-        
-        // Sort by timestamp (newest first)
-        answers.sort((a, b) => b.timestamp - a.timestamp);
-        
-        // Apply filters
-        let filteredAnswers = answers;
-        if (filter !== 'all') {
-          filteredAnswers = answers.filter(answer => {
-            switch (filter) {
-              case 'correct':
-                return answer.correct === true;
-              case 'incorrect':
-                return answer.correct === false;
-              case 'pending':
-                return answer.correct === undefined;
-              default:
-                return true;
+
+          // Process each problem answer
+          Object.entries(studentData.problems).forEach(([problemKey, problemData]: [string, any]) => {
+            if (!problemData) {
+              console.warn(`No data found for problem ${problemKey}`);
+              return;
             }
+
+            // Extract problem index from the key (e.g., "problem-0" -> 0)
+            const problemIndex = parseInt(problemKey.replace('problem-', ''), 10);
+            if (isNaN(problemIndex)) {
+              console.warn(`Invalid problem index in key ${problemKey}`);
+              return;
+            }
+
+            // Create answer object
+            const answer: Answer = {
+              id: studentId,
+              studentId: studentId,
+              studentName: problemData.studentName || 'Unknown Student',
+              studentEmail: problemData.studentEmail || '',
+              studentAvatar: problemData.studentAvatar || '',
+              questionId: problemData.questionId || problemKey,
+              questionText: problemData.questionText || 'Question not available',
+              answer: problemData.answer || '',
+              answerType: problemData.answerType || 'unknown',
+              timestamp: problemData.timestamp || Date.now(),
+              correct: problemData.correct || false,
+              partialCredit: problemData.partialCredit || 0,
+              problemType: problemData.problemType || 'unknown',
+              problemPoints: problemData.problemPoints || 1,
+              classId: classId,
+              contentId: contentId,
+              contentTitle: problemData.contentTitle || 'Untitled Content',
+              status: problemData.status || 'in-progress',
+              score: problemData.score || 0,
+              problemIndex: problemIndex
+            };
+
+            processedAnswers.push(answer);
+            studentSet.add(studentId);
           });
-        }
-        
-        // Apply search filter
-        if (searchTerm) {
-          filteredAnswers = filteredAnswers.filter(answer => 
-            (answer.studentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (answer.questionText || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (answer.answer || '').toLowerCase().includes(searchTerm.toLowerCase())
-          );
-        }
-        
-        // Limit the number of entries if needed
-        const limitedAnswers = limitEntries > 0 ? filteredAnswers.slice(0, limitEntries) : filteredAnswers;
-        
-        setRealtimeAnswers(limitedAnswers);
-        setActiveStudents(studentSet);
+        });
+
+        // Filter and sort answers
+        let filteredAnswers = processedAnswers.filter(answer => {
+          const matchesSearch = searchTerm === '' || 
+            answer.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            answer.answer.toLowerCase().includes(searchTerm.toLowerCase());
+          
+          const matchesFilter = filter === 'all' ||
+            (filter === 'correct' && answer.correct) ||
+            (filter === 'incorrect' && !answer.correct);
+          
+          return matchesSearch && matchesFilter;
+        });
+
+        // Sort by timestamp (newest first)
+        filteredAnswers.sort((a, b) => b.timestamp - a.timestamp);
+
+        // Limit to maxAnswers
+        const maxAnswers = limitEntries > 0 ? filteredAnswers.slice(0, limitEntries) : filteredAnswers;
+
+        setRealtimeAnswers(maxAnswers);
+        setActiveStudents(new Set(Array.from(studentSet)));
+        console.log('Processed answers:', maxAnswers);
       } catch (error) {
         console.error('Error processing real-time data:', error);
-        setError('Error processing real-time data');
+        toast({
+          title: "Error",
+          description: "There was a problem processing student answers.",
+          variant: "destructive",
+        });
         setRealtimeAnswers([]);
         setActiveStudents(new Set());
-      } finally {
-        setLoading(false);
       }
-    };
-
-    // Set up error handler
-    const onError = (error: any) => {
+    }, (error) => {
       console.error('Real-time listener error:', error);
-      setError('Error connecting to real-time updates');
-      setLoading(false);
-    };
+      toast({
+        title: "Connection Error",
+        description: "Lost connection to student answers. Please refresh the page.",
+        variant: "destructive",
+      });
+      setRealtimeAnswers([]);
+      setActiveStudents(new Set());
+    });
 
-    // Set up the listener with error handling
-    onValue(answersRef, onDataChange, onError);
-
-    // Clean up listener on component unmount
     return () => {
-      off(answersRef, 'value', onDataChange);
+      console.log('Cleaning up real-time listener');
+      unsubscribe();
     };
-  }, [classId, contentId, recentOnly, limitEntries, filter, searchTerm]);
+  }, [classId, contentId, searchTerm, filter, limitEntries]);
 
   // Helper function to format answer display based on type
   const formatAnswer = (answer: Answer) => {
