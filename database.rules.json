@@ -2,7 +2,9 @@
   "rules": {
     "student-answers": {
       "$classId": {
+        ".read": "auth != null",
         "$contentId": {
+          ".read": "auth != null",
           "$userId": {
             ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
             ".write": "auth != null && auth.uid === $userId",
@@ -18,7 +20,9 @@
     },
     "student-progress": {
       "$classId": {
+        ".read": "auth != null",
         "$contentId": {
+          ".read": "auth != null",
           "$userId": {
             ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
             ".write": "auth != null && auth.uid === $userId",
