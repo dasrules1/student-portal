@@ -266,9 +266,12 @@ function RealTimeMonitorContent({
 
         setRealtimeAnswers(maxAnswers);
         setActiveStudents(new Set(Array.from(studentSet)));
+        setLoading(false);
         console.log('Processed answers:', maxAnswers);
       } catch (error) {
         console.error('Error processing student data:', error);
+        setError('Error processing student data');
+        setLoading(false);
         toast({
           title: "Error",
           description: "There was a problem processing student answers.",

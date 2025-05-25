@@ -435,62 +435,69 @@ export default function StudentCurriculum() {
     if (currentUser) {
       try {
         // First check Firebase for existing answers
-        const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}`);
+        const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}/${currentUser.id}/problems`);
         const snapshot = await get(answersRef);
-        const existingAnswers = snapshot.val() as Record<string, {
-          studentId: string;
-          answers?: {
-            multipleChoice?: Record<string, number>;
-            mathExpression?: Record<string, string>;
-            openEnded?: Record<string, string>;
-          };
-          problemStates?: Record<string, any>;
-          submittedProblems?: Record<string, boolean>;
-        }> | null;
+        const existingAnswers = snapshot.val();
+
+        console.log('Loaded existing answers:', existingAnswers);
 
         if (existingAnswers) {
-          // Find the student's answers
-          const studentAnswers = Object.values(existingAnswers).find(
-            (answer: any) => answer.studentId === currentUser.id
-          );
+          // If the student has already completed this content, show the results
+          setShowResults(true);
 
-          if (studentAnswers) {
-            // If the student has already completed this content, show the results
-            setShowResults(true);
+          // Process each problem's answer
+          Object.entries(existingAnswers).forEach(([problemKey, answerData]: [string, any]) => {
+            const problemIndex = parseInt(problemKey.replace('problem-', ''), 10);
+            if (isNaN(problemIndex)) return;
 
-            // Load their previous answers
-            if (studentAnswers.answers) {
-              if (studentAnswers.answers.multipleChoice) {
-                setUserAnswers({
-                  [content.id]: studentAnswers.answers.multipleChoice,
-                });
-              }
+            const problem = content.problems?.[problemIndex];
+            if (!problem) return;
 
-              if (studentAnswers.answers.mathExpression) {
-                setMathExpressionInputs({
-                  [content.id]: studentAnswers.answers.mathExpression,
-                });
-              }
-
-              if (studentAnswers.answers.openEnded) {
-                setOpenEndedAnswers({
-                  [content.id]: studentAnswers.answers.openEnded,
-                });
-              }
+            // Update the appropriate state based on problem type
+            if (problem.type === 'multiple-choice') {
+              setUserAnswers(prev => ({
+                ...prev,
+                [content.id]: {
+                  ...(prev[content.id] || {}),
+                  [problemIndex]: Number(answerData.answer)
+                }
+              }));
+            } else if (problem.type === 'math-expression') {
+              setMathExpressionInputs(prev => ({
+                ...prev,
+                [content.id]: {
+                  ...(prev[content.id] || {}),
+                  [problemIndex]: answerData.answer
+                }
+              }));
+            } else if (problem.type === 'open-ended') {
+              setOpenEndedAnswers(prev => ({
+                ...prev,
+                [content.id]: {
+                  ...(prev[content.id] || {}),
+                  [problemIndex]: answerData.answer
+                }
+              }));
             }
 
-            // Update problem states
-            if (studentAnswers.problemStates) {
-              setProblemState(studentAnswers.problemStates);
-            }
+            // Update problem state
+            setProblemState(prev => ({
+              ...prev,
+              [`${content.id}-${problemIndex}`]: {
+                answer: answerData.answer,
+                submitted: true,
+                score: answerData.score || 0
+              }
+            }));
 
             // Update submitted problems
-            if (studentAnswers.submittedProblems) {
-              setSubmittedProblems(studentAnswers.submittedProblems);
-            }
+            setSubmittedProblems(prev => ({
+              ...prev,
+              [`${content.id}-${problemIndex}`]: true
+            }));
+          });
 
-            return;
-          }
+          return;
         }
 
         // If no Firebase data, check localStorage as fallback
