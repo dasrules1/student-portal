@@ -1,0 +1,42 @@
+{
+  "rules": {
+    "student-answers": {
+      "$classId": {
+        "$contentId": {
+          "$userId": {
+            ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+            ".write": "auth != null && auth.uid === $userId",
+            "problems": {
+              "$problemId": {
+                ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+                ".write": "auth != null && auth.uid === $userId"
+              }
+            }
+          }
+        }
+      }
+    },
+    "student-progress": {
+      "$classId": {
+        "$contentId": {
+          "$userId": {
+            ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+            ".write": "auth != null && auth.uid === $userId",
+            "problems": {
+              "$problemId": {
+                ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+                ".write": "auth != null && auth.uid === $userId"
+              }
+            }
+          }
+        }
+      }
+    },
+    "users": {
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+        ".write": "auth != null && auth.uid === $userId"
+      }
+    }
+  }
+} 
