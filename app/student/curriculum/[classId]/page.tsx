@@ -118,22 +118,22 @@ interface Content {
 
 // Add type for user answers
 interface UserAnswers {
-  [key: string]: {
-    [key: string]: number;
+  [contentId: string]: {
+    [problemIndex: number]: number;
   };
 }
 
 // Add type for math expression inputs
 interface MathExpressionInputs {
-  [key: string]: {
-    [key: string]: string;
+  [contentId: string]: {
+    [problemIndex: number]: string;
   };
 }
 
 // Add type for open ended answers
 interface OpenEndedAnswers {
-  [key: string]: {
-    [key: string]: string;
+  [contentId: string]: {
+    [problemIndex: number]: string;
   };
 }
 
@@ -184,7 +184,7 @@ interface Problem {
 
 interface ProblemState {
   [key: string]: {
-    answer: string | number;
+    answer: string;
     submitted: boolean;
     score: number;
   };
@@ -230,6 +230,17 @@ interface StudentSubmission {
   status: string;
   submittedAt: number;
   lastUpdated: number;
+}
+
+// Add type for submission
+interface Submission {
+  studentId: string;
+  status: string;
+  answers?: {
+    multipleChoice?: { [key: number]: number };
+    mathExpression?: { [key: number]: string };
+    openEnded?: { [key: number]: string };
+  };
 }
 
 export default function StudentCurriculum() {
@@ -447,11 +458,22 @@ export default function StudentCurriculum() {
 
           // Process each problem's answer
           Object.entries(existingAnswers).forEach(([problemKey, answerData]: [string, any]) => {
+            if (!answerData) {
+              console.warn(`No answer data found for problem ${problemKey}`);
+              return;
+            }
+
             const problemIndex = parseInt(problemKey.replace('problem-', ''), 10);
-            if (isNaN(problemIndex)) return;
+            if (isNaN(problemIndex)) {
+              console.warn(`Invalid problem index in key ${problemKey}`);
+              return;
+            }
 
             const problem = content.problems?.[problemIndex];
-            if (!problem) return;
+            if (!problem) {
+              console.warn(`No problem found for index ${problemIndex}`);
+              return;
+            }
 
             // Update the appropriate state based on problem type
             if (problem.type === 'multiple-choice') {
@@ -459,7 +481,7 @@ export default function StudentCurriculum() {
                 ...prev,
                 [content.id]: {
                   ...(prev[content.id] || {}),
-                  [problemIndex]: Number(answerData.answer)
+                  [problemIndex]: Number(answerData.answer) || -1
                 }
               }));
             } else if (problem.type === 'math-expression') {
@@ -467,7 +489,7 @@ export default function StudentCurriculum() {
                 ...prev,
                 [content.id]: {
                   ...(prev[content.id] || {}),
-                  [problemIndex]: answerData.answer
+                  [problemIndex]: answerData.answer || ''
                 }
               }));
             } else if (problem.type === 'open-ended') {
@@ -475,7 +497,7 @@ export default function StudentCurriculum() {
                 ...prev,
                 [content.id]: {
                   ...(prev[content.id] || {}),
-                  [problemIndex]: answerData.answer
+                  [problemIndex]: answerData.answer || ''
                 }
               }));
             }
@@ -484,7 +506,7 @@ export default function StudentCurriculum() {
             setProblemState(prev => ({
               ...prev,
               [`${content.id}-${problemIndex}`]: {
-                answer: answerData.answer,
+                answer: answerData.answer || '',
                 submitted: true,
                 score: answerData.score || 0
               }
@@ -506,8 +528,8 @@ export default function StudentCurriculum() {
 
         if (gradedData) {
           try {
-            const submissions = JSON.parse(gradedData);
-            const userSubmission = submissions.find((sub) => sub.studentId === currentUser.id);
+            const submissions = JSON.parse(gradedData) as Submission[];
+            const userSubmission = submissions.find((sub: Submission) => sub.studentId === currentUser.id);
 
             if (userSubmission && userSubmission.status === "completed") {
               setShowResults(true);
@@ -540,6 +562,11 @@ export default function StudentCurriculum() {
         }
       } catch (error) {
         console.error("Error loading student answers:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load your previous answers. Please try again.",
+          variant: "destructive",
+        });
       }
     }
 
