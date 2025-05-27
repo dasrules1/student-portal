@@ -12,7 +12,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { realtimeDb } from "@/lib/firebase"
-import { ref, onValue, off } from "firebase/database"
+import { ref, onValue, off, get } from "firebase/database"
 import { formatDistance } from "date-fns"
 import {
   CheckCircle,
@@ -31,28 +31,32 @@ import {
   SelectValue
 } from "@/components/ui/select"
 import { toast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/use-toast"
+import { Progress } from "@/components/ui/progress"
 
-interface Answer {
+interface Student {
   id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  status: 'not-started' | 'in-progress' | 'completed';
+}
+
+interface RealTimeUpdate {
   studentId: string;
   studentName: string;
-  studentEmail: string;
-  studentAvatar: string;
-  questionId: string;
-  questionText: string;
+  problemId: string;
   answer: string;
-  answerType: string;
   timestamp: number;
-  correct: boolean;
-  partialCredit: number;
-  problemType: string;
-  problemPoints: number;
-  classId: string;
-  contentId: string;
-  contentTitle: string;
-  status: string;
-  score: number;
-  problemIndex: number;
+  status: 'in-progress' | 'completed';
+  score?: number;
+}
+
+interface Problem {
+  id: string;
+  type: string;
+  question: string;
+  points: number;
 }
 
 interface RealTimeMonitorProps {
@@ -112,339 +116,234 @@ class ErrorBoundary extends React.Component<
 }
 
 // Wrap the RealTimeMonitor component with the error boundary
-export function RealTimeMonitor(props: RealTimeMonitorProps) {
-  return (
-    <ErrorBoundary>
-      <RealTimeMonitorContent {...props} />
-    </ErrorBoundary>
-  );
-}
-
-// Rename the original component to RealTimeMonitorContent
-function RealTimeMonitorContent({
-  classId,
-  contentId,
-  recentOnly = false,
-  limitEntries = 20,
-  showAllStudents = false
-}: RealTimeMonitorProps) {
-  const [realtimeAnswers, setRealtimeAnswers] = useState<Answer[]>([]);
-  const [activeStudents, setActiveStudents] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'correct' | 'incorrect' | 'pending'>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+export function RealTimeMonitor({ classId, contentId }: RealTimeMonitorProps) {
+  const [students, setStudents] = useState<Student[]>([]);
+  const [realTimeUpdates, setRealTimeUpdates] = useState<RealTimeUpdate[]>([]);
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!classId || !contentId) {
-      console.error('Missing required IDs for real-time monitoring');
+      setError("Missing required IDs for real-time monitoring");
+      setIsLoading(false);
       return;
     }
 
-    console.log('Setting up real-time listener for:', { classId, contentId });
-
-    // Set up real-time listener for student answers
-    const answersRef = ref(realtimeDb, `student-answers/${classId}/${contentId}`);
-    const progressRef = ref(realtimeDb, `student-progress/${classId}/${contentId}`);
-    
-    console.log('Listening to paths:', {
-      answers: `student-answers/${classId}/${contentId}`,
-      progress: `student-progress/${classId}/${contentId}`
-    });
-
-    // Listen to both paths
-    const unsubscribeAnswers = onValue(answersRef, (snapshot) => {
+    const loadInitialData = async () => {
       try {
-        const data = snapshot.val();
-        console.log('Received real-time answers data:', data);
+        setIsLoading(true);
+        setError(null);
 
-        if (!data) {
-          console.log('No student answers found');
-          return;
+        // Load students
+        const studentsRef = ref(realtimeDb, `users`);
+        const studentsSnapshot = await get(studentsRef);
+        const studentsData = studentsSnapshot.val() || {};
+        const enrolledStudents = Object.entries(studentsData)
+          .filter(([_, user]: [string, any]) => user.role === 'student')
+          .map(([id, user]: [string, any]) => ({
+            id,
+            name: user.name || 'Unknown Student',
+            email: user.email || '',
+            avatar: user.avatar || '',
+            status: 'not-started' as const
+          }));
+        setStudents(enrolledStudents);
+
+        // Load problems
+        const contentRef = ref(realtimeDb, `curriculum/${classId}/content/${contentId}`);
+        const contentSnapshot = await get(contentRef);
+        const contentData = contentSnapshot.val();
+        if (contentData && contentData.problems) {
+          setProblems(contentData.problems);
         }
 
-        processStudentData(data);
-      } catch (error) {
-        console.error('Error processing real-time answers:', error);
-      }
-    });
+        // Set up real-time listeners
+        const progressRef = ref(realtimeDb, `student-progress/${classId}/${contentId}`);
+        onValue(progressRef, (snapshot) => {
+          const progressData = snapshot.val() || {};
+          const updates: RealTimeUpdate[] = [];
 
-    const unsubscribeProgress = onValue(progressRef, (snapshot) => {
-      try {
-        const data = snapshot.val();
-        console.log('Received real-time progress data:', data);
-
-        if (!data) {
-          console.log('No student progress found');
-          return;
-        }
-
-        processStudentData(data);
-      } catch (error) {
-        console.error('Error processing real-time progress:', error);
-      }
-    });
-
-    // Helper function to process student data
-    const processStudentData = (data: any) => {
-      try {
-        // Process student answers
-        const processedAnswers: Answer[] = [];
-        const studentSet = new Set<string>();
-
-        // Iterate through each student's answers
-        Object.entries(data).forEach(([studentId, studentData]: [string, any]) => {
-          console.log('Processing student data:', { studentId, studentData });
-          
-          if (!studentData?.problems) {
-            console.warn(`No problems found for student ${studentId}`);
-            return;
-          }
-
-          // Process each problem answer
-          Object.entries(studentData.problems).forEach(([problemKey, problemData]: [string, any]) => {
-            if (!problemData) {
-              console.warn(`No data found for problem ${problemKey}`);
-              return;
+          Object.entries(progressData).forEach(([studentId, data]: [string, any]) => {
+            if (data.problems) {
+              Object.entries(data.problems).forEach(([problemId, problemData]: [string, any]) => {
+                updates.push({
+                  studentId,
+                  studentName: students.find(s => s.id === studentId)?.name || 'Unknown Student',
+                  problemId,
+                  answer: problemData.answer || '',
+                  timestamp: problemData.timestamp || Date.now(),
+                  status: problemData.status || 'in-progress',
+                  score: problemData.score || 0
+                });
+              });
             }
-
-            // Extract problem index from the key (e.g., "problem-0" -> 0)
-            const problemIndex = parseInt(problemKey.replace('problem-', ''), 10);
-            if (isNaN(problemIndex)) {
-              console.warn(`Invalid problem index in key ${problemKey}`);
-              return;
-            }
-
-            // Create answer object
-            const answer: Answer = {
-              id: `${studentId}-${problemKey}`,
-              studentId: studentId,
-              studentName: problemData.studentName || 'Unknown Student',
-              studentEmail: problemData.studentEmail || '',
-              studentAvatar: problemData.studentAvatar || '',
-              questionId: problemData.questionId || problemKey,
-              questionText: problemData.questionText || 'Question not available',
-              answer: problemData.answer || '',
-              answerType: problemData.answerType || 'unknown',
-              timestamp: problemData.timestamp || Date.now(),
-              correct: problemData.correct || false,
-              partialCredit: problemData.partialCredit || 0,
-              problemType: problemData.problemType || 'unknown',
-              problemPoints: problemData.problemPoints || 1,
-              classId: classId,
-              contentId: contentId,
-              contentTitle: problemData.contentTitle || 'Untitled Content',
-              status: problemData.status || 'in-progress',
-              score: problemData.score || 0,
-              problemIndex: problemIndex
-            };
-
-            processedAnswers.push(answer);
-            studentSet.add(studentId);
           });
+
+          setRealTimeUpdates(updates);
         });
 
-        // Filter and sort answers
-        let filteredAnswers = processedAnswers.filter(answer => {
-          const matchesSearch = searchTerm === '' || 
-            answer.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            answer.answer.toLowerCase().includes(searchTerm.toLowerCase());
-          
-          const matchesFilter = filter === 'all' ||
-            (filter === 'correct' && answer.correct) ||
-            (filter === 'incorrect' && !answer.correct) ||
-            (filter === 'pending' && answer.status === 'in-progress');
-          
-          return matchesSearch && matchesFilter;
-        });
-
-        // Sort by timestamp (newest first)
-        filteredAnswers.sort((a, b) => b.timestamp - a.timestamp);
-
-        // Limit to maxAnswers
-        const maxAnswers = limitEntries > 0 ? filteredAnswers.slice(0, limitEntries) : filteredAnswers;
-
-        setRealtimeAnswers(maxAnswers);
-        setActiveStudents(new Set(Array.from(studentSet)));
-        setLoading(false);
-        console.log('Processed answers:', maxAnswers);
+        setIsLoading(false);
       } catch (error) {
-        console.error('Error processing student data:', error);
-        setError('Error processing student data');
-        setLoading(false);
+        console.error('Error loading real-time monitor data:', error);
+        setError('Failed to load real-time monitoring data');
+        setIsLoading(false);
         toast({
           title: "Error",
-          description: "There was a problem processing student answers.",
+          description: "Failed to load real-time monitoring data. Please try again.",
           variant: "destructive",
         });
       }
     };
 
+    loadInitialData();
+
+    // Cleanup function
     return () => {
-      console.log('Cleaning up real-time listeners');
-      unsubscribeAnswers();
-      unsubscribeProgress();
+      const progressRef = ref(realtimeDb, `student-progress/${classId}/${contentId}`);
+      off(progressRef);
     };
-  }, [classId, contentId, searchTerm, filter, limitEntries]);
+  }, [classId, contentId, toast]);
 
-  // Helper function to format answer display based on type
-  const formatAnswer = (answer: Answer) => {
-    if (!answer) return 'No answer provided';
-    
-    switch (answer.answerType) {
-      case 'multiple-choice':
-        return `Option: ${answer.answer || 'No option selected'}`;
-      case 'math-expression':
-        return `Expression: ${answer.answer || 'No expression entered'}`;
-      case 'open-ended':
-        return (answer.answer || 'No answer provided').length > 100 
-          ? `${(answer.answer || 'No answer provided').substring(0, 100)}...` 
-          : (answer.answer || 'No answer provided');
-      default:
-        return answer.answer || 'No answer provided';
-    }
-  };
-
-  // Render a status badge based on correctness
-  const getStatusBadge = (answer: Answer) => {
-    if (!answer) return null;
-    
-    if (answer.correct === true) {
-      return <Badge variant="default" className="flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> Correct</Badge>;
-    } else if (answer.correct === false) {
-      if (answer.partialCredit && answer.partialCredit > 0) {
-        return <Badge variant="secondary" className="flex items-center"><Clock className="w-3 h-3 mr-1" /> Partial Credit</Badge>;
-      } else {
-        return <Badge variant="destructive" className="flex items-center"><XCircle className="w-3 h-3 mr-1" /> Incorrect</Badge>;
-      }
-    } else {
-      return <Badge variant="outline" className="flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Pending</Badge>;
-    }
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Activity className="w-5 h-5 mr-2" />
-            Real-Time Monitoring
-          </CardTitle>
-          <CardDescription>
-            Loading student activity...
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex justify-center py-6">
-            <div className="animate-pulse w-full max-w-md">
-              <div className="h-4 bg-slate-200 rounded mb-3"></div>
-              <div className="h-4 bg-slate-200 rounded w-3/4 mb-3"></div>
-              <div className="h-4 bg-slate-200 rounded mb-3"></div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-center p-4">
+        <p>Loading real-time monitoring data...</p>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Activity className="w-5 h-5 mr-2" />
-            Real-Time Monitoring
-          </CardTitle>
-          <CardDescription>
-            {error}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center text-center py-6">
-            <AlertCircle className="w-10 h-10 mb-2 text-destructive" />
-            <p>Unable to load real-time data</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Please try refreshing the page
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="p-4 border rounded-lg bg-red-50 dark:bg-red-900/20">
+        <p className="text-red-600 dark:text-red-400">{error}</p>
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <Activity className="w-5 h-5 mr-2" />
-          Real-Time Student Activity
-        </CardTitle>
-        <CardDescription className="flex items-center">
-          <Users className="w-4 h-4 mr-1" />
-          {activeStudents.size} active students | {realtimeAnswers.length} responses
-        </CardDescription>
-        <div className="flex items-center space-x-4 mt-4">
-          <Input
-            placeholder="Search students or answers..."
-            value={searchTerm}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-            className="max-w-xs"
-          />
-          <Select value={filter} onValueChange={(value: any) => setFilter(value)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filter answers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Answers</SelectItem>
-              <SelectItem value="correct">Correct Answers</SelectItem>
-              <SelectItem value="incorrect">Incorrect Answers</SelectItem>
-              <SelectItem value="pending">Pending Review</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {realtimeAnswers.length > 0 ? (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Students</CardTitle>
+            <CardDescription>Total enrolled students</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{students.length}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Real-time Updates</CardTitle>
+            <CardDescription>Latest student responses</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{realTimeUpdates.length}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Problems</CardTitle>
+            <CardDescription>Total problems in this content</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{problems.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Student Progress</CardTitle>
+          <CardDescription>Real-time updates from students</CardDescription>
+        </CardHeader>
+        <CardContent>
           <div className="space-y-4">
-            {realtimeAnswers.map((answer, index) => (
-              <div key={`${answer.studentId}-${answer.questionId}-${index}`} className="flex items-start space-x-3 p-3 border rounded-lg">
-                <Avatar className="w-8 h-8">
-                  <AvatarImage src={answer.studentAvatar || ""} />
-                  <AvatarFallback>
-                    {answer.studentName ? answer.studentName.charAt(0).toUpperCase() : "S"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm">{answer.studentName || 'Unknown Student'}</p>
+            {students.map((student) => {
+              const studentUpdates = realTimeUpdates.filter(update => update.studentId === student.id);
+              const completedProblems = studentUpdates.filter(update => update.status === 'completed').length;
+              const progress = (completedProblems / problems.length) * 100;
+
+              return (
+                <div key={student.id} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistance(answer.timestamp || Date.now(), Date.now(), { addSuffix: true })}
-                      </span>
-                      {getStatusBadge(answer)}
+                      {student.avatar ? (
+                        <img
+                          src={student.avatar}
+                          alt={student.name}
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                          <span className="text-sm font-medium">
+                            {student.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-medium">{student.name}</p>
+                        <p className="text-sm text-muted-foreground">{student.email}</p>
+                      </div>
                     </div>
+                    <Badge variant={progress === 100 ? "default" : progress > 0 ? "secondary" : "outline"}>
+                      {progress === 100 ? "Completed" : progress > 0 ? "In Progress" : "Not Started"}
+                    </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground">{answer.questionText || 'Question not available'}</p>
-                  <p className="text-sm">{formatAnswer(answer)}</p>
-                  {answer.partialCredit !== undefined && (
-                    <p className="text-xs text-muted-foreground">
-                      Partial Credit: {answer.partialCredit}%
-                    </p>
-                  )}
+                  <Progress value={progress} className="mt-2" />
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    {completedProblems} of {problems.length} problems completed
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center text-center py-10">
-            <Activity className="w-10 h-10 mb-2 text-muted-foreground" />
-            <p>No student activity recorded yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Student answers will appear here in real-time as they work on assignments
-            </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Latest Updates</CardTitle>
+          <CardDescription>Most recent student responses</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {realTimeUpdates
+              .sort((a, b) => b.timestamp - a.timestamp)
+              .slice(0, 10)
+              .map((update, index) => (
+                <div key={index} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{update.studentName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Problem {update.problemId.replace('problem-', '')}
+                      </p>
+                    </div>
+                    <Badge variant={update.status === 'completed' ? "default" : "secondary"}>
+                      {update.status === 'completed' ? "Completed" : "In Progress"}
+                    </Badge>
+                  </div>
+                  <div className="mt-2">
+                    <p className="text-sm">Answer: {update.answer}</p>
+                    {update.score !== undefined && (
+                      <p className="text-sm text-muted-foreground">
+                        Score: {update.score}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {new Date(update.timestamp).toLocaleString()}
+                  </p>
+                </div>
+              ))}
           </div>
-        )}
-      </CardContent>
-    </Card>
-  )
+        </CardContent>
+      </Card>
+    </div>
+  );
 } 

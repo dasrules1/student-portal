@@ -22,8 +22,17 @@
       "$classId": {
         ".read": "auth != null",
         "$contentId": {
-          ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'teacher' || root.child('users').child(auth.uid).child('role').val() === 'student')",
-          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'teacher'"
+          ".read": "auth != null",
+          "$userId": {
+            ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+            ".write": "auth != null && auth.uid === $userId",
+            "problems": {
+              "$problemId": {
+                ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'teacher')",
+                ".write": "auth != null && auth.uid === $userId"
+              }
+            }
+          }
         }
       }
     },
