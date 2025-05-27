@@ -445,9 +445,22 @@ export default function StudentCurriculum() {
     // Check if this content has already been graded for this student
     if (currentUser) {
       try {
+        // Get user ID from all possible sources
+        const userId = currentUser.id || currentUser.uid || currentUser.user?.id || currentUser.user?.uid;
+        
+        if (!userId) {
+          console.error('No user ID found in current user data:', currentUser);
+          toast({
+            title: "Authentication Error",
+            description: "Please log in again to continue.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         // First check Firebase for existing answers
-        const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}/${currentUser.id}/problems`);
-        console.log('Loading answers from path:', `student-answers/${classId}/${content.id}/${currentUser.id}/problems`);
+        const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}/${userId}/problems`);
+        console.log('Loading answers from path:', `student-answers/${classId}/${content.id}/${userId}/problems`);
         const snapshot = await get(answersRef);
         const existingAnswers = snapshot.val();
 

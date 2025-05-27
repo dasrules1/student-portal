@@ -163,48 +163,81 @@ export function RealTimeMonitor({ classId, contentId }: RealTimeMonitorProps) {
         const contentRef = ref(realtimeDb, `curriculum/${classId}/content/${contentId}`);
         const contentSnapshot = await get(contentRef);
         const contentData = contentSnapshot.val();
-        if (contentData && contentData.problems) {
-          setProblems(contentData.problems);
+        
+        if (!contentData) {
+          throw new Error(`No content found for ID: ${contentId}`);
         }
+        
+        if (!contentData.problems || !Array.isArray(contentData.problems)) {
+          throw new Error(`No problems found in content: ${contentId}`);
+        }
+        
+        setProblems(contentData.problems);
 
         // Set up real-time listeners
         const progressRef = ref(realtimeDb, `student-progress/${classId}/${contentId}`);
         console.log('Setting up real-time listener at:', `student-progress/${classId}/${contentId}`);
         
         onValue(progressRef, (snapshot) => {
-          const progressData = snapshot.val() || {};
-          console.log('Received progress data:', progressData);
-          
-          const updates: RealTimeUpdate[] = [];
+          try {
+            const progressData = snapshot.val() || {};
+            console.log('Received progress data:', progressData);
+            
+            const updates: RealTimeUpdate[] = [];
 
-          Object.entries(progressData).forEach(([studentId, data]: [string, any]) => {
-            if (data.problems) {
-              Object.entries(data.problems).forEach(([problemId, problemData]: [string, any]) => {
-                updates.push({
-                  studentId,
-                  studentName: students.find(s => s.id === studentId)?.name || 'Unknown Student',
-                  problemId,
-                  answer: problemData.answer || '',
-                  timestamp: problemData.timestamp || Date.now(),
-                  status: problemData.status || 'in-progress',
-                  score: problemData.score || 0
+            Object.entries(progressData).forEach(([studentId, data]: [string, any]) => {
+              if (!data || typeof data !== 'object') {
+                console.warn(`Invalid data for student ${studentId}:`, data);
+                return;
+              }
+
+              if (data.problems) {
+                Object.entries(data.problems).forEach(([problemId, problemData]: [string, any]) => {
+                  if (!problemData || typeof problemData !== 'object') {
+                    console.warn(`Invalid problem data for ${problemId}:`, problemData);
+                    return;
+                  }
+
+                  updates.push({
+                    studentId,
+                    studentName: students.find(s => s.id === studentId)?.name || 'Unknown Student',
+                    problemId,
+                    answer: problemData.answer || '',
+                    timestamp: problemData.timestamp || Date.now(),
+                    status: problemData.status || 'in-progress',
+                    score: problemData.score || 0
+                  });
                 });
-              });
-            }
-          });
+              }
+            });
 
-          console.log('Processed updates:', updates);
-          setRealTimeUpdates(updates);
+            console.log('Processed updates:', updates);
+            setRealTimeUpdates(updates);
+          } catch (error) {
+            console.error('Error processing real-time updates:', error);
+            toast({
+              title: "Error",
+              description: "Failed to process real-time updates. Please refresh the page.",
+              variant: "destructive",
+            });
+          }
+        }, (error) => {
+          console.error('Error in real-time listener:', error);
+          toast({
+            title: "Error",
+            description: "Lost connection to real-time updates. Please refresh the page.",
+            variant: "destructive",
+          });
         });
 
         setIsLoading(false);
       } catch (error) {
         console.error('Error loading real-time monitor data:', error);
-        setError('Failed to load real-time monitoring data');
+        setError(error instanceof Error ? error.message : 'Failed to load real-time monitoring data');
         setIsLoading(false);
         toast({
           title: "Error",
-          description: "Failed to load real-time monitoring data. Please try again.",
+          description: error instanceof Error ? error.message : "Failed to load real-time monitoring data. Please try again.",
           variant: "destructive",
         });
       }
