@@ -447,6 +447,7 @@ export default function StudentCurriculum() {
       try {
         // First check Firebase for existing answers
         const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}/${currentUser.id}/problems`);
+        console.log('Loading answers from path:', `student-answers/${classId}/${content.id}/${currentUser.id}/problems`);
         const snapshot = await get(answersRef);
         const existingAnswers = snapshot.val();
 

@@ -125,11 +125,19 @@ export function RealTimeMonitor({ classId, contentId }: RealTimeMonitorProps) {
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!classId || !contentId) {
-      setError("Missing required IDs for real-time monitoring");
+    if (!classId) {
+      setError("Missing class ID for real-time monitoring");
       setIsLoading(false);
       return;
     }
+
+    if (!contentId) {
+      setError("Missing content ID for real-time monitoring");
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('Setting up real-time monitoring with:', { classId, contentId });
 
     const loadInitialData = async () => {
       try {
@@ -161,8 +169,12 @@ export function RealTimeMonitor({ classId, contentId }: RealTimeMonitorProps) {
 
         // Set up real-time listeners
         const progressRef = ref(realtimeDb, `student-progress/${classId}/${contentId}`);
+        console.log('Setting up real-time listener at:', `student-progress/${classId}/${contentId}`);
+        
         onValue(progressRef, (snapshot) => {
           const progressData = snapshot.val() || {};
+          console.log('Received progress data:', progressData);
+          
           const updates: RealTimeUpdate[] = [];
 
           Object.entries(progressData).forEach(([studentId, data]: [string, any]) => {
@@ -181,6 +193,7 @@ export function RealTimeMonitor({ classId, contentId }: RealTimeMonitorProps) {
             }
           });
 
+          console.log('Processed updates:', updates);
           setRealTimeUpdates(updates);
         });
 
