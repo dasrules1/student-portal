@@ -94,6 +94,7 @@ const renderLatex = (text: string) => {
 // Update User type to match the actual structure
 interface User {
   id: string;
+  uid?: string;
   name: string;
   email: string;
   password: string;
@@ -101,6 +102,15 @@ interface User {
   status?: "active" | "inactive";
   avatar?: string;
   classes: string[];
+  user?: {
+    id?: string;
+    uid?: string;
+    displayName?: string;
+    email?: string;
+    photoURL?: string;
+  };
+  displayName?: string;
+  photoURL?: string;
 }
 
 // Update Content type to include problems
@@ -180,11 +190,12 @@ interface Problem {
   correctAnswer?: number | string;
   correctAnswers?: string[];
   tolerance?: number;
+  explanation?: string;
 }
 
 interface ProblemState {
   [key: string]: {
-    answer: string;
+    answer: string | number;
     submitted: boolean;
     score: number;
   };
@@ -242,6 +253,9 @@ interface Submission {
     openEnded?: { [key: number]: string };
   };
 }
+
+// Update Badge variant type
+type BadgeVariant = "default" | "destructive" | "secondary" | "outline" | "success";
 
 export default function StudentCurriculum() {
   const router = useRouter()
@@ -820,11 +834,14 @@ export default function StudentCurriculum() {
     if (!activeContent?.problems) return;
 
     const problem = activeContent.problems[problemIndex];
-    let result;
+    let result: GradingResult = { correct: false, score: 0 };
 
     if (problem.type === "multiple-choice") {
       const selectedOption = userAnswers[activeContent.id]?.[problemIndex];
-      result = selectedOption === problem.answer;
+      result = {
+        correct: selectedOption === problem.correctAnswer,
+        score: selectedOption === problem.correctAnswer ? (problem.points || 1) : 0
+      };
     } else if (problem.type === "math-expression") {
       result = gradeMathExpression(problem, mathExpressionInputs[activeContent.id]?.[problemIndex] || "");
     } else if (problem.type === "open-ended") {
@@ -834,7 +851,7 @@ export default function StudentCurriculum() {
     // Update problem scores
     setProblemScores(prev => ({
       ...prev,
-      [`${activeContent.id}-${problemIndex}`]: result?.score || 0
+      [`${activeContent.id}-${problemIndex}`]: result.score || 0
     }));
 
     // Mark problem as submitted
@@ -845,9 +862,9 @@ export default function StudentCurriculum() {
 
     // Show feedback toast
     toast({
-      title: result?.correct ? "Correct!" : "Incorrect",
-      description: `You scored ${result?.score || 0} points for this problem.`,
-      variant: result?.correct ? "default" : "destructive",
+      title: result.correct ? "Correct!" : "Incorrect",
+      description: `You scored ${result.score || 0} points for this problem.`,
+      variant: result.correct ? "default" : "destructive",
     });
 
     // Send real-time update
@@ -917,7 +934,7 @@ export default function StudentCurriculum() {
           if (userSubmission) {
             if (userSubmission.status === "completed") {
               return (
-                <Badge variant="success" className="bg-green-500">
+                <Badge variant="default" className="bg-green-500">
                   <CheckCircle2 className="w-3 h-3 mr-1" />
                   Completed ({userSubmission.score}%)
                 </Badge>
@@ -1045,10 +1062,10 @@ export default function StudentCurriculum() {
         await set(progressRef, completionData);
         
         // Also update the parent node status
-        const parentRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}`);
+        const parentRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/completed`);
         await set(parentRef, { status: "completed", completedAt: Date.now() });
         
-        const parentProgressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}`);
+        const parentProgressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}/completed`);
         await set(parentProgressRef, { status: "completed", completedAt: Date.now() });
       }
       
@@ -1146,10 +1163,10 @@ export default function StudentCurriculum() {
               <CardContent>
                 {lessonsWithContent && lessonsWithContent.length > 0 ? (
                   <div className="space-y-1">
-                    {lessonsWithContent.map((lesson, index) => {
+                    {lessonsWithContent.map((lesson: Lesson, index: number) => {
                       if (!lesson) return null;
                       const publishedContents = lesson.contents && Array.isArray(lesson.contents) 
-                        ? lesson.contents.filter((c) => c && c.isPublished) 
+                        ? lesson.contents.filter((c: Content) => c && c.isPublished) 
                         : [];
                       
                       if (publishedContents.length === 0) return null;
