@@ -1276,17 +1276,107 @@ export default function StudentCurriculum() {
                                       {isSubmitted && (
                                         <div
                                           className={`p-2 mt-2 rounded-md ${
-                                            problemScore === problem.points
+                                            problemScore === (problem.points || 0)
                                               ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
                                               : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
                                           }`}
                                         >
-                                          {problemScore === problem.points
+                                          {problemScore === (problem.points || 0)
                                             ? "Correct!"
                                             : "Incorrect. The correct answer is:"}
-                                          {problemScore !== problem.points && (
+                                          {problemScore !== (problem.points || 0) && (
                                             <div className="font-medium mt-1">
                                               {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
                                                 <div className="flex flex-col gap-1">
                                                   {problem.correctAnswers.map((answer, i) => (
-                                                    <div key={i}>{renderLatex(answer ? `
+                                                    <div key={i}>{renderLatex(answer)}</div>
+                                                  ))}
+                                                </div>
+                                              ) : (
+                                                renderLatex(problem.correctAnswer?.toString() || '')
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {problem.type === "open-ended" && (
+                                  <div className="space-y-3">
+                                    <div className="flex flex-col space-y-2">
+                                      <Label htmlFor={`open-ended-answer-${problemIndex}`}>Your Answer:</Label>
+                                      <Textarea
+                                        id={`open-ended-answer-${problemIndex}`}
+                                        value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
+                                        onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
+                                        placeholder="Enter your answer"
+                                        disabled={isSubmitted}
+                                        className="min-h-[100px]"
+                                      />
+                                    </div>
+
+                                    {isSubmitted && (
+                                      <div
+                                        className={`p-2 mt-2 rounded-md ${
+                                          problemScore === (problem.points || 0)
+                                            ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                            : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                        }`}
+                                      >
+                                        <p>Your score: {problemScore} out of {problem.points || 0} points</p>
+                                        {problemScore < (problem.points || 0) && (
+                                          <div className="mt-2">
+                                            <p className="font-medium">Keywords to include:</p>
+                                            <ul className="list-disc list-inside mt-1">
+                                              {problem.keywords?.map((keyword, i) => (
+                                                <li key={i}>{keyword}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {!isSubmitted && (
+                                  <div className="flex justify-end mt-4">
+                                    <Button
+                                      onClick={() => handleSubmitProblem(problemIndex)}
+                                      disabled={!userAnswers[activeContent.id]?.[problemIndex] && 
+                                              !mathExpressionInputs[activeContent.id]?.[problemIndex] && 
+                                              !openEndedAnswers[activeContent.id]?.[problemIndex]}
+                                    >
+                                      Submit Answer
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 border rounded-lg">
+                        <p>{renderLatex(activeContent.description || '')}</p>
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          This content doesn't have any problems to solve.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="p-4 border rounded-lg">
+                  <p className="text-muted-foreground">Select a content item to begin.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
