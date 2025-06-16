@@ -30,7 +30,7 @@ import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
 import { ref, set, push, serverTimestamp, get } from "firebase/database"
-import { doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, DocumentData } from "firebase/firestore"
+import { doc, setDoc, getDoc, collection, query, where, getDocs, DocumentData, QueryDocumentSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 // Content types for curriculum
@@ -258,11 +258,10 @@ interface Submission {
 type BadgeVariant = "default" | "destructive" | "secondary" | "outline" | "success";
 
 interface ExistingAnswers {
-  [key: string]: {
+  [key: number]: {
     problemIndex: number;
     answer: string;
     score: number;
-    [key: string]: any;
   };
 }
 
@@ -309,6 +308,7 @@ export default function StudentCurriculum() {
   const [problemScores, setProblemScores] = useState<ProblemScores>({})
   const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})
   const [problemState, setProblemState] = useState<ProblemState>({})
+  const [existingAnswers, setExistingAnswers] = useState<ExistingAnswers>({})
 
   // Load class and curriculum data
   useEffect(() => {
@@ -463,220 +463,14 @@ export default function StudentCurriculum() {
 
   // Handle selecting a content item
   const handleSelectContent = async (content: Content) => {
-    setActiveContent(content)
-
-    // Check if this content has already been graded for this student
-    if (currentUser) {
-      try {
-        // Get user ID from all possible sources
-        const userId = currentUser.id || currentUser.uid || currentUser.user?.id || currentUser.user?.uid;
-        
-        if (!userId) {
-          console.error('No user ID found in current user data:', currentUser);
-          toast({
-            title: "Authentication Error",
-            description: "Please log in again to continue.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // Query Firestore for existing answers
-        const answersQuery = query(
-          collection(db, 'student-answers'),
-          where('classId', '==', classId),
-          where('contentId', '==', content.id),
-          where('studentId', '==', userId)
-        );
-        
-        const answersSnapshot = await getDocs(answersQuery);
-        const existingAnswers: ExistingAnswers = answersSnapshot.docs.reduce((acc, doc) => {
-          const data = doc.data() as DocumentData & {
-            problemIndex: number;
-            answer: string;
-            score: number;
-          };
-          acc[`problem-${data.problemIndex}`] = data;
-          return acc;
-        }, {} as ExistingAnswers);
-
-        console.log('Loaded existing answers:', existingAnswers);
-
-        if (Object.keys(existingAnswers).length > 0) {
-          // If the student has already completed this content, show the results
-          setShowResults(true);
-
-          // Process each problem's answer
-          Object.entries(existingAnswers).forEach(([problemKey, answerData]: [string, any]) => {
-            if (!answerData) {
-              console.warn(`No answer data found for problem ${problemKey}`);
-              return;
-            }
-
-            const problemIndex = answerData.problemIndex;
-            if (typeof problemIndex !== 'number') {
-              console.warn(`Invalid problem index in key ${problemKey}`);
-              return;
-            }
-
-            const problem = content.problems?.[problemIndex];
-            if (!problem) {
-              console.warn(`No problem found for index ${problemIndex}`);
-              return;
-            }
-
-            // Update the appropriate state based on problem type
-            if (problem.type === 'multiple-choice') {
-              setUserAnswers(prev => ({
-                ...prev,
-                [content.id]: {
-                  ...(prev[content.id] || {}),
-                  [problemIndex]: Number(answerData.answer) || -1
-                }
-              }));
-            } else if (problem.type === 'math-expression') {
-              setMathExpressionInputs(prev => ({
-                ...prev,
-                [content.id]: {
-                  ...(prev[content.id] || {}),
-                  [problemIndex]: answerData.answer || ''
-                }
-              }));
-            } else if (problem.type === 'open-ended') {
-              setOpenEndedAnswers(prev => ({
-                ...prev,
-                [content.id]: {
-                  ...(prev[content.id] || {}),
-                  [problemIndex]: answerData.answer || ''
-                }
-              }));
-            }
-
-            // Update problem state
-            setProblemState(prev => ({
-              ...prev,
-              [`${content.id}-${problemIndex}`]: {
-                answer: answerData.answer || '',
-                submitted: true,
-                score: answerData.score || 0
-              }
-            }));
-
-            // Update submitted problems
-            setSubmittedProblems(prev => ({
-              ...prev,
-              [`${content.id}-${problemIndex}`]: true
-            }));
-          });
-
-          return;
-        }
-
-        // If no Firestore data, check localStorage as fallback
-        const gradedContentKey = `graded-content-${classId}-${content.id}`;
-        const gradedData = localStorage.getItem(gradedContentKey);
-
-        if (gradedData) {
-          try {
-            const submissions = JSON.parse(gradedData) as Submission[];
-            const userSubmission = submissions.find((sub: Submission) => sub.studentId === currentUser.id);
-
-            if (userSubmission && userSubmission.status === "completed") {
-              setShowResults(true);
-
-              if (userSubmission.answers) {
-                if (userSubmission.answers.multipleChoice) {
-                  setUserAnswers({
-                    [content.id]: userSubmission.answers.multipleChoice,
-                  });
-                }
-
-                if (userSubmission.answers.mathExpression) {
-                  setMathExpressionInputs({
-                    [content.id]: userSubmission.answers.mathExpression,
-                  });
-                }
-
-                if (userSubmission.answers.openEnded) {
-                  setOpenEndedAnswers({
-                    [content.id]: userSubmission.answers.openEnded,
-                  });
-                }
-              }
-
-              return;
-            }
-          } catch (error) {
-            console.error("Error loading graded content:", error);
-          }
-        }
-      } catch (error) {
-        console.error("Error loading student answers:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load your previous answers. Please try again.",
-          variant: "destructive",
-        });
-      }
-    }
-
-    setShowResults(false);
-
-    // Initialize user answers if not already set
-    if (content.problems && content.problems.length > 0) {
-      // For multiple choice questions
-      const initialMultipleChoiceAnswers = {};
-      // For math expression questions
-      const initialMathExpressionInputs = {};
-      // For open ended questions
-      const initialOpenEndedAnswers = {};
-
-      content.problems.forEach((problem, index) => {
-        if (problem.type === "multiple-choice") {
-          if (!userAnswers[content.id] || userAnswers[content.id][index] === undefined) {
-            initialMultipleChoiceAnswers[index] = -1; // -1 means no answer selected
-          }
-        } else if (problem.type === "math-expression") {
-          if (!mathExpressionInputs[content.id] || mathExpressionInputs[content.id][index] === undefined) {
-            initialMathExpressionInputs[index] = "";
-          }
-        } else if (problem.type === "open-ended") {
-          if (!openEndedAnswers[content.id] || openEndedAnswers[content.id][index] === undefined) {
-            initialOpenEndedAnswers[index] = "";
-          }
-        }
-      });
-
-      if (Object.keys(initialMultipleChoiceAnswers).length > 0) {
-        setUserAnswers({
-          ...userAnswers,
-          [content.id]: {
-            ...(userAnswers[content.id] || {}),
-            ...initialMultipleChoiceAnswers,
-          },
-        });
-      }
-
-      if (Object.keys(initialMathExpressionInputs).length > 0) {
-        setMathExpressionInputs({
-          ...mathExpressionInputs,
-          [content.id]: {
-            ...(mathExpressionInputs[content.id] || {}),
-            ...initialMathExpressionInputs,
-          },
-        });
-      }
-
-      if (Object.keys(initialOpenEndedAnswers).length > 0) {
-        setOpenEndedAnswers({
-          ...openEndedAnswers,
-          [content.id]: {
-            ...(openEndedAnswers[content.id] || {}),
-            ...initialOpenEndedAnswers,
-          },
-        });
-      }
-    }
+    setActiveContent(content);
+    setUserAnswers({});
+    setMathExpressionInputs({});
+    setOpenEndedAnswers({});
+    setSubmittedProblems({});
+    setProblemState({});
+    // Load existing answers for this content
+    await loadExistingAnswers(content);
   };
 
   // Handle multiple choice answer selection
@@ -1055,8 +849,8 @@ export default function StudentCurriculum() {
 
       console.log('Attempting to save answer data:', answerData);
 
-      // Save to Firestore
-      const answerRef = doc(db, 'student-answers', `${classId}_${activeContent.id}_${userId}_problem-${problemIndex}`);
+      // Save to Firestore using the correct nested path structure
+      const answerRef = doc(db, 'student-answers', classId, 'answers', `${activeContent.id}_${userId}_problem-${problemIndex}`);
       await setDoc(answerRef, answerData);
 
       // Also save to student-progress collection
@@ -1065,8 +859,7 @@ export default function StudentCurriculum() {
 
       // Check if all problems are answered
       const answersQuery = query(
-        collection(db, 'student-answers'),
-        where('classId', '==', classId),
+        collection(db, 'student-answers', classId, 'answers'),
         where('contentId', '==', activeContent.id),
         where('studentId', '==', userId)
       );
@@ -1108,6 +901,38 @@ export default function StudentCurriculum() {
         description: "There was a problem saving your answer. Please try again.",
         variant: "destructive",
       });
+    }
+  };
+
+  // Update the loadExistingAnswers function
+  const loadExistingAnswers = async (content: Content) => {
+    if (!currentUser?.uid) return;
+    
+    try {
+      // Query Firestore for existing answers using the correct path
+      const answersQuery = query(
+        collection(db, 'student-answers', classId, 'answers'),
+        where('contentId', '==', content.id),
+        where('studentId', '==', currentUser.uid)
+      );
+      
+      const answersSnapshot = await getDocs(answersQuery);
+      const answers: ExistingAnswers = {};
+      
+      answersSnapshot.docs.forEach((doc: QueryDocumentSnapshot) => {
+        const data = doc.data();
+        if (data.problemIndex !== undefined) {
+          answers[data.problemIndex] = {
+            problemIndex: data.problemIndex,
+            answer: data.answer,
+            score: data.score || 0
+          };
+        }
+      });
+      
+      setExistingAnswers(answers);
+    } catch (error) {
+      console.error('Error loading student answers:', error);
     }
   };
 
@@ -1252,9 +1077,9 @@ export default function StudentCurriculum() {
                       {lessonsWithContent[activeLesson - 1]?.contents &&
                        Array.isArray(lessonsWithContent[activeLesson - 1]?.contents) &&
                        lessonsWithContent[activeLesson - 1]?.contents
-                        .filter((content) => content && content.isPublished)
-                        .map((content) => (
-                          <Card key={content.id || `content-${Math.random()}`} className="overflow-hidden">
+                        .filter((content: Content) => content && content.isPublished)
+                        .map((content: Content) => (
+                          <Card key={(content.id ?? `content-${Math.random()}`) as string} className="overflow-hidden">
                             <div
                               className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
                               onClick={() => handleSelectContent(content)}

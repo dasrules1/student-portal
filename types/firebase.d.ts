@@ -15,12 +15,16 @@ declare module 'firebase/firestore' {
     id: string;
   }
   
+  export interface CollectionReference {
+    id: string;
+  }
+  
   export interface SetOptions {
     merge?: boolean;
   }
   
-  export function collection(db: any, collectionPath: string): any;
-  export function doc(db: any, collectionPath: string, docPath: string): any;
+  export function collection(db: any, collectionPath: string, ...pathSegments: string[]): CollectionReference;
+  export function doc(db: any, collectionPath: string, ...pathSegments: string[]): DocumentReference;
   export function getDocs(query: any): Promise<{docs: QueryDocumentSnapshot[]}>;
   export function getDoc(documentRef: any): Promise<QueryDocumentSnapshot>;
   export function addDoc(collectionRef: any, data: any): Promise<{id: string}>;

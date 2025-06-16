@@ -31,6 +31,13 @@ service cloud.firestore {
               classData.teacher_id == request.auth.uid);
     }
 
+    function isEnrolledInClass(classId) {
+      let userData = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let classData = get(/databases/$(database)/documents/classes/$(classId)).data;
+      return userData.classes.hasAny([classId]) || 
+             (classData.enrolledStudents != null && classData.enrolledStudents.hasAny([request.auth.uid]));
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if isAuthenticated() && (
@@ -50,20 +57,20 @@ service cloud.firestore {
     // Student Answers collection - new nested structure
     match /student-answers/{classId}/answers/{answerId} {
       allow read: if isAuthenticated() && (
-        // Students can read their own answers
-        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Students can read their own answers if enrolled in the class
+        (isStudent() && resource.data.studentId == request.auth.uid && isEnrolledInClass(classId)) ||
         // Teachers can read all answers in their classes
         (isTeacher() && hasAccessToClass(classId))
       );
       allow create: if isAuthenticated() && (
-        // Students can create their own answers
-        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        // Students can create their own answers if enrolled in the class
+        (isStudent() && request.resource.data.studentId == request.auth.uid && isEnrolledInClass(classId)) ||
         // Teachers can create answers for grading
         (isTeacher() && hasAccessToClass(classId))
       );
       allow update: if isAuthenticated() && (
-        // Students can update their own answers
-        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Students can update their own answers if enrolled in the class
+        (isStudent() && resource.data.studentId == request.auth.uid && isEnrolledInClass(classId)) ||
         // Teachers can update answers for grading
         (isTeacher() && hasAccessToClass(classId))
       );
