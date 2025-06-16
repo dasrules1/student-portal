@@ -265,6 +265,11 @@ interface ExistingAnswers {
   };
 }
 
+// Add type guard for classId
+const isClassIdValid = (id: string | undefined): id is string => {
+  return typeof id === 'string' && id.length > 0;
+};
+
 export default function StudentCurriculum() {
   const router = useRouter()
   const params = useParams()
@@ -932,33 +937,76 @@ export default function StudentCurriculum() {
 
   // Update the loadExistingAnswers function
   const loadExistingAnswers = async (content: Content) => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || !isClassIdValid(classId)) return;
     
     try {
-      // Query Firestore for existing answers using the correct path
+      // Get both uid and id for student identification
+      const studentId = currentUser.uid;
+      const studentAltId = currentUser.id || currentUser.user?.id;
+      
+      // Query all answers for this content and student
       const answersQuery = query(
         collection(db, 'student-answers', classId, 'answers'),
         where('contentId', '==', content.id),
-        where('studentId', '==', currentUser.uid)
+        where('studentId', 'in', [studentId, studentAltId].filter(Boolean))
       );
       
       const answersSnapshot = await getDocs(answersQuery);
-      const answers: ExistingAnswers = {};
+      const answers: UserAnswers = {};
+      const mathExpressions: MathExpressionInputs = {};
+      const openEnded: OpenEndedAnswers = {};
+      const submitted: SubmittedProblems = {};
+      const problemStates: ProblemState = {};
       
-      answersSnapshot.docs.forEach((doc: QueryDocumentSnapshot) => {
+      answersSnapshot.docs.forEach((doc) => {
         const data = doc.data();
-        if (data.problemIndex !== undefined) {
-          answers[data.problemIndex] = {
-            problemIndex: data.problemIndex,
+        const problemIndex = data.problemIndex;
+        
+        if (problemIndex !== undefined) {
+          // Update answers based on problem type
+          if (data.answerType === 'multiple-choice') {
+            if (!answers[content.id]) answers[content.id] = {};
+            answers[content.id][problemIndex] = Number(data.answer);
+          } else if (data.answerType === 'math-expression') {
+            if (!mathExpressions[content.id]) mathExpressions[content.id] = {};
+            mathExpressions[content.id][problemIndex] = data.answer;
+          } else if (data.answerType === 'open-ended') {
+            if (!openEnded[content.id]) openEnded[content.id] = {};
+            openEnded[content.id][problemIndex] = data.answer;
+          }
+          
+          // Update submitted problems and problem states
+          const key = `${content.id}-${problemIndex}`;
+          submitted[key] = true;
+          problemStates[key] = {
             answer: data.answer,
+            submitted: true,
             score: data.score || 0
           };
         }
       });
       
-      setExistingAnswers(answers);
+      // Update all states
+      setUserAnswers(answers);
+      setMathExpressionInputs(mathExpressions);
+      setOpenEndedAnswers(openEnded);
+      setSubmittedProblems(submitted);
+      setProblemState(problemStates);
+      
+      console.log('Loaded existing answers:', {
+        answers,
+        mathExpressions,
+        openEnded,
+        submitted,
+        problemStates
+      });
     } catch (error) {
-      console.error('Error loading student answers:', error);
+      console.error('Error loading existing answers:', error);
+      toast({
+        title: 'Error loading answers',
+        description: 'There was a problem loading your previous answers.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -990,399 +1038,251 @@ export default function StudentCurriculum() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <div className="container py-6">
-        {/* Header */}
-        <div className="flex flex-col items-start justify-between mb-6 space-y-4 md:flex-row md:items-center md:space-y-0">
-          <div>
-            <div className="flex items-center space-x-2">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/student/dashboard">
-                  <ArrowLeft className="w-4 h-4 mr-1" />
-                  Back to Dashboard
-                </Link>
-              </Button>
-            </div>
-            <h1 className="text-2xl font-bold md:text-3xl">{currentClass.name}</h1>
-            <p className="text-muted-foreground">Teacher: {currentClass.teacher}</p>
-          </div>
-          {currentClass.virtualLink && (
-            <Button asChild className="mt-2 md:mt-0">
-              <a href={currentClass.virtualLink} target="_blank" rel="noopener noreferrer">
-                <Video className="w-4 h-4 mr-2" />
-                Join Class Meeting
-              </a>
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => router.back()}
+            >
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-          )}
+            <h1 className="text-2xl font-bold">Curriculum</h1>
+          </div>
         </div>
 
-        {/* Class information panel */}
-        <Card className="mb-6">
-          <CardContent className="p-4 pt-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Schedule</p>
-                <p>{currentClass.meeting_day || currentClass.meetingDates || "No schedule set"}</p>
-                {currentClass.startTime && currentClass.endTime && (
-                  <p>{currentClass.startTime} - {currentClass.endTime}</p>
-                )}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Location</p>
-                <p>{currentClass.location || "No location set"}</p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Duration</p>
-                <p>
-                  {currentClass.startDate && currentClass.endDate 
-                    ? `${currentClass.startDate} to ${currentClass.endDate}` 
-                    : "Dates not specified"}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Status</p>
-                <div className="flex items-center">
-                  <Badge variant={currentClass.status === "active" ? "default" : "secondary"}>
-                    {currentClass.status || "Active"}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Main content */}
-        <div className="grid gap-6 md:grid-cols-12">
-          {/* Lesson sidebar */}
-          <div className="md:col-span-3">
-            <Card>
-              <CardHeader>
-                <CardTitle>Lessons</CardTitle>
-                <CardDescription>Available lessons and materials</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {lessonsWithContent && lessonsWithContent.length > 0 ? (
-                  <div className="space-y-1">
-                    {lessonsWithContent.map((lesson: Lesson, index: number) => {
-                      if (!lesson) return null;
-                      const publishedContents = lesson.contents && Array.isArray(lesson.contents) 
-                        ? lesson.contents.filter((c: Content) => c && c.isPublished) 
-                        : [];
-                      
-                      if (publishedContents.length === 0) return null;
-
-                      return (
-                        <Button
-                          key={lesson.id || `lesson-${index}`}
-                          variant={activeLesson === index + 1 ? "default" : "ghost"}
-                          className="justify-start w-full"
-                          onClick={() => {
-                            setActiveLesson(index + 1)
-                            setActiveContent(null)
-                          }}
-                        >
-                          <span className="mr-2">{index + 1}.</span>
-                          {lesson.title || `Lesson ${index + 1}`}
-                          {publishedContents.length > 0 && (
-                            <Badge variant="secondary" className="ml-auto">
-                              {publishedContents.length}
-                            </Badge>
-                          )}
-                        </Button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <BookOpen className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground">No published content available yet</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Content area */}
-          <div className="md:col-span-9">
-            {!activeContent ? (
-              lessonsWithContent && lessonsWithContent.length > 0 && lessonsWithContent[activeLesson - 1] ? (
-                // Lesson overview
-                <Card>
-                  <CardHeader>
-                    <CardTitle>
-                      Lesson {activeLesson}: {lessonsWithContent[activeLesson - 1]?.title || `Lesson ${activeLesson}`}
-                    </CardTitle>
-                    <CardDescription>
-                      {renderLatex(lessonsWithContent[activeLesson - 1]?.description) || "No description provided"}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {lessonsWithContent[activeLesson - 1]?.contents &&
-                       Array.isArray(lessonsWithContent[activeLesson - 1]?.contents) &&
-                       lessonsWithContent[activeLesson - 1]?.contents
-                        .filter((content: Content) => content && content.isPublished)
-                        .map((content: Content) => (
-                          <Card key={content.id ? content.id : `content-${Math.random()}`} className="overflow-hidden">
-                            <div
-                              className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
-                              onClick={() => handleSelectContent(content)}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center">
-                                  {renderContentTypeIcon(content.type)}
-                                  <div>
-                                    <CardTitle className="text-base">{content.title}</CardTitle>
-                                    <p className="text-sm text-muted-foreground">{renderLatex(content.description)}</p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center">{getStatusBadge(content)}</div>
-                              </div>
-                            </div>
-                          </Card>
-                        ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                // No content view
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                    <BookOpen className="w-16 h-16 mb-4 text-muted-foreground opacity-50" />
-                    <h3 className="text-xl font-medium mb-2">No Content Available Yet</h3>
-                    <p className="text-muted-foreground max-w-md">
-                      Your teacher hasn't published any content for this class yet. Check back later.
-                    </p>
-                  </CardContent>
-                </Card>
-              )
-            ) : (
-              // Content detail view
-              <Card>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Sidebar */}
+          <div className="md:col-span-1 space-y-4">
+            {curriculum?.lessons.map((lesson: Lesson) => (
+              <Card key={lesson.id}>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      {renderContentTypeIcon(activeContent.type)}
-                      <div>
-                        <CardTitle>{activeContent.title || 'Untitled Content'}</CardTitle>
-                        <CardDescription>{renderLatex(activeContent.description || '')}</CardDescription>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setActiveContent(null)
-                        setShowResults(false)
-                      }}
-                    >
-                      <ArrowLeft className="w-4 h-4 mr-2" />
-                      Back to Lesson
-                    </Button>
-                  </div>
+                  <CardTitle className="text-lg">{lesson.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {activeContent.problems && Array.isArray(activeContent.problems) && activeContent.problems.length > 0 ? (
-                    <div className="space-y-8">
+                  <div className="space-y-2">
+                    {lesson.contents?.map((content: Content) => (
+                      <Button
+                        key={content.id}
+                        variant={activeContent?.id === content.id ? "default" : "ghost"}
+                        className="w-full justify-start"
+                        onClick={() => handleSelectContent(content)}
+                      >
+                        {renderContentTypeIcon(content.type)}
+                        <span className="truncate">{content.title}</span>
+                        {getStatusBadge(content)}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Main Content */}
+          <div className="md:col-span-3">
+            {activeContent ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{activeContent.title}</CardTitle>
+                  <CardDescription>
+                    {renderContentTypeIcon(activeContent.type)}
+                    {contentTypes.find((type) => type.id === activeContent.type)?.name}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {activeContent.problems && activeContent.problems.length > 0 ? (
+                    <div className="space-y-6">
                       {activeContent.problems.map((problem, problemIndex) => {
-                        if (!problem) return null;
                         const isSubmitted = isProblemSubmitted(problemIndex);
                         const problemScore = getProblemScore(problemIndex);
-                        
                         return (
                           <div key={problemIndex} className="p-4 border rounded-lg">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center mb-2">
-                                  <p className="font-medium">Problem {problemIndex + 1}</p>
-                                  <Badge variant="outline" className="ml-2">
-                                    {problem.type === "multiple-choice"
-                                      ? "Multiple Choice"
-                                      : problem.type === "open-ended"
-                                        ? "Open Ended"
-                                        : "Math Expression"}
-                                  </Badge>
-                                  <Badge variant="secondary" className="ml-2">
-                                    {problem.points} {problem.points === 1 ? "point" : "points"}
-                                  </Badge>
-                                  {isSubmitted && (
-                                    <Badge variant={problemScore === problem.points ? "default" : "destructive"} className="ml-2">
-                                      Score: {problemScore}/{problem.points}
-                                    </Badge>
-                                  )}
+                            <div className="space-y-4">
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-1">
+                                  <h3 className="font-medium">
+                                    Problem {problemIndex + 1}
+                                    {problem.points && (
+                                      <span className="ml-2 text-sm text-muted-foreground">
+                                        ({problem.points} points)
+                                      </span>
+                                    )}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    {renderLatex(problem.question)}
+                                  </p>
                                 </div>
-
-                                <p className="mt-2 mb-4">{renderLatex(problem.question || '')}</p>
-
-                                {problem.type === "multiple-choice" && problem.options && Array.isArray(problem.options) && (
-                                  <RadioGroup
-                                    value={userAnswers[activeContent.id]?.[problemIndex]?.toString() || "-1"}
-                                    onValueChange={(value) =>
-                                      handleMultipleChoiceSelect(problemIndex, Number.parseInt(value))
-                                    }
-                                    disabled={isSubmitted}
-                                    className="space-y-3"
+                                {isSubmitted && (
+                                  <Badge
+                                    variant={problemScore === problem.points ? "default" : "destructive"}
                                   >
-                                    {problem.options.map((option, optionIndex) => (
-                                      <div
-                                        key={optionIndex}
-                                        className={`flex items-center space-x-2 p-2 rounded-md ${
-                                          isSubmitted && optionIndex === problem.correctAnswer
-                                            ? "bg-green-50 dark:bg-green-900/20"
-                                            : isSubmitted &&
-                                              userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
-                                              optionIndex !== problem.correctAnswer
-                                              ? "bg-red-50 dark:bg-red-900/20"
-                                              : ""
-                                        }`}
-                                      >
-                                        <RadioGroupItem
-                                          value={optionIndex.toString()}
-                                          id={`option-${problemIndex}-${optionIndex}`}
-                                        />
-                                        <Label htmlFor={`option-${problemIndex}-${optionIndex}`}>
-                                          {renderLatex(option || '')}
-                                        </Label>
-
-                                        {isSubmitted && optionIndex === problem.correctAnswer && (
-                                          <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
-                                        )}
-                                        {isSubmitted &&
-                                          userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
-                                          optionIndex !== problem.correctAnswer && (
-                                            <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
-                                          )}
-                                      </div>
-                                    ))}
-                                  </RadioGroup>
-                                )}
-
-                                {problem.type === "math-expression" && (
-                                  <div className="space-y-3">
-                                    <div className="flex flex-col space-y-2">
-                                      <Label htmlFor={`math-answer-${problemIndex}`}>Your Answer:</Label>
-                                      <div className="flex space-x-2">
-                                        <Input
-                                          id={`math-answer-${problemIndex}`}
-                                          value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
-                                          onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
-                                          placeholder="Enter your answer (e.g., 2x + 3 or 7)"
-                                          disabled={isSubmitted}
-                                          className="flex-1"
-                                        />
-                                      </div>
-
-                                      {isSubmitted && (
-                                        <div
-                                          className={`p-2 mt-2 rounded-md ${
-                                            problemScore === problem.points
-                                              ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-                                              : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
-                                          }`}
-                                        >
-                                          {problemScore === problem.points
-                                            ? "Correct!"
-                                            : "Incorrect. The correct answer is:"}
-                                          {problemScore !== problem.points && (
-                                            <div className="font-medium mt-1">
-                                              {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
-                                                <div className="flex flex-col gap-1">
-                                                  {problem.correctAnswers.map((answer, i) => (
-                                                    <div key={i}>{renderLatex(answer ? `$$${answer}$$` : '')}</div>
-                                                  ))}
-                                                </div>
-                                              ) : (
-                                                renderLatex(problem.correctAnswer ? `$$${problem.correctAnswer}$$` : '$$\\text{No answer provided}$$')
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {problem.type === "open-ended" && (
-                                  <div className="space-y-3">
-                                    <div className="flex flex-col space-y-2">
-                                      <Label htmlFor={`open-answer-${problemIndex}`}>Your Answer:</Label>
-                                      <Textarea
-                                        id={`open-answer-${problemIndex}`}
-                                        value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
-                                        onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
-                                        placeholder="Type your answer here..."
-                                        disabled={isSubmitted}
-                                        rows={4}
-                                      />
-
-                                      {isSubmitted && (
-                                        <div className="p-3 mt-2 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                          <p className="font-medium text-sm">Sample Correct Answer:</p>
-                                          {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
-                                            <div className="flex flex-col gap-2 mt-1">
-                                              {problem.correctAnswers.map((answer, i) => (
-                                                <p key={i}>{answer}</p>
-                                              ))}
-                                            </div>
-                                          ) : (
-                                            <p className="mt-1">{problem.correctAnswer || 'No answer provided'}</p>
-                                          )}
-
-                                          {problem.keywords && Array.isArray(problem.keywords) && problem.keywords.length > 0 && (
-                                            <div className="mt-3">
-                                              <p className="font-medium text-sm">Keywords Found in Your Answer:</p>
-                                              <div className="flex flex-wrap gap-1 mt-1">
-                                                {problem.keywords.map((keyword, keywordIndex) => {
-                                                  const isMatched = openEndedAnswers[activeContent.id]?.[problemIndex]
-                                                    ?.toLowerCase()
-                                                    .includes(keyword.toLowerCase())
-                                                  return (
-                                                    <Badge
-                                                      key={keywordIndex}
-                                                      variant={isMatched ? "default" : "outline"}
-                                                      className={isMatched ? "bg-green-500" : ""}
-                                                    >
-                                                      {keyword}
-                                                      {isMatched && <CheckCircle2 className="w-3 h-3 ml-1" />}
-                                                    </Badge>
-                                                  )
-                                                })}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {isSubmitted && problem.explanation && (
-                                  <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
-                                    <p className="font-medium text-sm">Explanation:</p>
-                                    <p className="text-sm">{renderLatex(problem.explanation)}</p>
-                                  </div>
-                                )}
-
-                                {!isSubmitted && (
-                                  <Button
-                                    className="mt-4"
-                                    onClick={() => handleSubmitProblem(problemIndex)}
-                                    disabled={
-                                      (problem.type === "multiple-choice" && 
-                                       (userAnswers[activeContent.id]?.[problemIndex] === undefined || 
-                                        userAnswers[activeContent.id]?.[problemIndex] === -1)) ||
-                                      (problem.type === "math-expression" && 
-                                       (!mathExpressionInputs[activeContent.id]?.[problemIndex] || 
-                                        mathExpressionInputs[activeContent.id]?.[problemIndex] === "")) ||
-                                      (problem.type === "open-ended" && 
-                                       (!openEndedAnswers[activeContent.id]?.[problemIndex] || 
-                                        openEndedAnswers[activeContent.id]?.[problemIndex] === ""))
-                                    }
-                                  >
-                                    Submit Answer
-                                  </Button>
+                                    {problemScore}/{problem.points} points
+                                  </Badge>
                                 )}
                               </div>
+
+                              {problem.type === "multiple-choice" && (
+                                <RadioGroup
+                                  value={userAnswers[activeContent.id]?.[problemIndex]?.toString()}
+                                  onValueChange={(value) =>
+                                    handleMultipleChoiceSelect(problemIndex, parseInt(value))
+                                  }
+                                  disabled={isSubmitted}
+                                >
+                                  {problem.options?.map((option, optionIndex) => (
+                                    <div key={optionIndex} className="flex items-center space-x-2">
+                                      <RadioGroupItem
+                                        value={optionIndex.toString()}
+                                        id={`option-${problemIndex}-${optionIndex}`}
+                                      />
+                                      <Label
+                                        htmlFor={`option-${problemIndex}-${optionIndex}`}
+                                        className="flex-1 cursor-pointer"
+                                      >
+                                        {renderLatex(option || '')}
+                                      </Label>
+
+                                      {isSubmitted && optionIndex === problem.correctAnswer && (
+                                        <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
+                                      )}
+                                      {isSubmitted &&
+                                        userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
+                                        optionIndex !== problem.correctAnswer && (
+                                          <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
+                                        )}
+                                    </div>
+                                  ))}
+                                </RadioGroup>
+                              )}
+
+                              {problem.type === "math-expression" && (
+                                <div className="space-y-3">
+                                  <div className="flex flex-col space-y-2">
+                                    <Label htmlFor={`math-answer-${problemIndex}`}>Your Answer:</Label>
+                                    <div className="flex space-x-2">
+                                      <Input
+                                        id={`math-answer-${problemIndex}`}
+                                        value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
+                                        onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
+                                        placeholder="Enter your answer (e.g., 2x + 3 or 7)"
+                                        disabled={isSubmitted}
+                                        className="flex-1"
+                                      />
+                                    </div>
+
+                                    {isSubmitted && (
+                                      <div
+                                        className={`p-2 mt-2 rounded-md ${
+                                          problemScore === problem.points
+                                            ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                            : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                        }`}
+                                      >
+                                        {problemScore === problem.points
+                                          ? "Correct!"
+                                          : "Incorrect. The correct answer is:"}
+                                        {problemScore !== problem.points && (
+                                          <div className="font-medium mt-1">
+                                            {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
+                                              <div className="flex flex-col gap-1">
+                                                {problem.correctAnswers.map((answer, i) => (
+                                                  <div key={i}>{renderLatex(answer ? `$$${answer}$$` : '')}</div>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              renderLatex(problem.correctAnswer ? `$$${problem.correctAnswer}$$` : '$$\\text{No answer provided}$$')
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {problem.type === "open-ended" && (
+                                <div className="space-y-3">
+                                  <div className="flex flex-col space-y-2">
+                                    <Label htmlFor={`open-answer-${problemIndex}`}>Your Answer:</Label>
+                                    <Textarea
+                                      id={`open-answer-${problemIndex}`}
+                                      value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
+                                      onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
+                                      placeholder="Type your answer here..."
+                                      disabled={isSubmitted}
+                                      rows={4}
+                                    />
+
+                                    {isSubmitted && (
+                                      <div className="p-3 mt-2 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                        <p className="font-medium text-sm">Sample Correct Answer:</p>
+                                        {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
+                                          <div className="flex flex-col gap-2 mt-1">
+                                            {problem.correctAnswers.map((answer, i) => (
+                                              <p key={i}>{answer}</p>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="mt-1">{problem.correctAnswer || 'No answer provided'}</p>
+                                        )}
+
+                                        {problem.keywords && Array.isArray(problem.keywords) && problem.keywords.length > 0 && (
+                                          <div className="mt-3">
+                                            <p className="font-medium text-sm">Keywords Found in Your Answer:</p>
+                                            <div className="flex flex-wrap gap-1 mt-1">
+                                              {problem.keywords.map((keyword, keywordIndex) => {
+                                                const isMatched = openEndedAnswers[activeContent.id]?.[problemIndex]
+                                                  ?.toLowerCase()
+                                                  .includes(keyword.toLowerCase())
+                                                return (
+                                                  <Badge
+                                                    key={keywordIndex}
+                                                    variant={isMatched ? "default" : "outline"}
+                                                    className={isMatched ? "bg-green-500" : ""}
+                                                  >
+                                                    {keyword}
+                                                    {isMatched && <CheckCircle2 className="w-3 h-3 ml-1" />}
+                                                  </Badge>
+                                                )
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {isSubmitted && problem.explanation && (
+                                <div className="p-3 mt-4 bg-slate-50 dark:bg-slate-800 rounded-md">
+                                  <p className="font-medium text-sm">Explanation:</p>
+                                  <p className="text-sm">{renderLatex(problem.explanation)}</p>
+                                </div>
+                              )}
+
+                              {!isSubmitted && (
+                                <Button
+                                  className="mt-4"
+                                  onClick={() => handleSubmitProblem(problemIndex)}
+                                  disabled={
+                                    (problem.type === "multiple-choice" && 
+                                     (userAnswers[activeContent.id]?.[problemIndex] === undefined || 
+                                      userAnswers[activeContent.id]?.[problemIndex] === -1)) ||
+                                    (problem.type === "math-expression" && 
+                                     (!mathExpressionInputs[activeContent.id]?.[problemIndex] || 
+                                      mathExpressionInputs[activeContent.id]?.[problemIndex] === "")) ||
+                                    (problem.type === "open-ended" && 
+                                     (!openEndedAnswers[activeContent.id]?.[problemIndex] || 
+                                      openEndedAnswers[activeContent.id]?.[problemIndex] === ""))
+                                  }
+                                >
+                                  Submit Answer
+                                </Button>
+                              )}
                             </div>
                           </div>
                         )
@@ -1414,6 +1314,10 @@ export default function StudentCurriculum() {
                   )}
                 </CardContent>
               </Card>
+            ) : (
+              <div className="p-4 border rounded-lg">
+                <p className="text-muted-foreground">Select a content item to begin.</p>
+              </div>
             )}
           </div>
         </div>

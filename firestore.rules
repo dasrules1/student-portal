@@ -38,22 +38,26 @@ service cloud.firestore {
              (classData.enrolledStudents != null && classData.enrolledStudents.hasAny([request.auth.uid]));
     }
 
+    function isStudentAnswer(studentId) {
+      return studentId == request.auth.uid || studentId == request.auth.id;
+    }
+
     // Student Answers - nested structure
     match /student-answers/{classId}/answers/{answerId} {
       allow read: if isAuthenticated() && (
         // Students can read their own answers
-        (isStudent() && resource.data.studentId == request.auth.uid) ||
-        // Teachers can read all answers
-        isTeacher() ||
+        (isStudent() && isStudentAnswer(resource.data.studentId)) ||
+        // Teachers can read all answers for their class
+        (isTeacher() && hasAccessToClass(classId)) ||
         // Admins can read all answers
         isAdmin()
       );
       
       allow create, update: if isAuthenticated() && (
         // Students can write their own answers
-        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        (isStudent() && isStudentAnswer(request.resource.data.studentId)) ||
         // Teachers can write for their class
-        isTeacher() ||
+        (isTeacher() && hasAccessToClass(classId)) ||
         // Admins can write anything
         isAdmin()
       );
@@ -63,18 +67,18 @@ service cloud.firestore {
     match /student-progress/{progressId} {
       allow read: if isAuthenticated() && (
         // Students can read their own progress
-        (isStudent() && resource.data.studentId == request.auth.uid) ||
-        // Teachers can read all progress
-        isTeacher() ||
+        (isStudent() && isStudentAnswer(resource.data.studentId)) ||
+        // Teachers can read all progress for their class
+        (isTeacher() && hasAccessToClass(resource.data.classId)) ||
         // Admins can read all progress
         isAdmin()
       );
       
       allow create, update: if isAuthenticated() && (
         // Students can write their own progress
-        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        (isStudent() && isStudentAnswer(request.resource.data.studentId)) ||
         // Teachers can write for their class
-        isTeacher() ||
+        (isTeacher() && hasAccessToClass(request.resource.data.classId)) ||
         // Admins can write anything
         isAdmin()
       );
@@ -84,18 +88,18 @@ service cloud.firestore {
     match /student-completions/{completionId} {
       allow read: if isAuthenticated() && (
         // Students can read their own completions
-        (isStudent() && resource.data.studentId == request.auth.uid) ||
-        // Teachers can read all completions
-        isTeacher() ||
+        (isStudent() && isStudentAnswer(resource.data.studentId)) ||
+        // Teachers can read all completions for their class
+        (isTeacher() && hasAccessToClass(resource.data.classId)) ||
         // Admins can read all completions
         isAdmin()
       );
       
       allow create, update: if isAuthenticated() && (
         // Students can write their own completions
-        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        (isStudent() && isStudentAnswer(request.resource.data.studentId)) ||
         // Teachers can write for their class
-        isTeacher() ||
+        (isTeacher() && hasAccessToClass(request.resource.data.classId)) ||
         // Admins can write anything
         isAdmin()
       );
