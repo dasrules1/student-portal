@@ -275,6 +275,7 @@ export default function StudentCurriculum() {
   const params = useParams()
   const { toast } = useToast()
   const classId = params.classId as string
+  const [isLoading, setIsLoading] = useState(true)
   
   // Read query parameters
   const [queryParams, setQueryParams] = useState<{
@@ -438,33 +439,35 @@ export default function StudentCurriculum() {
     loadClassAndCurriculum();
   }, [classId, router, toast, queryParams]);
 
-  // Load curriculum data
   const loadCurriculum = async () => {
     try {
-      // First try the regular curriculum with filtering
-      const curriculumData = await storage.getCurriculum(classId, currentUser?.role);
-      
-      if (curriculumData) {
-        console.log("Loaded curriculum data:", curriculumData);
-        setCurriculum(curriculumData);
-        setLessonsWithContent(curriculumData.content?.lessons || []);
-        setLastUpdateTimestamp(curriculumData.lastUpdated || null);
+      setIsLoading(true)
+      const curriculumDoc = await getDoc(doc(db, 'published_curricula', classId))
+      if (curriculumDoc.exists()) {
+        setCurriculum(curriculumDoc.data() as Curriculum)
       } else {
         toast({
-          title: "No content available",
-          description: "There is no published curriculum content available for this class yet.",
-          variant: "default",
-        });
+          title: "Error",
+          description: "Curriculum not found",
+          variant: "destructive"
+        })
       }
     } catch (error) {
-      console.error("Error loading curriculum:", error);
+      console.error('Error loading curriculum:', error)
       toast({
-        title: "Error loading curriculum",
-        description: "There was a problem loading the curriculum content.",
-        variant: "destructive",
-      });
+        title: "Error",
+        description: "Failed to load curriculum",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
     }
-  };
+  }
+
+  // Load curriculum data
+  useEffect(() => {
+    loadCurriculum()
+  }, [classId, toast])
 
   // Handle selecting a content item
   const handleSelectContent = async (content: Content) => {
@@ -1029,10 +1032,23 @@ export default function StudentCurriculum() {
   }, [activeContent, currentUser?.uid]);
 
   // Main render function
-  if (!currentClass || !curriculum) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Loading curriculum...</p>
+      <div className="flex items-center justify-center py-12">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <p className="text-muted-foreground">Loading curriculum...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!curriculum) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <p className="text-muted-foreground">No curriculum found</p>
+        </div>
       </div>
     )
   }
@@ -1056,29 +1072,35 @@ export default function StudentCurriculum() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {/* Sidebar */}
           <div className="md:col-span-1 space-y-4">
-            {curriculum?.lessons.map((lesson: Lesson) => (
-              <Card key={lesson.id}>
-                <CardHeader>
-                  <CardTitle className="text-lg">{lesson.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {lesson.contents?.map((content: Content) => (
-                      <Button
-                        key={content.id}
-                        variant={activeContent?.id === content.id ? "default" : "ghost"}
-                        className="w-full justify-start"
-                        onClick={() => handleSelectContent(content)}
-                      >
-                        {renderContentTypeIcon(content.type)}
-                        <span className="truncate">{content.title}</span>
-                        {getStatusBadge(content)}
-                      </Button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {curriculum.lessons && curriculum.lessons.length > 0 ? (
+              curriculum.lessons.map((lesson: Lesson) => (
+                <Card key={lesson.id}>
+                  <CardHeader>
+                    <CardTitle className="text-lg">{lesson.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {lesson.contents?.map((content: Content) => (
+                        <Button
+                          key={content.id}
+                          variant={activeContent?.id === content.id ? "default" : "ghost"}
+                          className="w-full justify-start"
+                          onClick={() => handleSelectContent(content)}
+                        >
+                          {renderContentTypeIcon(content.type)}
+                          <span className="truncate">{content.title}</span>
+                          {getStatusBadge(content)}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <div className="p-4 border rounded-lg">
+                <p className="text-muted-foreground">No lessons available</p>
+              </div>
+            )}
           </div>
 
           {/* Main Content */}
