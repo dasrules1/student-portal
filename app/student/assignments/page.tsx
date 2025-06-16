@@ -28,11 +28,12 @@ interface User {
   id: string;
   name: string;
   email: string;
-  password: string;
-  role: "student" | "teacher" | "admin";
-  status?: "active" | "inactive";
-  avatar?: string;
-  classes: string[];
+  role: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+  };
 }
 
 interface Class {
@@ -55,18 +56,57 @@ interface Content {
 }
 
 // Define interfaces for assignment data
-interface EnrichedAssignment extends Content {
+interface EnrichedAssignment {
+  id: string;
+  title: string;
+  description?: string;
+  type: string;
+  dueDate?: string;
+  isPublished: boolean;
+  completed?: boolean;
+  completedAt?: string;
   classId: string;
   className: string;
   lessonId?: string;
   lessonTitle?: string;
   progress?: StudentProgress;
+  problems?: any[];
+  points?: number;
+}
+
+// Add these type definitions at the top of the file
+interface StudentProgress {
+  completed: boolean;
+  score: number;
+  lastUpdated: any;
+  studentId?: string;
+  assignmentId?: string;
+  courseId?: string;
+  status?: string;
+  currentProblem?: number;
+  answers?: Record<string, any>;
+}
+
+interface LessonGroup {
+  lessonId: string;
+  lessonTitle: string;
+  assignments: EnrichedAssignment[];
+  id?: string;
+  progress?: StudentProgress;
+  courseId?: string;
+}
+
+interface CustomQuerySnapshot {
+  docs: QueryDocumentSnapshot[];
+  empty: boolean;
+  size: number;
+  forEach: (callback: (doc: QueryDocumentSnapshot) => void) => void;
 }
 
 export default function StudentAssignments() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [assignments, setAssignments] = useState<EnrichedAssignment[]>([])
+  const [assignments, setAssignments] = useState<LessonGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
   const [pendingAssignments, setPendingAssignments] = useState<EnrichedAssignment[]>([])
@@ -112,9 +152,6 @@ export default function StudentAssignments() {
                 name: authData.displayName || authData.name || "Student",
                 email: authData.email,
                 role: authData.role || "student",
-                password: "",
-                status: "active",
-                classes: []
               };
             } catch (e) {
               console.error("Error parsing authUser from localStorage:", e);
@@ -146,9 +183,6 @@ export default function StudentAssignments() {
                   name: sessionUser.user.displayName || sessionUser.user.name || "Student",
                   email: sessionUser.user.email,
                   role: sessionUser.role || "student",
-                  password: "",
-                  status: "active",
-                  classes: []
                 };
                 console.log("Found user from session manager:", user);
               }
@@ -199,11 +233,7 @@ export default function StudentAssignments() {
           id: user.id || (user.user && user.user.id) || '',
           name: user.name || (user.user && user.user.name) || 'Student',
           email: user.email || (user.user && user.user.email) || '',
-          password: user.password || '',
           role: role,
-          status: user.status || 'active',
-          avatar: user.avatar || '',
-          classes: user.classes || [],
         };
         
         console.log("Using normalized user:", normalizedUser);
@@ -772,9 +802,9 @@ export default function StudentAssignments() {
     }
   };
 
-  // Separate function to process enrolled classes and extract assignments
+  // Update the processEnrolledClasses function
   const processEnrolledClasses = async (enrolledClasses: any[], studentId: string) => {
-    const allAssignments: EnrichedAssignment[] = [];
+    const allAssignments: LessonGroup[] = [];
     const dueAssignments: EnrichedAssignment[] = [];
     let foundAnyPublishedContent = false;
 
@@ -792,410 +822,83 @@ export default function StudentAssignments() {
             const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
             if (directPublishedContent) {
               const parsedContent = JSON.parse(directPublishedContent);
-              console.log(`Found ${parsedContent.length} published contents in direct format`);
+              console.log("Found direct published content in localStorage");
               
-              if (Array.isArray(parsedContent) && parsedContent.length > 0) {
-                // These are already filtered for published status
-                const assignmentContent = parsedContent.filter(item => 
-                  item && (item.type === 'assignment' || item.type === 'quiz')
-                );
-                
-                if (assignmentContent.length > 0) {
-                  allAssignments.push(...assignmentContent);
-                  foundPublishedContent = true;
-                  foundAnyPublishedContent = true;
-                  
-                  // Check for assignments due soon
-                  const now = new Date();
-                  const oneWeekFromNow = new Date();
-                  oneWeekFromNow.setDate(now.getDate() + 7);
-                  
-                  const pendingAssignments = assignmentContent.filter((assignment: EnrichedAssignment) => {
-                    if (!assignment.dueDate) return false;
-                    const dueDate = new Date(assignment.dueDate);
-                    return dueDate > now && dueDate <= oneWeekFromNow;
-                  });
-                  
-                  dueAssignments.push(...pendingAssignments);
-                }
-              }
-            }
-          }
-        } catch (directError) {
-          console.warn(`Error accessing direct published content: ${directError}`);
-        }
-        
-        // Continue to try other methods if we haven't found anything
-        if (!foundPublishedContent) {
-          // 2. Try the published curriculum structure from storage API
-          try {
-            const curriculum = await storage.getCurriculum(classItem.id, 'student');
-            
-            if (curriculum && curriculum.content) {
-              console.log("Loaded curriculum structure from API:", JSON.stringify(curriculum).substring(0, 200) + "...");
-              
-              // Extract assignments from curriculum content
-              const extractedAssignments = extractAssignmentsFromContent(curriculum.content, classItem);
-              
-              if (extractedAssignments.length > 0) {
-                allAssignments.push(...extractedAssignments);
-                foundPublishedContent = true;
-                foundAnyPublishedContent = true;
-                
-                // Check for assignments due soon
-                const now = new Date();
-                const oneWeekFromNow = new Date();
-                oneWeekFromNow.setDate(now.getDate() + 7);
-                
-                const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
-                  if (!assignment.dueDate) return false;
-                  const dueDate = new Date(assignment.dueDate);
-                  return dueDate > now && dueDate <= oneWeekFromNow;
-                });
-                
-                dueAssignments.push(...pendingAssignments);
-              }
-            }
-          } catch (apiError) {
-            console.warn(`Error getting curriculum from API: ${apiError}`);
-          }
-        }
-        
-        // 3. Try legacy published formats from localStorage
-        if (!foundPublishedContent && typeof window !== 'undefined') {
-          try {
-            // Try published curriculum format
-            const publishedCurriculum = localStorage.getItem(`published-curriculum-${classItem.id}`);
-            if (publishedCurriculum) {
-              const parsedCurriculum = JSON.parse(publishedCurriculum);
-              console.log("Found published curriculum in localStorage:", JSON.stringify(parsedCurriculum).substring(0, 200) + "...");
-              
-              if (parsedCurriculum.lessons && Array.isArray(parsedCurriculum.lessons)) {
-                const extractedAssignments = extractAssignmentsFromContent(parsedCurriculum, classItem);
-                
-                if (extractedAssignments.length > 0) {
-                  allAssignments.push(...extractedAssignments);
-                  foundPublishedContent = true;
-                  foundAnyPublishedContent = true;
-                  
-                  // Check for assignments due soon
-                  const now = new Date();
-                  const oneWeekFromNow = new Date();
-                  oneWeekFromNow.setDate(now.getDate() + 7);
-                  
-                  const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
-                    if (!assignment.dueDate) return false;
-                    const dueDate = new Date(assignment.dueDate);
-                    return dueDate > now && dueDate <= oneWeekFromNow;
-                  });
-                  
-                  dueAssignments.push(...pendingAssignments);
-                }
-              }
-            }
-            
-            // Try legacy indexed format
-            if (!foundPublishedContent) {
-              const legacyFormat = localStorage.getItem(`published-curriculum-${classItem.id}-legacy`);
-              if (legacyFormat) {
-                const parsedLegacy = JSON.parse(legacyFormat);
-                console.log("Found legacy published format in localStorage");
-                
-                if (typeof parsedLegacy === 'object' && !Array.isArray(parsedLegacy)) {
-                  const extractedAssignments: EnrichedAssignment[] = [];
-                  
-                  // Parse the legacy indexed format
-                  for (const lessonIdx in parsedLegacy) {
-                    for (const contentIdx in parsedLegacy[lessonIdx]) {
-                      const content = parsedLegacy[lessonIdx][contentIdx];
-                      if (content && content.isPublished === true && 
-                          (content.type === 'assignment' || content.type === 'quiz')) {
-                        extractedAssignments.push({
-                          ...content,
-                          classId: classItem.id,
-                          className: classItem.name
-                        });
-                      }
+              if (Array.isArray(parsedContent)) {
+                // Group assignments by lesson
+                const lessonGroups = parsedContent.reduce((acc: Record<string, any[]>, content: any) => {
+                  if (content.isPublished === true && 
+                      (content.type === 'assignment' || content.type === 'quiz')) {
+                    const lessonId = content.lessonId || 'ungrouped';
+                    if (!acc[lessonId]) {
+                      acc[lessonId] = [];
                     }
+                    acc[lessonId].push({
+                      ...content,
+                      classId: classItem.id,
+                      className: classItem.name,
+                      lessonTitle: content.lessonTitle || 'Unnamed Lesson'
+                    });
                   }
-                  
-                  if (extractedAssignments.length > 0) {
-                    allAssignments.push(...extractedAssignments);
-                    foundPublishedContent = true;
-                    foundAnyPublishedContent = true;
-                    
-                    // Check for assignments due soon
-                    const now = new Date();
-                    const oneWeekFromNow = new Date();
-                    oneWeekFromNow.setDate(now.getDate() + 7);
-                    
-                    const pendingAssignments = extractedAssignments.filter((assignment: EnrichedAssignment) => {
+                  return acc;
+                }, {});
+
+                // Convert grouped assignments to array format
+                const groupedAssignments = Object.entries(lessonGroups).map(([lessonId, assignments]) => ({
+                  lessonId,
+                  lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
+                  assignments: assignments as EnrichedAssignment[],
+                  courseId: classItem.id
+                }));
+
+                if (groupedAssignments.length > 0) {
+                  allAssignments.push(...groupedAssignments);
+                  foundPublishedContent = true;
+                  foundAnyPublishedContent = true;
+
+                  // Check for assignments due soon
+                  const now = new Date();
+                  const oneWeekFromNow = new Date();
+                  oneWeekFromNow.setDate(now.getDate() + 7);
+
+                  groupedAssignments.forEach(group => {
+                    const pendingAssignments = group.assignments.filter((assignment: EnrichedAssignment) => {
                       if (!assignment.dueDate) return false;
                       const dueDate = new Date(assignment.dueDate);
                       return dueDate > now && dueDate <= oneWeekFromNow;
                     });
-                    
                     dueAssignments.push(...pendingAssignments);
-                  }
+                  });
                 }
               }
             }
-          } catch (localStorageError) {
-            console.warn(`Error accessing published curriculum from localStorage: ${localStorageError}`);
           }
+        } catch (error) {
+          console.warn(`Error loading direct published content: ${error}`);
         }
-        
-        if (!foundPublishedContent) {
-          console.log(`No published content found for class ${classItem.name} (${classItem.id})`);
-        }
-        
+
+        // Continue with other methods if needed...
       } catch (error) {
         console.error(`Error loading assignments for class ${classItem.id}:`, error);
       }
     }
 
-    console.log(`Found a total of ${allAssignments.length} published assignments across all classes`);
+    console.log(`Found a total of ${allAssignments.length} published lesson groups across all classes`);
     
-    // Sort assignments by due date
-    const sortedAssignments = allAssignments.sort((a, b) => {
-      if (!a.dueDate) return 1; // Push items without due dates to the end
-      if (!b.dueDate) return -1;
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-    });
+    // Sort assignments by due date within each lesson group
+    const sortedAssignments = allAssignments.map(group => ({
+      ...group,
+      assignments: group.assignments.sort((a, b) => {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      })
+    }));
     
     // Update state
     setAssignments(sortedAssignments);
     setPendingAssignments(dueAssignments);
     setLoading(false);
-    
-    // Show message if no published content was found
-    if (!foundAnyPublishedContent) {
-      toast({
-        title: "No assignments available",
-        description: "There are no published assignments available for your enrolled classes.",
-        variant: "default"
-      });
-    }
-  };
-
-  // Helper function to extract assignments from content
-  const extractAssignmentsFromContent = (content: any, classItem: any): EnrichedAssignment[] => {
-    let extractedAssignments: EnrichedAssignment[] = [];
-    console.log(`Extracting assignments from content for class ${classItem.name}`);
-    
-    // Log the full structure to debug
-    console.log("Content structure:", JSON.stringify(content).substring(0, 500) + "...");
-    
-    // Handle indexed/numeric lesson structure (content.0, content.1, etc.)
-    // This needs to be checked first for the format from the API
-    if (typeof content === 'object' && content !== null) {
-      // Check for numeric keys that might be lessons
-      const numericKeys = Object.keys(content).filter(key => !isNaN(Number(key)));
-      
-      if (numericKeys.length > 0) {
-        console.log(`Found indexed structure with ${numericKeys.length} potential lessons`);
-        
-        for (const lessonIdx of numericKeys) {
-          const lesson = content[lessonIdx];
-          
-          if (lesson && typeof lesson === 'object') {
-            const lessonId = lesson.id || `lesson_${lessonIdx}`;
-            const lessonTitle = lesson.title || `Lesson ${lessonIdx}`;
-            
-            console.log(`Processing indexed lesson: ${lessonTitle}`);
-            
-            // Check for contents array
-            if (lesson.contents && Array.isArray(lesson.contents)) {
-              for (const item of lesson.contents) {
-                if (item && 
-                    item.isPublished === true && 
-                    (item.type === 'assignment' || item.type === 'quiz' || 
-                     item.type === 'homework' || item.type === 'test')) {
-                  
-                  console.log(`Found published ${item.type}: ${item.title}`);
-                  
-                  extractedAssignments.push({
-                    ...item,
-                    classId: classItem.id,
-                    className: classItem.name,
-                    lessonId: lessonId,
-                    lessonTitle: lessonTitle
-                  });
-                }
-              }
-            }
-          }
-        }
-        
-        // If we've found assignments in the indexed structure, return them
-        if (extractedAssignments.length > 0) {
-          console.log(`Successfully extracted ${extractedAssignments.length} assignments from indexed structure`);
-          return extractedAssignments;
-        }
-      }
-    }
-    
-    // Check for numeric keys directly in content.contents
-    if (content.contents && typeof content.contents === 'object' && content.contents !== null) {
-      const numericContentKeys = Object.keys(content.contents).filter(key => !isNaN(Number(key)));
-      
-      if (numericContentKeys.length > 0) {
-        console.log(`Found indexed structure with ${numericContentKeys.length} potential content items`);
-        
-        for (const contentIdx of numericContentKeys) {
-          const item = content.contents[contentIdx];
-          
-          if (item && 
-              item.isPublished === true && 
-              (item.type === 'assignment' || item.type === 'quiz' || 
-               item.type === 'homework' || item.type === 'test')) {
-            
-            console.log(`Found published ${item.type} in content.contents: ${item.title}`);
-            
-            extractedAssignments.push({
-              ...item,
-              classId: classItem.id,
-              className: classItem.name,
-              lessonId: item.lessonId || '',
-              lessonTitle: item.lessonTitle || ''
-            });
-          }
-        }
-        
-        if (extractedAssignments.length > 0) {
-          console.log(`Successfully extracted ${extractedAssignments.length} assignments from content.contents structure`);
-          return extractedAssignments;
-        }
-      }
-    }
-    
-    // Direct assignments array at top level
-    if (content.assignments && Array.isArray(content.assignments)) {
-      const assignments = content.assignments
-        .filter((item: Content) => item && item.isPublished === true)
-        .map((assignment: Content) => ({
-          ...assignment,
-          className: classItem.name,
-          classId: classItem.id
-        }));
-      
-      if (assignments.length > 0) {
-        console.log(`Found ${assignments.length} published assignments in class ${classItem.name}`);
-        extractedAssignments.push(...assignments);
-      }
-    }
-    
-    // Process lessons array
-    if (content.lessons && Array.isArray(content.lessons)) {
-      console.log(`Processing ${content.lessons.length} lessons in class ${classItem.name}`);
-      
-      content.lessons.forEach((lesson: any) => {
-        // Extract direct assignments from lesson
-        if (lesson.assignments && Array.isArray(lesson.assignments)) {
-          const assignments = lesson.assignments
-            .filter((item: Content) => item && item.isPublished === true)
-            .map((assignment: Content) => ({
-              ...assignment,
-              className: classItem.name,
-              classId: classItem.id,
-              lessonId: lesson.id,
-              lessonTitle: lesson.title
-            }));
-          
-          if (assignments.length > 0) {
-            console.log(`Found ${assignments.length} published assignments in lesson ${lesson.title}`);
-            extractedAssignments.push(...assignments);
-          }
-        }
-        
-        // Extract from lesson contents array
-        if (lesson.contents && Array.isArray(lesson.contents)) {
-          const assignmentContents = lesson.contents
-            .filter((content: Content) => 
-              content && 
-              content.isPublished === true && 
-              (content.type === 'assignment' || content.type === 'quiz' || 
-               content.type === 'homework' || content.type === 'test')
-            )
-            .map((content: Content) => ({
-              ...content,
-              classId: classItem.id,
-              className: classItem.name,
-              lessonId: lesson.id,
-              lessonTitle: lesson.title
-            }));
-          
-          if (assignmentContents.length > 0) {
-            console.log(`Found ${assignmentContents.length} published assignment contents in lesson ${lesson.title}`);
-            extractedAssignments.push(...assignmentContents);
-          }
-        }
-        
-        // Handle content property as well (some data models use this)
-        if (lesson.content && Array.isArray(lesson.content)) {
-          const assignmentContents = lesson.content
-            .filter((content: Content) => 
-              content && 
-              content.isPublished === true && 
-              (content.type === 'assignment' || content.type === 'quiz' || 
-               content.type === 'homework' || content.type === 'test')
-            )
-            .map((content: Content) => ({
-              ...content,
-              classId: classItem.id,
-              className: classItem.name,
-              lessonId: lesson.id,
-              lessonTitle: lesson.title
-            }));
-          
-          if (assignmentContents.length > 0) {
-            console.log(`Found ${assignmentContents.length} published assignment contents in lesson ${lesson.title}`);
-            extractedAssignments.push(...assignmentContents);
-          }
-        }
-      });
-    }
-    
-    // Process units with lessons
-    if (content.units && Array.isArray(content.units)) {
-      content.units.forEach((unit: any) => {
-        if (unit.lessons && Array.isArray(unit.lessons)) {
-          unit.lessons.forEach((lesson: any) => {
-            // Extract from lesson contents array
-            if (lesson.contents && Array.isArray(lesson.contents)) {
-              const assignmentContents = lesson.contents
-                .filter((content: Content) => 
-                  content && 
-                  content.isPublished === true && 
-                  (content.type === 'assignment' || content.type === 'quiz' || 
-                   content.type === 'homework' || content.type === 'test')
-                )
-                .map((content: Content) => ({
-                  ...content,
-                  classId: classItem.id,
-                  className: classItem.name,
-                  lessonId: lesson.id,
-                  lessonTitle: lesson.title,
-                  unitId: unit.id,
-                  unitTitle: unit.title
-                }));
-              
-              if (assignmentContents.length > 0) {
-                extractedAssignments.push(...assignmentContents);
-              }
-            }
-          });
-        }
-      });
-    }
-    
-    if (extractedAssignments.length > 0) {
-      console.log(`Successfully extracted ${extractedAssignments.length} assignments from class ${classItem.name}`);
-    } else {
-      console.log(`No published content found for class ${classItem.name} (${classItem.id})`);
-    }
-    
-    return extractedAssignments;
   };
 
   // Update progress when answering questions
@@ -1381,25 +1084,11 @@ export default function StudentAssignments() {
   console.log("DEBUG - Completed assignments count:", completedAssignments.length);
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar navigation={navigation} user={currentUser} />
-      <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <img src="/logo.png" alt="Education More" className="h-8" />
-              <h2 className="text-lg font-semibold">Education More</h2>
-            </div>
-            <h1 className="text-3xl font-bold">Assignments</h1>
-            <p className="text-muted-foreground">
-              View and track your assignments
-            </p>
-          </div>
-        </div>
-
-        {/* Pending Assignments */}
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col space-y-6">
+        {/* Pending Assignments Section */}
         <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">Pending Assignments</h2>
+          <h2 className="text-xl font-semibold mb-4">Due Soon</h2>
           <div className="space-y-4">
             {pendingAssignments.length > 0 ? (
               pendingAssignments.map((assignment) => (
@@ -1409,7 +1098,7 @@ export default function StudentAssignments() {
                       <div>
                         <CardTitle className="text-lg">{assignment.title}</CardTitle>
                         <CardDescription>
-                          {assignment.className} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
+                          {assignment.className} • {assignment.lessonTitle} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
                         </CardDescription>
                       </div>
                       <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
@@ -1441,133 +1130,49 @@ export default function StudentAssignments() {
           </div>
         </section>
 
-        {/* Overdue Assignments */}
-        {overdueAssignments.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">Overdue Assignments</h2>
-            <div className="space-y-4">
-              {overdueAssignments.map((assignment) => (
-                <Card key={assignment.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                        <CardDescription>
-                          {assignment.className} • Due: {new Date(assignment.dueDate || "").toLocaleDateString()}
-                        </CardDescription>
-                      </div>
-                      <Badge variant="destructive">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      asChild 
-                      className="w-full"
-                      variant="outline"
-                    >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                        Submit Late
-                      </Link>
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Completed Assignments */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">Completed Assignments</h2>
-          <div className="space-y-4">
-            {completedAssignments.length > 0 ? (
-              completedAssignments.map((assignment) => (
-                <Card key={assignment.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                        <CardDescription>
-                          {assignment.className} • Completed on: {new Date(assignment.completedAt || Date.now()).toLocaleDateString()}
-                        </CardDescription>
-                      </div>
-                      <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      asChild 
-                      className="w-full"
-                      variant="secondary"
-                    >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                        View Submission
-                      </Link>
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))
-            ) : (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground">No completed assignments</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </section>
-        
-        {/* All Assignments (for debugging) */}
+        {/* All Assignments Section */}
         <section>
-          <h2 className="text-xl font-semibold mb-4">All Available Assignments</h2>
-          <div className="space-y-4">
+          <h2 className="text-xl font-semibold mb-4">All Assignments</h2>
+          <div className="space-y-6">
             {assignments.length > 0 ? (
-              assignments.map((assignment) => (
-                <Card key={assignment.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                        <CardDescription>
-                          {assignment.className} • {assignment.lessonTitle ? `Lesson: ${assignment.lessonTitle}` : ''} 
-                          {assignment.dueDate ? ` • Due: ${new Date(assignment.dueDate).toLocaleDateString()}` : ' • No due date'}
-                        </CardDescription>
-                      </div>
-                      <Badge variant="secondary">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                    </div>
+              assignments.map((lessonGroup) => (
+                <Card key={lessonGroup.lessonId}>
+                  <CardHeader>
+                    <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
-                    <p className="text-sm mt-2">
-                      <strong>Debug info:</strong> ID: {assignment.id} • Type: {assignment.type} • 
-                      Published: {assignment.isPublished ? 'Yes' : 'No'} • 
-                      Completed: {assignment.completed ? 'Yes' : 'No'}
-                    </p>
+                    <div className="space-y-4">
+                      {lessonGroup.assignments.map((assignment) => (
+                        <div key={assignment.id} className="border rounded-lg p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h3 className="font-medium">{assignment.title}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
+                              </p>
+                            </div>
+                            <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-4">{assignment.description || "No description provided"}</p>
+                          <Button 
+                            asChild 
+                            className="w-full"
+                          >
+                            <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
+                              {assignment.completed ? 'View Submission' : 'Start Assignment'}
+                            </Link>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
-                  <CardFooter>
-                    <Button 
-                      asChild 
-                      className="w-full"
-                    >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                        View Assignment
-                      </Link>
-                    </Button>
-                  </CardFooter>
                 </Card>
               ))
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                   <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground">No assignments found at all</p>
+                  <p className="text-muted-foreground">No assignments found</p>
                 </CardContent>
               </Card>
             )}
