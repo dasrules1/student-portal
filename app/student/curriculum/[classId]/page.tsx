@@ -321,6 +321,8 @@ export default function StudentCurriculum() {
     const loadClassAndCurriculum = async () => {
       // Check if user is a student
       const user = sessionManager.getCurrentUser()
+      console.log('Current user:', user)
+      
       if (!user || user.role !== "student") {
         toast({
           title: "Access denied",
@@ -334,13 +336,14 @@ export default function StudentCurriculum() {
       // Cast user to User type
       const typedUser = user.user as unknown as User;
       setCurrentUser(typedUser);
+      console.log('Typed user:', typedUser)
 
       // Try to get class from storage
       try {
         // Get classes and make sure it's an array before using .find()
         const classes = await storage.getClasses();
         console.log("DEBUG - ClassId from URL:", classId);
-        console.log("DEBUG - Retrieved classes count:", Array.isArray(classes) ? classes.length : "Not an array");
+        console.log("DEBUG - Retrieved classes:", classes);
         
         if (Array.isArray(classes)) {
           // Log class IDs for debugging
@@ -360,8 +363,18 @@ export default function StudentCurriculum() {
             console.log("DEBUG - Current user:", JSON.stringify(typedUser));
             
             // Check if user has an id directly or nested in user property
-            const userId = typedUser.id;
+            const userId = typedUser.id || typedUser.uid;
             console.log("DEBUG - User ID for enrollment check:", userId);
+            
+            if (!userId) {
+              console.error("No user ID found");
+              toast({
+                title: "Error",
+                description: "User ID not found",
+                variant: "destructive",
+              });
+              return;
+            }
             
             // Debug enrolled students array
             console.log("DEBUG - Class enrolled students:", 
@@ -418,12 +431,30 @@ export default function StudentCurriculum() {
               router.push("/student");
             }
           } else {
-            toast({
-              title: "Class not found",
-              description: "The requested class could not be found",
-              variant: "destructive",
-            });
-            router.push("/student");
+            // Try to get the class directly from Firestore
+            try {
+              const classDoc = await getDoc(doc(db, 'classes', classId));
+              if (classDoc.exists()) {
+                const classData = classDoc.data();
+                console.log("DEBUG - Found class in Firestore:", classData);
+                setCurrentClass(classData);
+                loadCurriculum();
+              } else {
+                toast({
+                  title: "Class not found",
+                  description: "The requested class could not be found",
+                  variant: "destructive",
+                });
+                router.push("/student");
+              }
+            } catch (error) {
+              console.error("Error loading class from Firestore:", error);
+              toast({
+                title: "Error loading class",
+                description: "There was an error loading the class data",
+                variant: "destructive",
+              });
+            }
           }
         }
       } catch (error) {
@@ -442,15 +473,44 @@ export default function StudentCurriculum() {
   const loadCurriculum = async () => {
     try {
       setIsLoading(true)
+      console.log('Loading curriculum for classId:', classId)
+      
+      // First try to get the curriculum from published_curricula
       const curriculumDoc = await getDoc(doc(db, 'published_curricula', classId))
+      console.log('Published curriculum doc exists:', curriculumDoc.exists())
+      
       if (curriculumDoc.exists()) {
-        setCurriculum(curriculumDoc.data() as Curriculum)
+        const curriculumData = curriculumDoc.data()
+        console.log('Loaded curriculum data:', curriculumData)
+        setCurriculum(curriculumData as Curriculum)
       } else {
-        toast({
-          title: "Error",
-          description: "Curriculum not found",
-          variant: "destructive"
-        })
+        // If not found in published_curricula, try to get it from the class document
+        const classDoc = await getDoc(doc(db, 'classes', classId))
+        console.log('Class doc exists:', classDoc.exists())
+        
+        if (classDoc.exists()) {
+          const classData = classDoc.data()
+          console.log('Class data:', classData)
+          
+          if (classData.curriculum) {
+            console.log('Found curriculum in class data')
+            setCurriculum(classData.curriculum as Curriculum)
+          } else {
+            console.log('No curriculum found in class data')
+            toast({
+              title: "No Curriculum Available",
+              description: "This class doesn't have any curriculum content yet.",
+              variant: "destructive"
+            })
+          }
+        } else {
+          console.log('Class document not found')
+          toast({
+            title: "Error",
+            description: "Class not found",
+            variant: "destructive"
+          })
+        }
       }
     } catch (error) {
       console.error('Error loading curriculum:', error)
@@ -466,7 +526,10 @@ export default function StudentCurriculum() {
 
   // Load curriculum data
   useEffect(() => {
-    loadCurriculum()
+    if (classId) {
+      console.log('Effect triggered with classId:', classId)
+      loadCurriculum()
+    }
   }, [classId, toast])
 
   // Handle selecting a content item
