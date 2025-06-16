@@ -54,9 +54,12 @@ import {
   where,
   deleteDoc,
   getDocs,
-  onSnapshot,
+  onSnapshot as firestoreOnSnapshot,
   serverTimestamp,
-  DocumentData
+  DocumentData,
+  getDoc,
+  QueryDocumentSnapshot,
+  QuerySnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
@@ -269,7 +272,7 @@ export default function TeacherCurriculum() {
         // Set up real-time listener for student answers
         const answersRef = collection(db, 'student-answers', classId, 'answers');
         const q = query(answersRef);
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const unsubscribe = firestoreOnSnapshot(q, (snapshot) => {
           const newAnswers = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
@@ -315,7 +318,7 @@ export default function TeacherCurriculum() {
     );
 
     // Set up real-time listener
-    const unsubscribe = onSnapshot(submissionsQuery, (snapshot) => {
+    const unsubscribe = firestoreOnSnapshot(submissionsQuery, (snapshot) => {
       try {
         const submissions = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -391,9 +394,9 @@ export default function TeacherCurriculum() {
     );
 
     // Set up real-time listener
-    const unsubscribe = onSnapshot(answersQuery, (snapshot) => {
+    const unsubscribe = firestoreOnSnapshot(answersQuery, (snapshot: QuerySnapshot) => {
       try {
-        const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc) => {
+        const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc: QueryDocumentSnapshot) => {
           const data = doc.data();
           const studentId = data.studentId;
           
@@ -401,11 +404,18 @@ export default function TeacherCurriculum() {
             acc[studentId] = {};
           }
           
+          // Store the full answer data
           acc[studentId][`problem-${data.problemIndex}`] = {
             answer: data.answer || 'No answer provided',
             score: data.score || 0,
             correct: data.correct || false,
-            timestamp: data.timestamp?.toDate() || new Date()
+            timestamp: data.timestamp?.toDate() || new Date(),
+            problemIndex: data.problemIndex,
+            questionId: data.questionId,
+            questionText: data.questionText,
+            answerType: data.answerType,
+            problemType: data.problemType,
+            problemPoints: data.problemPoints
           };
           
           return acc;
@@ -708,130 +718,69 @@ export default function TeacherCurriculum() {
   }
 
   // Handle grade override
-  const handleGradeOverride = (student, content) => {
-    setStudentToGrade(student)
+  const handleGradeOverride = async (studentId: string, problemIndex: number, newScore: number) => {
+    if (!activeContent?.id || !classId) return;
 
-    // Find the student's current score if available
-    const studentSubmission = content.studentProgress?.submissions?.find((sub) => sub.studentId === student.id)
+    try {
+      const answerRef = doc(db, 'student-answers', classId, 'answers', `${activeContent.id}_${studentId}_problem-${problemIndex}`);
+      const progressRef = doc(db, 'student-progress', `${classId}_${activeContent.id}_${studentId}_problem-${problemIndex}`);
 
-    if (studentSubmission && studentSubmission.score !== undefined) {
-      setOverrideScore(studentSubmission.score.toString())
-    } else {
-      setOverrideScore("")
-    }
+      // Get the current answer data
+      const answerDoc = await getDoc(answerRef);
+      if (!answerDoc.exists()) {
+        throw new Error('Answer not found');
+      }
 
-    // Set feedback if available
-    setOverrideFeedback(studentSubmission?.feedback || "")
+      const answerData = answerDoc.data() as DocumentData;
+      const problem = activeContent.problems[problemIndex];
+      if (!problem) {
+        throw new Error('Problem not found');
+      }
+      const maxPoints = problem.points || 1;
 
-    setGradeOverrideDialogOpen(true)
-    setHalfCredit(false) // Reset half credit state when opening the dialog
-  }
+      // Update the answer data with the new score
+      const updatedData = {
+        ...answerData,
+        score: newScore,
+        correct: newScore === maxPoints,
+        lastUpdated: serverTimestamp(),
+        override: true,
+        overrideScore: newScore,
+        originalScore: answerData.score
+      };
 
-  // Save grade override
-  const saveGradeOverride = () => {
-    if (!studentToGrade || !activeContent) return
+      // Update both documents
+      await setDoc(answerRef, updatedData);
+      await setDoc(progressRef, updatedData);
 
-    let score = Number.parseInt(overrideScore)
-    if (isNaN(score) || score < 0 || score > 100) {
+      // Update the real-time updates state
+      setRealTimeUpdates(prev => {
+        const newUpdates = { ...prev };
+        if (!newUpdates[studentId]) {
+          newUpdates[studentId] = {};
+        }
+        newUpdates[studentId][`problem-${problemIndex}`] = {
+          ...newUpdates[studentId][`problem-${problemIndex}`],
+          score: newScore,
+          correct: newScore === maxPoints
+        };
+        return newUpdates;
+      });
+
       toast({
-        title: "Invalid score",
-        description: "Please enter a valid score between 0 and 100.",
-        variant: "destructive",
-      })
-      return
+        title: "Score Updated",
+        description: `Score for problem ${problemIndex + 1} has been updated to ${newScore} points.`,
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error updating score:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update score. Please try again.",
+        variant: "destructive"
+      });
     }
-
-    // If half credit is selected, divide the score by 2
-    if (halfCredit) {
-      score = score / 2
-    }
-
-    const updatedCurriculum = { ...curriculum }
-    const lessonIndex = activeLesson - 1
-    const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex((c) => c.id === activeContent.id)
-
-    if (contentIndex === -1) return
-
-    // Initialize studentProgress if it doesn't exist
-    if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
-      updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
-        status: "in-progress",
-        submissions: [],
-      }
-    }
-
-    // Find the student's submission
-    const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions || []
-    const studentSubmissionIndex = submissions.findIndex((sub) => sub.studentId === studentToGrade.id)
-
-    if (studentSubmissionIndex >= 0) {
-      // Update existing submission
-      submissions[studentSubmissionIndex] = {
-        ...submissions[studentSubmissionIndex],
-        status: "completed",
-        score,
-        feedback: overrideFeedback,
-        gradedBy: "teacher",
-        gradedAt: new Date().toISOString(),
-      }
-    } else {
-      // Add new submission
-      submissions.push({
-        studentId: studentToGrade.id,
-        status: "completed",
-        score,
-        feedback: overrideFeedback,
-        gradedBy: "teacher",
-        gradedAt: new Date().toISOString(),
-        submittedAt: new Date().toISOString(),
-      })
-    }
-
-    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = submissions
-
-    // Update the status based on submissions
-    const allCompleted = submissions.every((sub) => sub.status === "completed")
-    updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.status = allCompleted
-      ? "completed"
-      : "in-progress"
-
-    // Save the updated curriculum with grades to localStorage
-    if (typeof window !== "undefined") {
-      try {
-        // Save the graded content for this student
-        const gradedContentKey = `graded-content-${classId}-${activeContent.id}`
-        localStorage.setItem(gradedContentKey, JSON.stringify(submissions))
-      } catch (error) {
-        console.error("Error saving graded content:", error)
-      }
-    }
-
-    setCurriculum(updatedCurriculum)
-    setGradeOverrideDialogOpen(false)
-    setHalfCredit(false)
-
-    // Update the class in storage
-    if (currentClass) {
-      const updatedClass = {
-        ...currentClass,
-        curriculum: updatedCurriculum,
-      }
-      storage.updateClass(classId, updatedClass)
-    }
-
-    toast({
-      title: "Grade updated",
-      description: `${studentToGrade.name}'s grade has been updated to ${score}%.`,
-    })
-
-    // Add activity log
-    storage.addActivityLog({
-      action: "Student Work Graded",
-      details: `${studentToGrade.name}'s work on ${activeContent.title} has been graded`,
-      timestamp: new Date().toLocaleString(),
-      category: "Grading",
-    })
-  }
+  };
 
   // Open manual grading dialog
   const openManualGrading = (student, content) => {
@@ -1086,12 +1035,6 @@ export default function TeacherCurriculum() {
   const StudentProgressTable = () => {
     if (!activeContent?.problems || !Array.isArray(activeContent.problems)) return null;
 
-    console.log("Rendering progress table with data:", {
-      students: students.length,
-      realTimeUpdates: Object.keys(realTimeUpdates).length,
-      problems: activeContent.problems.length
-    });
-
     return (
       <div className="mt-6">
         <h3 className="text-lg font-semibold mb-4">Student Progress</h3>
@@ -1103,6 +1046,9 @@ export default function TeacherCurriculum() {
                 {activeContent.problems.map((problem, index) => (
                   <th key={index} className="p-2 text-left">
                     Problem {index + 1}
+                    <div className="text-xs text-muted-foreground">
+                      ({problem.points || 1} points)
+                    </div>
                   </th>
                 ))}
                 <th className="p-2 text-left">Total Score</th>
@@ -1112,21 +1058,18 @@ export default function TeacherCurriculum() {
             <tbody>
               {students.map((student) => {
                 const studentAnswers = realTimeUpdates[student.id] || {};
-                const studentProgress = activeContent.studentProgress?.submissions?.find(
-                  sub => sub.studentId === student.id
-                );
-                
                 const totalScore = activeContent.problems.reduce((sum, problem, index) => {
                   const answer = studentAnswers[`problem-${index}`];
                   return sum + (answer?.score || 0);
                 }, 0);
+                const maxScore = activeContent.problems.reduce((sum, problem) => sum + (problem.points || 1), 0);
 
                 return (
                   <tr key={student.id} className="border-b">
                     <td className="p-2">{student.name}</td>
                     {activeContent.problems.map((problem, index) => {
                       const answer = studentAnswers[`problem-${index}`];
-                      const problemResult = studentProgress?.problemResults?.[index];
+                      const maxPoints = problem.points || 1;
                       
                       return (
                         <td key={index} className="p-2">
@@ -1134,27 +1077,25 @@ export default function TeacherCurriculum() {
                             <div className="text-sm">
                               {answer ? (
                                 <>
-                                  <span className={answer.correct ? "text-green-600" : "text-red-600"}>
-                                    {answer.answer || 'No answer'}
-                                  </span>
-                                  <span className="ml-2">
-                                    ({answer.score || 0}/{problem.points || 1})
-                                  </span>
-                                </>
-                              ) : problemResult ? (
-                                <>
-                                  <span className={problemResult.correct ? "text-green-600" : "text-red-600"}>
-                                    {problemResult.studentAnswer || 'No answer'}
-                                  </span>
-                                  <span className="ml-2">
-                                    ({problemResult.points || 0}/{problemResult.maxPoints || 1})
-                                  </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className={answer.correct ? "text-green-600" : "text-red-600"}>
+                                      {answer.answer || 'No answer'}
+                                    </span>
+                                    <span className="ml-2">
+                                      {answer.score}/{maxPoints}
+                                    </span>
+                                  </div>
+                                  {answer.override && (
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      Override: {answer.overrideScore}/{maxPoints}
+                                    </div>
+                                  )}
                                 </>
                               ) : (
                                 <span className="text-gray-500">Not attempted</span>
                               )}
                             </div>
-                            {(answer || problemResult) && (
+                            {answer && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1163,9 +1104,9 @@ export default function TeacherCurriculum() {
                                   setStudentToGrade(student);
                                   setStudentSubmission({
                                     problemIndex: index,
-                                    answer: answer?.answer || problemResult?.studentAnswer || '',
-                                    currentScore: answer?.score || problemResult?.points || 0,
-                                    maxPoints: problem.points || 1
+                                    answer: answer.answer || '',
+                                    currentScore: answer.score || 0,
+                                    maxPoints: maxPoints
                                   });
                                   setManualGradingDialogOpen(true);
                                 }}
@@ -1179,7 +1120,10 @@ export default function TeacherCurriculum() {
                       );
                     })}
                     <td className="p-2 font-semibold">
-                      {totalScore}/{activeContent.problems.reduce((sum, p) => sum + (p.points || 1), 0)}
+                      {totalScore}/{maxScore}
+                      <div className="text-xs text-muted-foreground">
+                        {Math.round((totalScore / maxScore) * 100)}%
+                      </div>
                     </td>
                     <td className="p-2">
                       <Button
@@ -1511,7 +1455,10 @@ export default function TeacherCurriculum() {
 
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={saveGradeOverride}>Save Grade</AlertDialogAction>
+            <AlertDialogAction onClick={() => {
+              handleGradeOverride(studentToGrade.id, 0, Number.parseInt(overrideScore));
+              setGradeOverrideDialogOpen(false);
+            }}>Save Grade</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

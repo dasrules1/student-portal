@@ -318,6 +318,12 @@ export default function StudentCurriculum() {
   const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})
   const [problemState, setProblemState] = useState<ProblemState>({})
   const [existingAnswers, setExistingAnswers] = useState<ExistingAnswers>({})
+  const [totalProgress, setTotalProgress] = useState({
+    completed: 0,
+    total: 0,
+    score: 0,
+    maxScore: 0
+  });
 
   // Load class and curriculum data
   useEffect(() => {
@@ -774,6 +780,15 @@ export default function StudentCurriculum() {
       [`${activeContent.id}-${problemIndex}`]: true
     }));
 
+    // Update total progress
+    const newTotalProgress = {
+      completed: Object.keys(submittedProblems).length + 1,
+      total: activeContent.problems.length,
+      score: calculateTotalScore() + result.score,
+      maxScore: calculateTotalPossiblePoints()
+    };
+    setTotalProgress(newTotalProgress);
+
     // Show feedback toast
     toast({
       title: result.correct ? "Correct!" : "Incorrect",
@@ -1095,6 +1110,66 @@ export default function StudentCurriculum() {
     }
   }, [activeContent, currentUser?.uid]);
 
+  // Add function to reset a problem
+  const handleResetProblem = (problemIndex: number) => {
+    if (!activeContent?.id) return;
+    
+    const key = `${activeContent.id}-${problemIndex}`;
+    
+    // Reset problem state
+    setProblemState(prev => {
+      const newState = { ...prev };
+      delete newState[key];
+      return newState;
+    });
+    
+    // Reset submitted status
+    setSubmittedProblems(prev => {
+      const newState = { ...prev };
+      delete newState[key];
+      return newState;
+    });
+    
+    // Reset scores
+    setProblemScores(prev => {
+      const newState = { ...prev };
+      delete newState[key];
+      return newState;
+    });
+    
+    // Reset answers
+    setUserAnswers(prev => {
+      const newState = { ...prev };
+      if (newState[activeContent.id]) {
+        delete newState[activeContent.id][problemIndex];
+      }
+      return newState;
+    });
+    
+    setMathExpressionInputs(prev => {
+      const newState = { ...prev };
+      if (newState[activeContent.id]) {
+        delete newState[activeContent.id][problemIndex];
+      }
+      return newState;
+    });
+    
+    setOpenEndedAnswers(prev => {
+      const newState = { ...prev };
+      if (newState[activeContent.id]) {
+        delete newState[activeContent.id][problemIndex];
+      }
+      return newState;
+    });
+    
+    // Update total progress
+    setTotalProgress(prev => ({
+      ...prev,
+      completed: prev.completed - 1,
+      score: calculateTotalScore()
+    }));
+  };
+
   // Main render function
   if (isLoading) {
     return (
@@ -1191,6 +1266,24 @@ export default function StudentCurriculum() {
                       {renderContentTypeIcon(activeContent.type)}
                       {contentTypes.find((type) => type.id === activeContent.type)?.name}
                     </CardDescription>
+                    
+                    {/* Add Progress Bar */}
+                    {activeContent.problems && activeContent.problems.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Progress: {totalProgress.completed}/{totalProgress.total} problems</span>
+                          <span>Score: {totalProgress.score}/{totalProgress.maxScore} points</span>
+                        </div>
+                        <Progress 
+                          value={(totalProgress.completed / totalProgress.total) * 100} 
+                          className="h-2"
+                        />
+                        <div className="flex justify-between text-sm text-muted-foreground">
+                          <span>{Math.round((totalProgress.completed / totalProgress.total) * 100)}% Complete</span>
+                          <span>{Math.round((totalProgress.score / totalProgress.maxScore) * 100)}% Score</span>
+                        </div>
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent>
                     {activeContent.problems && activeContent.problems.length > 0 ? (
@@ -1216,11 +1309,20 @@ export default function StudentCurriculum() {
                                     </p>
                                   </div>
                                   {isSubmitted && (
-                                    <Badge
-                                      variant={problemScore === problem.points ? "default" : "destructive"}
-                                    >
-                                      {problemScore}/{problem.points} points
-                                    </Badge>
+                                    <div className="flex items-center space-x-2">
+                                      <Badge
+                                        variant={problemScore === (problem.points || 0) ? "default" : "destructive"}
+                                      >
+                                        {problemScore}/{problem.points || 0} points
+                                      </Badge>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleResetProblem(problemIndex)}
+                                      >
+                                        Try Again
+                                      </Button>
+                                    </div>
                                   )}
                                 </div>
 
