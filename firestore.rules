@@ -6,21 +6,21 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && getUserRole() == 'admin';
     }
-    
+
     function isTeacher() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      return isAuthenticated() && getUserRole() == 'teacher';
     }
-    
+
     function isStudent() {
-      return isAuthenticated() && 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'student';
+      return isAuthenticated() && getUserRole() == 'student';
     }
 
     function hasAccessToClass(classId) {
@@ -38,46 +38,23 @@ service cloud.firestore {
              (classData.enrolledStudents != null && classData.enrolledStudents.hasAny([request.auth.uid]));
     }
 
-    // Users collection
-    match /users/{userId} {
-      allow read: if isAuthenticated() && (
-        request.auth.uid == userId || 
-        isTeacher() || 
-        isAdmin()
-      );
-      allow write: if isAdmin();
-    }
-
-    // Classes collection
-    match /classes/{classId} {
-      allow read: if isAuthenticated();
-      allow write: if isTeacher() || isAdmin();
-    }
-
-    // Student Answers collection - new nested structure
+    // Student Answers - nested structure
     match /student-answers/{classId}/answers/{answerId} {
       allow read: if isAuthenticated() && (
-        // Students can read their own answers if enrolled in the class
-        (isStudent() && resource.data.studentId == request.auth.uid && isEnrolledInClass(classId)) ||
-        // Teachers can read all answers in their classes
-        (isTeacher() && hasAccessToClass(classId))
+        // Students can read their own answers
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Teachers can read all answers
+        isTeacher() ||
+        // Admins can read all answers
+        isAdmin()
       );
-      allow create: if isAuthenticated() && (
-        // Students can create their own answers if enrolled in the class
-        (isStudent() && request.resource.data.studentId == request.auth.uid && isEnrolledInClass(classId)) ||
-        // Teachers can create answers for grading
-        (isTeacher() && hasAccessToClass(classId))
-      );
-      allow update: if isAuthenticated() && (
-        // Students can update their own answers if enrolled in the class
-        (isStudent() && resource.data.studentId == request.auth.uid && isEnrolledInClass(classId)) ||
-        // Teachers can update answers for grading
-        (isTeacher() && hasAccessToClass(classId))
-      );
-      allow delete: if isAuthenticated() && (
-        // Teachers can delete answers in their classes
-        (isTeacher() && hasAccessToClass(classId)) ||
-        // Admins can delete any answers
+      
+      allow create, update: if isAuthenticated() && (
+        // Students can write their own answers
+        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        // Teachers can write for their class
+        isTeacher() ||
+        // Admins can write anything
         isAdmin()
       );
     }
@@ -87,15 +64,53 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         // Students can read their own progress
         (isStudent() && resource.data.studentId == request.auth.uid) ||
-        // Teachers can read all progress in their classes
-        (isTeacher() && hasAccessToClass(resource.data.classId))
+        // Teachers can read all progress
+        isTeacher() ||
+        // Admins can read all progress
+        isAdmin()
       );
-      allow write: if isAuthenticated() && (
+      
+      allow create, update: if isAuthenticated() && (
         // Students can write their own progress
         (isStudent() && request.resource.data.studentId == request.auth.uid) ||
-        // Teachers can write progress for grading
-        (isTeacher() && hasAccessToClass(request.resource.data.classId))
+        // Teachers can write for their class
+        isTeacher() ||
+        // Admins can write anything
+        isAdmin()
       );
+    }
+
+    // Student Completions collection
+    match /student-completions/{completionId} {
+      allow read: if isAuthenticated() && (
+        // Students can read their own completions
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Teachers can read all completions
+        isTeacher() ||
+        // Admins can read all completions
+        isAdmin()
+      );
+      
+      allow create, update: if isAuthenticated() && (
+        // Students can write their own completions
+        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        // Teachers can write for their class
+        isTeacher() ||
+        // Admins can write anything
+        isAdmin()
+      );
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || (request.auth.uid == userId);
+    }
+
+    // Classes collection
+    match /classes/{classId} {
+      allow read: if isAuthenticated();
+      allow write: if isTeacher() || isAdmin();
     }
 
     // Published Assignments collection

@@ -463,14 +463,40 @@ export default function StudentCurriculum() {
 
   // Handle selecting a content item
   const handleSelectContent = async (content: Content) => {
+    console.log('Selecting content:', content);
     setActiveContent(content);
     setUserAnswers({});
     setMathExpressionInputs({});
     setOpenEndedAnswers({});
     setSubmittedProblems({});
     setProblemState({});
+    
     // Load existing answers for this content
-    await loadExistingAnswers(content);
+    if (typeof content.id === 'string' && currentUser?.uid) {
+      try {
+        const answersRef = doc(db, 'student-answers', classId, 'answers', content.id);
+        const answersDoc = await getDoc(answersRef);
+        
+        if (answersDoc.exists()) {
+          const answersData = answersDoc.data();
+          console.log('Loaded existing answers:', answersData);
+          
+          // Update state with existing answers
+          setUserAnswers(answersData.answers || {});
+          setMathExpressionInputs(answersData.mathExpressionInputs || {});
+          setOpenEndedAnswers(answersData.openEndedAnswers || {});
+          setSubmittedProblems(answersData.submittedProblems || {});
+          setProblemState(answersData.problemState || {});
+        }
+      } catch (error) {
+        console.error('Error loading existing answers:', error);
+        toast({
+          title: 'Error loading answers',
+          description: 'There was a problem loading your previous answers.',
+          variant: 'destructive',
+        });
+      }
+    }
   };
 
   // Handle multiple choice answer selection
@@ -935,6 +961,24 @@ export default function StudentCurriculum() {
       console.error('Error loading student answers:', error);
     }
   };
+
+  // Add useEffect to load existing answers when activeContent changes
+  useEffect(() => {
+    if (activeContent && currentUser?.uid) {
+      const content: Content = {
+        id: activeContent.id,
+        title: activeContent.title,
+        type: activeContent.type,
+        description: activeContent.description,
+        isPublished: activeContent.isPublished,
+        dueDate: activeContent.dueDate,
+        completed: activeContent.completed,
+        completedAt: activeContent.completedAt,
+        problems: activeContent.problems
+      };
+      loadExistingAnswers(content);
+    }
+  }, [activeContent, currentUser?.uid]);
 
   // Main render function
   if (!currentClass || !curriculum) {
