@@ -154,6 +154,21 @@ interface Curriculum {
   }[];
 }
 
+interface StudentAnswer {
+  answer: string;
+  score: number;
+  correct: boolean;
+  timestamp: Date;
+}
+
+interface StudentAnswers {
+  [key: string]: StudentAnswer;
+}
+
+interface RealTimeUpdates {
+  [studentId: string]: StudentAnswers;
+}
+
 // Content types for curriculum
 const contentTypes = [
   { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
@@ -376,7 +391,7 @@ export default function TeacherCurriculum() {
     };
   }, [classId, students]);
 
-  // Update the real-time listener for student progress
+  // Update the real-time listener for student answers
   useEffect(() => {
     if (!activeContent?.id || !classId) return;
 
@@ -392,7 +407,7 @@ export default function TeacherCurriculum() {
     // Set up real-time listener
     const unsubscribe = onSnapshot(answersQuery, (snapshot) => {
       try {
-        const transformedData = snapshot.docs.reduce((acc, doc) => {
+        const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc) => {
           const data = doc.data();
           const studentId = data.studentId;
           
@@ -412,88 +427,12 @@ export default function TeacherCurriculum() {
 
         console.log("Transformed data:", transformedData);
         setRealTimeUpdates(transformedData);
-
-        // Update the curriculum state with the new data
-        setCurriculum(prevCurriculum => {
-          if (!prevCurriculum) return prevCurriculum;
-
-          const updatedCurriculum = { ...prevCurriculum };
-          const lessonIndex = updatedCurriculum.lessons.findIndex(
-            lesson => lesson.contents.some(content => content.id === activeContent.id)
-          );
-
-          if (lessonIndex !== -1) {
-            const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
-              content => content.id === activeContent.id
-            );
-
-            if (contentIndex !== -1) {
-              // Initialize studentProgress if it doesn't exist
-              if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
-                updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
-                  submissions: []
-                };
-              }
-
-              // Update each student's progress
-              Object.entries(transformedData).forEach(([studentId, studentAnswers]) => {
-                const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions;
-                const submissionIndex = submissions.findIndex(sub => sub.studentId === studentId);
-
-                const problemResults = Object.entries(studentAnswers).map(([problemKey, answerData]) => {
-                  const problemIndex = parseInt(problemKey.split('-')[1]);
-                  return {
-                    type: 'open-ended',
-                    correct: answerData.correct,
-                    points: answerData.score,
-                    maxPoints: activeContent.problems[problemIndex]?.points || 1,
-                    studentAnswer: answerData.answer,
-                    timestamp: answerData.timestamp
-                  };
-                });
-
-                const totalScore = problemResults.reduce((sum, result) => sum + result.points, 0);
-                const maxPoints = problemResults.reduce((sum, result) => sum + result.maxPoints, 0);
-
-                if (submissionIndex !== -1) {
-                  // Update existing submission
-                  submissions[submissionIndex] = {
-                    ...submissions[submissionIndex],
-                    problemResults,
-                    score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
-                    lastUpdated: new Date()
-                  };
-                } else {
-                  // Add new submission
-                  submissions.push({
-                    studentId,
-                    problemResults,
-                    score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
-                    status: 'in-progress',
-                    submittedAt: new Date(),
-                    lastUpdated: new Date()
-                  });
-                }
-              });
-
-              // Save to Firestore
-              const progressRef = doc(db, 'student-progress', `${classId}_${activeContent.id}`);
-              setDoc(progressRef, updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress);
-            }
-          }
-
-          return updatedCurriculum;
-        });
       } catch (error) {
         console.error("Error processing real-time data:", error);
-        setRealTimeUpdates({});
       }
     });
 
-    return () => {
-      console.log("Cleaning up real-time listener");
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [activeContent?.id, classId]);
 
   // Function to render LaTeX in the UI

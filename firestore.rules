@@ -83,10 +83,48 @@ service cloud.firestore {
       allow write: if isTeacher() || isAdmin();
     }
 
-    // Student Answers collection - More permissive rules for testing
-    match /student-answers/{classId}/{contentId}/{studentId} {
+    // Student Answers collection
+    match /student-answers/{answerId} {
+      allow read: if isAuthenticated() && (
+        // Students can read their own answers
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Teachers can read all answers in their classes
+        (isTeacher() && resource.data.classId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classes)
+      );
+      allow write: if isAuthenticated() && (
+        // Students can write their own answers
+        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        // Teachers can write answers for grading
+        (isTeacher() && request.resource.data.classId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classes)
+      );
+    }
+
+    // Student Progress collection
+    match /student-progress/{progressId} {
+      allow read: if isAuthenticated() && (
+        // Students can read their own progress
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Teachers can read all progress in their classes
+        (isTeacher() && resource.data.classId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classes)
+      );
+      allow write: if isAuthenticated() && (
+        // Students can write their own progress
+        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
+        // Teachers can write progress for grading
+        (isTeacher() && request.resource.data.classId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classes)
+      );
+    }
+
+    // Published Assignments collection
+    match /published_assignments/{assignmentId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isTeacher() || isAdmin();
+    }
+
+    // Published Curricula collection
+    match /published_curricula/{curriculumId} {
+      allow read: if isAuthenticated();
+      allow write: if isTeacher() || isAdmin();
     }
   }
 } 
