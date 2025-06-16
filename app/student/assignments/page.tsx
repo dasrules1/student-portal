@@ -804,11 +804,11 @@ export default function StudentAssignments() {
 
   // Update the processEnrolledClasses function
   const processEnrolledClasses = async (enrolledClasses: any[], studentId: string) => {
-    const allAssignments: LessonGroup[] = [];
+    const allLessons: LessonGroup[] = [];
     const dueAssignments: EnrichedAssignment[] = [];
     let foundAnyPublishedContent = false;
 
-    // For each class, load the curriculum and extract assignments
+    // For each class, load the curriculum and extract lessons with published assignments
     for (const classItem of enrolledClasses) {
       try {
         console.log(`Loading curriculum for class: ${classItem.id}`);
@@ -845,18 +845,21 @@ export default function StudentAssignments() {
 
                 console.log("Grouped assignments by lesson:", lessonGroups);
 
-                // Convert grouped assignments to array format
-                const groupedAssignments = Object.entries(lessonGroups).map(([lessonId, assignments]) => ({
-                  lessonId,
-                  lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
-                  assignments: assignments as EnrichedAssignment[],
-                  courseId: classItem.id
-                }));
+                // Convert grouped assignments to array format, only including lessons with published assignments
+                const groupedLessons = Object.entries(lessonGroups)
+                  .filter(([_, assignments]) => assignments.length > 0)
+                  .map(([lessonId, assignments]) => ({
+                    lessonId,
+                    lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
+                    assignments: assignments as EnrichedAssignment[],
+                    courseId: classItem.id,
+                    className: classItem.name
+                  }));
 
-                console.log("Converted to lesson groups:", groupedAssignments);
+                console.log("Converted to lesson groups:", groupedLessons);
 
-                if (groupedAssignments.length > 0) {
-                  allAssignments.push(...groupedAssignments);
+                if (groupedLessons.length > 0) {
+                  allLessons.push(...groupedLessons);
                   foundPublishedContent = true;
                   foundAnyPublishedContent = true;
 
@@ -865,8 +868,8 @@ export default function StudentAssignments() {
                   const oneWeekFromNow = new Date();
                   oneWeekFromNow.setDate(now.getDate() + 7);
 
-                  groupedAssignments.forEach(group => {
-                    const pendingAssignments = group.assignments.filter((assignment: EnrichedAssignment) => {
+                  groupedLessons.forEach(lesson => {
+                    const pendingAssignments = lesson.assignments.filter((assignment: EnrichedAssignment) => {
                       if (!assignment.dueDate) return false;
                       const dueDate = new Date(assignment.dueDate);
                       return dueDate > now && dueDate <= oneWeekFromNow;
@@ -913,15 +916,18 @@ export default function StudentAssignments() {
                   return acc;
                 }, {});
 
-                const groupedAssignments = Object.entries(lessonGroups).map(([lessonId, assignments]) => ({
-                  lessonId,
-                  lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
-                  assignments: assignments as EnrichedAssignment[],
-                  courseId: classItem.id
-                }));
+                const groupedLessons = Object.entries(lessonGroups)
+                  .filter(([_, assignments]) => assignments.length > 0)
+                  .map(([lessonId, assignments]) => ({
+                    lessonId,
+                    lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
+                    assignments: assignments as EnrichedAssignment[],
+                    courseId: classItem.id,
+                    className: classItem.name
+                  }));
 
-                if (groupedAssignments.length > 0) {
-                  allAssignments.push(...groupedAssignments);
+                if (groupedLessons.length > 0) {
+                  allLessons.push(...groupedLessons);
                   foundPublishedContent = true;
                   foundAnyPublishedContent = true;
 
@@ -930,8 +936,8 @@ export default function StudentAssignments() {
                   const oneWeekFromNow = new Date();
                   oneWeekFromNow.setDate(now.getDate() + 7);
 
-                  groupedAssignments.forEach(group => {
-                    const pendingAssignments = group.assignments.filter((assignment: EnrichedAssignment) => {
+                  groupedLessons.forEach(lesson => {
+                    const pendingAssignments = lesson.assignments.filter((assignment: EnrichedAssignment) => {
                       if (!assignment.dueDate) return false;
                       const dueDate = new Date(assignment.dueDate);
                       return dueDate > now && dueDate <= oneWeekFromNow;
@@ -950,21 +956,16 @@ export default function StudentAssignments() {
       }
     }
 
-    console.log(`Found a total of ${allAssignments.length} published lesson groups across all classes`);
-    console.log("All assignments:", allAssignments);
+    console.log(`Found a total of ${allLessons.length} lessons with published assignments across all classes`);
+    console.log("All lessons:", allLessons);
     
-    // Sort assignments by due date within each lesson group
-    const sortedAssignments = allAssignments.map(group => ({
-      ...group,
-      assignments: group.assignments.sort((a, b) => {
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      })
-    }));
+    // Sort lessons by title
+    const sortedLessons = allLessons.sort((a, b) => 
+      a.lessonTitle.localeCompare(b.lessonTitle)
+    );
     
     // Update state
-    setAssignments(sortedAssignments);
+    setAssignments(sortedLessons);
     setPendingAssignments(dueAssignments);
     setLoading(false);
   };
@@ -1071,93 +1072,40 @@ export default function StudentAssignments() {
                 <img src="/logo.png" alt="Education More" className="h-8" />
                 <h2 className="text-lg font-semibold">Education More</h2>
               </div>
-              <h1 className="text-3xl font-bold">Assignments</h1>
+              <h1 className="text-3xl font-bold">Lessons</h1>
               <p className="text-muted-foreground">
-                View and track your assignments
+                View your lessons with published assignments
               </p>
             </div>
           </div>
 
           <div className="flex flex-col space-y-6">
-            {/* Pending Assignments Section */}
-            <section className="mb-8">
-              <h2 className="text-xl font-semibold mb-4">Due Soon</h2>
-              <div className="space-y-4">
-                {pendingAssignments.length > 0 ? (
-                  pendingAssignments.map((assignment) => (
-                    <Card key={assignment.id}>
-                      <CardHeader className="pb-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                            <CardDescription>
-                              {assignment.className} • {assignment.lessonTitle} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
-                            </CardDescription>
-                          </div>
-                          <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
-                      </CardContent>
-                      <CardFooter>
-                        <Button 
-                          asChild 
-                          className="w-full"
-                        >
-                          <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                            Start Assignment
-                          </Link>
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))
-                ) : (
-                  <Card>
-                    <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                      <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                      <p className="text-muted-foreground">No pending assignments</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </section>
-
-            {/* All Assignments Section */}
+            {/* Lessons Section */}
             <section>
-              <h2 className="text-xl font-semibold mb-4">All Assignments</h2>
+              <h2 className="text-xl font-semibold mb-4">All Lessons</h2>
               <div className="space-y-6">
                 {assignments.length > 0 ? (
                   assignments.map((lessonGroup) => (
                     <Card key={lessonGroup.lessonId}>
                       <CardHeader>
                         <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
+                        <CardDescription>
+                          {lessonGroup.className} • {lessonGroup.assignments.length} published assignments
+                        </CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-4">
-                          {lessonGroup.assignments.map((assignment) => (
-                            <div key={assignment.id} className="border rounded-lg p-4">
-                              <div className="flex justify-between items-start mb-2">
-                                <div>
-                                  <h3 className="font-medium">{assignment.title}</h3>
-                                  <p className="text-sm text-muted-foreground">
-                                    Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
-                                  </p>
-                                </div>
-                                <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground mb-4">{assignment.description || "No description provided"}</p>
-                              <Button 
-                                asChild 
-                                className="w-full"
-                              >
-                                <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                                  {assignment.completed ? 'View Submission' : 'Start Assignment'}
-                                </Link>
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          This lesson contains {lessonGroup.assignments.length} published assignments. 
+                          Click below to view and complete them.
+                        </p>
+                        <Button 
+                          asChild 
+                          className="w-full"
+                        >
+                          <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}>
+                            View Lesson
+                          </Link>
+                        </Button>
                       </CardContent>
                     </Card>
                   ))
@@ -1165,7 +1113,7 @@ export default function StudentAssignments() {
                   <Card>
                     <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                       <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                      <p className="text-muted-foreground">No assignments found</p>
+                      <p className="text-muted-foreground">No lessons with published assignments found</p>
                     </CardContent>
                   </Card>
                 )}
@@ -1267,93 +1215,40 @@ export default function StudentAssignments() {
               <img src="/logo.png" alt="Education More" className="h-8" />
               <h2 className="text-lg font-semibold">Education More</h2>
             </div>
-            <h1 className="text-3xl font-bold">Assignments</h1>
+            <h1 className="text-3xl font-bold">Lessons</h1>
             <p className="text-muted-foreground">
-              View and track your assignments
+              View your lessons with published assignments
             </p>
           </div>
         </div>
 
         <div className="flex flex-col space-y-6">
-          {/* Pending Assignments Section */}
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">Due Soon</h2>
-            <div className="space-y-4">
-              {pendingAssignments.length > 0 ? (
-                pendingAssignments.map((assignment) => (
-                  <Card key={assignment.id}>
-                    <CardHeader className="pb-2">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                          <CardDescription>
-                            {assignment.className} • {assignment.lessonTitle} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
-                          </CardDescription>
-                        </div>
-                        <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
-                    </CardContent>
-                    <CardFooter>
-                      <Button 
-                        asChild 
-                        className="w-full"
-                      >
-                        <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                          Start Assignment
-                        </Link>
-                      </Button>
-                    </CardFooter>
-                  </Card>
-                ))
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                    <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground">No pending assignments</p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </section>
-
-          {/* All Assignments Section */}
+          {/* Lessons Section */}
           <section>
-            <h2 className="text-xl font-semibold mb-4">All Assignments</h2>
+            <h2 className="text-xl font-semibold mb-4">All Lessons</h2>
             <div className="space-y-6">
               {assignments.length > 0 ? (
                 assignments.map((lessonGroup) => (
                   <Card key={lessonGroup.lessonId}>
                     <CardHeader>
                       <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
+                      <CardDescription>
+                        {lessonGroup.className} • {lessonGroup.assignments.length} published assignments
+                      </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {lessonGroup.assignments.map((assignment) => (
-                          <div key={assignment.id} className="border rounded-lg p-4">
-                            <div className="flex justify-between items-start mb-2">
-                              <div>
-                                <h3 className="font-medium">{assignment.title}</h3>
-                                <p className="text-sm text-muted-foreground">
-                                  Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
-                                </p>
-                              </div>
-                              <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-4">{assignment.description || "No description provided"}</p>
-                            <Button 
-                              asChild 
-                              className="w-full"
-                            >
-                              <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                                {assignment.completed ? 'View Submission' : 'Start Assignment'}
-                              </Link>
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        This lesson contains {lessonGroup.assignments.length} published assignments. 
+                        Click below to view and complete them.
+                      </p>
+                      <Button 
+                        asChild 
+                        className="w-full"
+                      >
+                        <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}>
+                          View Lesson
+                        </Link>
+                      </Button>
                     </CardContent>
                   </Card>
                 ))
@@ -1361,7 +1256,7 @@ export default function StudentAssignments() {
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                     <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground">No assignments found</p>
+                    <p className="text-muted-foreground">No lessons with published assignments found</p>
                   </CardContent>
                 </Card>
               )}
