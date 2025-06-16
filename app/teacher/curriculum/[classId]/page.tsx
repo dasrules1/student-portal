@@ -56,9 +56,7 @@ import {
   getDocs,
   onSnapshot,
   serverTimestamp,
-  DocumentData,
-  QuerySnapshot,
-  DocumentSnapshot
+  DocumentData
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
@@ -155,10 +153,14 @@ interface Curriculum {
 }
 
 interface StudentAnswer {
+  id: string;
   answer: string;
   score: number;
   correct: boolean;
   timestamp: Date;
+  studentId: string;
+  contentId: string;
+  problemIndex: string;
 }
 
 interface StudentAnswers {
@@ -249,70 +251,55 @@ export default function TeacherCurriculum() {
           return
         }
 
-        // First, try to load curriculum directly using dedicated API
-        try {
-          console.log("Attempting to load curriculum for class:", classId)
-          const curriculumData = await storage.getCurriculum(classId)
-          if (curriculumData) {
-            console.log("Loaded curriculum data:", curriculumData)
-            // Handle both formats - content field or direct structure
-            const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
-            setCurriculum(formattedCurriculum)
-            
-            if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
-              setActiveLesson(formattedCurriculum.lessons[0].id)
-              if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
-                setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
-              }
-            }
-            return
-          }
-        } catch (curriculumError) {
-          console.error("Error loading curriculum directly:", curriculumError)
+        // Get curriculum data
+        const curriculumData = await storage.getCurriculum(classId)
+        if (curriculumData) {
+          setCurriculum(curriculumData.content as Curriculum)
         }
 
-        // Fall back to curriculum on class object
-        if (foundClass.curriculum) {
-          console.log("Using curriculum from class object")
-          setCurriculum(foundClass.curriculum)
+        // Get enrolled students
+        const allUsers = await storage.getUsers()
+        const enrolledStudents = allUsers.filter(
+          (user) => user.role === "student" && 
+          (user.classes.includes(classId) || 
+           (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id)))
+        )
+        setStudents(enrolledStudents)
+
+        // Set up real-time listener for student answers
+        const answersRef = collection(db, 'student-answers', classId, 'answers');
+        const q = query(answersRef);
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const newAnswers = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as StudentAnswer[];
           
-          if (foundClass.curriculum.lessons && foundClass.curriculum.lessons.length > 0) {
-            setActiveLesson(foundClass.curriculum.lessons[0].id)
-            if (foundClass.curriculum.lessons[0].contents && foundClass.curriculum.lessons[0].contents.length > 0) {
-              setActiveContent(foundClass.curriculum.lessons[0].contents[0].id)
+          // Update student progress with new answers
+          const updatedProgress = { ...studentProgress };
+          newAnswers.forEach((answer: StudentAnswer) => {
+            const [studentId, contentId, problemIndex] = answer.id.split('_');
+            if (!updatedProgress[studentId]) {
+              updatedProgress[studentId] = {};
             }
-          }
-          return
-        }
+            if (!updatedProgress[studentId][contentId]) {
+              updatedProgress[studentId][contentId] = {};
+            }
+            updatedProgress[studentId][contentId][problemIndex] = answer;
+          });
+          setStudentProgress(updatedProgress);
+        });
 
-        // If no curriculum exists, create empty one
-        console.log("No curriculum found, creating empty structure")
-        setCurriculum({ lessons: [] })
-
-        // Get students enrolled in this class
-        try {
-          const allUsers = await storage.getUsers()
-          const classStudents = Array.isArray(allUsers) ? allUsers.filter(
-            (user) =>
-              user.role === "student" &&
-              (user.classes.includes(classId) ||
-                (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id)))
-          ) : []
-          setStudents(classStudents)
-        } catch (usersError) {
-          console.error("Error loading users:", usersError)
-          setStudents([])
-        }
+        return () => unsubscribe();
       } catch (error) {
-        console.error("Error in curriculum loading:", error)
+        console.error('Error loading data:', error);
         toast({
-          title: "Error loading data",
-          description: "There was a problem loading the curriculum data",
+          title: "Error",
+          description: "Failed to load class data. Please try again.",
           variant: "destructive",
-        })
-        router.push("/teacher/dashboard")
+        });
       }
-    }
+    };
 
     loadData()
   }, [classId, router, toast])
@@ -328,7 +315,7 @@ export default function TeacherCurriculum() {
     );
 
     // Set up real-time listener
-    const unsubscribe = onSnapshot(submissionsQuery, (snapshot: QuerySnapshot<DocumentData>) => {
+    const unsubscribe = onSnapshot(submissionsQuery, (snapshot) => {
       try {
         const submissions = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -404,7 +391,7 @@ export default function TeacherCurriculum() {
     );
 
     // Set up real-time listener
-    const unsubscribe = onSnapshot(answersQuery, (snapshot: QuerySnapshot<DocumentData>) => {
+    const unsubscribe = onSnapshot(answersQuery, (snapshot) => {
       try {
         const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc) => {
           const data = doc.data();
