@@ -30,7 +30,7 @@ import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
 import { ref, set, push, serverTimestamp, get } from "firebase/database"
-import { doc, setDoc } from "firebase/firestore"
+import { doc, setDoc, getDoc, collection, query, where, getDocs, onSnapshot, DocumentData } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 // Content types for curriculum
@@ -257,6 +257,15 @@ interface Submission {
 // Update Badge variant type
 type BadgeVariant = "default" | "destructive" | "secondary" | "outline" | "success";
 
+interface ExistingAnswers {
+  [key: string]: {
+    problemIndex: number;
+    answer: string;
+    score: number;
+    [key: string]: any;
+  };
+}
+
 export default function StudentCurriculum() {
   const router = useRouter()
   const params = useParams()
@@ -472,15 +481,28 @@ export default function StudentCurriculum() {
           return;
         }
 
-        // First check Firebase for existing answers
-        const answersRef = ref(realtimeDb, `student-answers/${classId}/${content.id}/${userId}/problems`);
-        console.log('Loading answers from path:', `student-answers/${classId}/${content.id}/${userId}/problems`);
-        const snapshot = await get(answersRef);
-        const existingAnswers = snapshot.val();
+        // Query Firestore for existing answers
+        const answersQuery = query(
+          collection(db, 'student-answers'),
+          where('classId', '==', classId),
+          where('contentId', '==', content.id),
+          where('studentId', '==', userId)
+        );
+        
+        const answersSnapshot = await getDocs(answersQuery);
+        const existingAnswers: ExistingAnswers = answersSnapshot.docs.reduce((acc, doc) => {
+          const data = doc.data() as DocumentData & {
+            problemIndex: number;
+            answer: string;
+            score: number;
+          };
+          acc[`problem-${data.problemIndex}`] = data;
+          return acc;
+        }, {} as ExistingAnswers);
 
         console.log('Loaded existing answers:', existingAnswers);
 
-        if (existingAnswers) {
+        if (Object.keys(existingAnswers).length > 0) {
           // If the student has already completed this content, show the results
           setShowResults(true);
 
@@ -491,8 +513,8 @@ export default function StudentCurriculum() {
               return;
             }
 
-            const problemIndex = parseInt(problemKey.replace('problem-', ''), 10);
-            if (isNaN(problemIndex)) {
+            const problemIndex = answerData.problemIndex;
+            if (typeof problemIndex !== 'number') {
               console.warn(`Invalid problem index in key ${problemKey}`);
               return;
             }
@@ -550,7 +572,7 @@ export default function StudentCurriculum() {
           return;
         }
 
-        // If no Firebase data, check localStorage as fallback
+        // If no Firestore data, check localStorage as fallback
         const gradedContentKey = `graded-content-${classId}-${content.id}`;
         const gradedData = localStorage.getItem(gradedContentKey);
 
@@ -1018,7 +1040,7 @@ export default function StudentCurriculum() {
         questionText: problem.question || 'Question not available',
         answer: answer?.toString() || '',
         answerType: type,
-        timestamp: Date.now(),
+        timestamp: serverTimestamp(),
         correct: isCorrect,
         partialCredit: 0,
         problemType: problem.type,
@@ -1033,40 +1055,49 @@ export default function StudentCurriculum() {
 
       console.log('Attempting to save answer data:', answerData);
 
-      // Save to Realtime Database for real-time updates
-      const realtimeRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
-      await set(realtimeRef, answerData);
+      // Save to Firestore
+      const answerRef = doc(db, 'student-answers', `${classId}_${activeContent.id}_${userId}_problem-${problemIndex}`);
+      await setDoc(answerRef, answerData);
 
-      // Also save to student-progress for the progress table
-      const progressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}/problems/problem-${problemIndex}`);
-      await set(progressRef, answerData);
+      // Also save to student-progress collection
+      const progressRef = doc(db, 'student-progress', `${classId}_${activeContent.id}_${userId}_problem-${problemIndex}`);
+      await setDoc(progressRef, answerData);
 
       // Check if all problems are answered
-      const allProblemsRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/problems`);
-      const allProblemsSnapshot = await get(allProblemsRef);
-      const allProblems = allProblemsSnapshot.val() || {};
+      const answersQuery = query(
+        collection(db, 'student-answers'),
+        where('classId', '==', classId),
+        where('contentId', '==', activeContent.id),
+        where('studentId', '==', userId)
+      );
       
+      const answersSnapshot = await getDocs(answersQuery);
       const totalProblems = activeContent.problems?.length || 0;
-      const answeredProblems = Object.keys(allProblems).length;
+      const answeredProblems = answersSnapshot.docs.length;
       
       // If all problems are answered, update the status to completed
       if (answeredProblems >= totalProblems) {
         const completionData = {
           ...answerData,
           status: "completed",
-          completedAt: Date.now()
+          completedAt: serverTimestamp()
         };
         
-        // Update both paths with completion status
-        await set(realtimeRef, completionData);
-        await set(progressRef, completionData);
+        // Update both documents with completion status
+        await setDoc(answerRef, completionData);
+        await setDoc(progressRef, completionData);
         
-        // Also update the parent node status
-        const parentRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}/${userId}/completed`);
-        await set(parentRef, { status: "completed", completedAt: Date.now() });
-        
-        const parentProgressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}/${userId}/completed`);
-        await set(parentProgressRef, { status: "completed", completedAt: Date.now() });
+        // Also create a completion record
+        const completionRef = doc(db, 'student-completions', `${classId}_${activeContent.id}_${userId}`);
+        await setDoc(completionRef, {
+          status: "completed",
+          completedAt: serverTimestamp(),
+          classId,
+          contentId: activeContent.id,
+          studentId: userId,
+          totalProblems,
+          answeredProblems
+        });
       }
       
       console.log(`Answer saved successfully for problem ${problemIndex}`);
@@ -1306,7 +1337,7 @@ export default function StudentCurriculum() {
                                     {problem.points} {problem.points === 1 ? "point" : "points"}
                                   </Badge>
                                   {isSubmitted && (
-                                    <Badge variant={problemScore === problem.points ? "success" : "destructive"} className="ml-2">
+                                    <Badge variant={problemScore === problem.points ? "default" : "destructive"} className="ml-2">
                                       Score: {problemScore}/{problem.points}
                                     </Badge>
                                   )}

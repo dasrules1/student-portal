@@ -53,7 +53,12 @@ import {
   query, 
   where,
   deleteDoc,
-  getDocs
+  getDocs,
+  onSnapshot,
+  serverTimestamp,
+  DocumentData,
+  QuerySnapshot,
+  DocumentSnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
@@ -115,20 +120,37 @@ interface Curriculum {
     id: string;
     title: string;
     description?: string;
-    resources?: {
+    contents: {
       id: string;
       title: string;
       type: string;
-      url?: string;
       content?: string;
+      problems?: {
+        id: string;
+        question: string;
+        type: string;
+        points: number;
+        options?: string[];
+        correctAnswer?: string;
+      }[];
+      studentProgress?: {
+        submissions: {
+          studentId: string;
+          problemResults: {
+            type: string;
+            correct: boolean;
+            points: number;
+            maxPoints: number;
+            studentAnswer: string;
+            timestamp: Date;
+          }[];
+          score: number;
+          status: string;
+          submittedAt: Date;
+          lastUpdated: Date;
+        }[];
+      };
     }[];
-  }[];
-  assignments?: {
-    id: string;
-    title: string;
-    description?: string;
-    dueDate?: string;
-    points?: number;
   }[];
 }
 
@@ -280,70 +302,69 @@ export default function TeacherCurriculum() {
     loadData()
   }, [classId, router, toast])
 
-  // Update the real-time listener to use onValue instead of onSnapshot
+  // Update the real-time listener for submissions
   useEffect(() => {
     if (!classId) return;
 
     // Create a query for submissions in this class
-    const submissionsRef = ref(realtimeDb, `submissions/${classId}`);
+    const submissionsQuery = query(
+      collection(db, 'student-answers'),
+      where('classId', '==', classId)
+    );
 
     // Set up real-time listener
-    const unsubscribe = onValue(submissionsRef, (snapshot) => {
+    const unsubscribe = onSnapshot(submissionsQuery, (snapshot: QuerySnapshot<DocumentData>) => {
       try {
-        const data = snapshot.val();
-        if (data) {
-          // Transform the data into a more usable format
-          const submissions = Object.entries(data).map(([id, submission]) => ({
-            id,
-            ...submission
-          }));
+        const submissions = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Update the curriculum state with the new submissions
+        setCurriculum((prevCurriculum: Curriculum | null) => {
+          if (!prevCurriculum) return prevCurriculum;
           
-          // Update the curriculum state with the new submissions
-          setCurriculum(prevCurriculum => {
-            if (!prevCurriculum) return prevCurriculum;
+          const updatedCurriculum = { ...prevCurriculum };
+          submissions.forEach(submission => {
+            const lessonIndex = updatedCurriculum.lessons.findIndex(
+              lesson => lesson.id === submission.lessonId
+            );
             
-            const updatedCurriculum = { ...prevCurriculum };
-            submissions.forEach(submission => {
-              const lessonIndex = updatedCurriculum.lessons.findIndex(
-                lesson => lesson.id === submission.lessonId
+            if (lessonIndex !== -1) {
+              const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
+                content => content.id === submission.contentId
               );
               
-              if (lessonIndex !== -1) {
-                const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
-                  content => content.id === submission.contentId
+              if (contentIndex !== -1) {
+                const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
+                const existingSubmissions = content.studentProgress?.submissions || [];
+                const submissionIndex = existingSubmissions.findIndex(
+                  sub => sub.studentId === submission.studentId
                 );
                 
-                if (contentIndex !== -1) {
-                  const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
-                  const existingSubmissions = content.studentProgress?.submissions || [];
-                  const submissionIndex = existingSubmissions.findIndex(
-                    sub => sub.studentId === submission.studentId
-                  );
-                  
-                  if (submissionIndex !== -1) {
-                    existingSubmissions[submissionIndex] = submission;
-                  } else {
-                    existingSubmissions.push(submission);
-                  }
-                  
-                  updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = existingSubmissions;
-                  
-                  // Show notification for new submissions
-                  const student = students.find(s => s.id === submission.studentId);
-                  if (student) {
-                    toast({
-                      title: "New Submission",
-                      description: `${student.name} has submitted their work for ${content.title}`,
-                      duration: 5000,
-                    });
-                  }
+                if (submissionIndex !== -1) {
+                  existingSubmissions[submissionIndex] = submission;
+                } else {
+                  existingSubmissions.push(submission);
+                }
+                
+                updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = existingSubmissions;
+                
+                // Show notification for new submissions
+                const student = students.find(s => s.id === submission.studentId);
+                if (student) {
+                  toast({
+                    title: "New Submission",
+                    description: `${student.name} has submitted their work for ${content.title}`,
+                    duration: 5000,
+                  });
                 }
               }
-            });
-            
-            return updatedCurriculum;
+            }
           });
-        }
+          
+          return updatedCurriculum;
+        });
       } catch (error) {
         console.error("Error processing real-time data:", error);
       }
@@ -361,115 +382,108 @@ export default function TeacherCurriculum() {
 
     console.log("Setting up real-time listener for content:", activeContent.id);
 
-    // Listen for real-time updates from Firebase
-    const answersRef = ref(realtimeDb, `student-answers/${classId}/${activeContent.id}`);
-    const unsubscribe = onValue(answersRef, (snapshot) => {
+    // Create a query for student answers
+    const answersQuery = query(
+      collection(db, 'student-answers'),
+      where('classId', '==', classId),
+      where('contentId', '==', activeContent.id)
+    );
+
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(answersQuery, (snapshot) => {
       try {
-        const data = snapshot.val();
-        console.log("Received real-time update:", data);
-        if (data) {
-          // Transform the data into a more usable format
-          const transformedData = Object.entries(data).reduce((acc, [studentId, studentData]) => {
-            if (studentData && typeof studentData === 'object') {
-              // Process each problem's answer
-              Object.entries(studentData).forEach(([problemKey, problemData]) => {
-                if (problemKey.startsWith('problem-') && problemData && typeof problemData === 'object') {
-                  const problemIndex = parseInt(problemKey.split('-')[1]);
-                  if (!isNaN(problemIndex)) {
-                    if (!acc[studentId]) {
-                      acc[studentId] = {};
-                    }
-                    acc[studentId][problemKey] = {
-                      answer: problemData.answer || 'No answer provided',
-                      score: problemData.score || 0,
-                      correct: problemData.correct || false,
-                      timestamp: problemData.timestamp || Date.now()
-                    };
-                  }
-                }
-              });
-            }
-            return acc;
-          }, {});
+        const transformedData = snapshot.docs.reduce((acc, doc) => {
+          const data = doc.data();
+          const studentId = data.studentId;
+          
+          if (!acc[studentId]) {
+            acc[studentId] = {};
+          }
+          
+          acc[studentId][`problem-${data.problemIndex}`] = {
+            answer: data.answer || 'No answer provided',
+            score: data.score || 0,
+            correct: data.correct || false,
+            timestamp: data.timestamp?.toDate() || new Date()
+          };
+          
+          return acc;
+        }, {});
 
-          console.log("Transformed data:", transformedData);
-          setRealTimeUpdates(transformedData);
+        console.log("Transformed data:", transformedData);
+        setRealTimeUpdates(transformedData);
 
-          // Update the curriculum state with the new data
-          setCurriculum(prevCurriculum => {
-            if (!prevCurriculum) return prevCurriculum;
+        // Update the curriculum state with the new data
+        setCurriculum(prevCurriculum => {
+          if (!prevCurriculum) return prevCurriculum;
 
-            const updatedCurriculum = { ...prevCurriculum };
-            const lessonIndex = updatedCurriculum.lessons.findIndex(
-              lesson => lesson.contents.some(content => content.id === activeContent.id)
+          const updatedCurriculum = { ...prevCurriculum };
+          const lessonIndex = updatedCurriculum.lessons.findIndex(
+            lesson => lesson.contents.some(content => content.id === activeContent.id)
+          );
+
+          if (lessonIndex !== -1) {
+            const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
+              content => content.id === activeContent.id
             );
 
-            if (lessonIndex !== -1) {
-              const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
-                content => content.id === activeContent.id
-              );
+            if (contentIndex !== -1) {
+              // Initialize studentProgress if it doesn't exist
+              if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
+                updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
+                  submissions: []
+                };
+              }
 
-              if (contentIndex !== -1) {
-                // Initialize studentProgress if it doesn't exist
-                if (!updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress) {
-                  updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress = {
-                    submissions: []
+              // Update each student's progress
+              Object.entries(transformedData).forEach(([studentId, studentAnswers]) => {
+                const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions;
+                const submissionIndex = submissions.findIndex(sub => sub.studentId === studentId);
+
+                const problemResults = Object.entries(studentAnswers).map(([problemKey, answerData]) => {
+                  const problemIndex = parseInt(problemKey.split('-')[1]);
+                  return {
+                    type: 'open-ended',
+                    correct: answerData.correct,
+                    points: answerData.score,
+                    maxPoints: activeContent.problems[problemIndex]?.points || 1,
+                    studentAnswer: answerData.answer,
+                    timestamp: answerData.timestamp
                   };
-                }
-
-                // Update each student's progress
-                Object.entries(transformedData).forEach(([studentId, studentAnswers]) => {
-                  const submissions = updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions;
-                  const submissionIndex = submissions.findIndex(sub => sub.studentId === studentId);
-
-                  const problemResults = Object.entries(studentAnswers).map(([problemKey, answerData]) => {
-                    const problemIndex = parseInt(problemKey.split('-')[1]);
-                    return {
-                      type: 'open-ended',
-                      correct: answerData.correct,
-                      points: answerData.score,
-                      maxPoints: activeContent.problems[problemIndex]?.points || 1,
-                      studentAnswer: answerData.answer,
-                      timestamp: answerData.timestamp
-                    };
-                  });
-
-                  const totalScore = problemResults.reduce((sum, result) => sum + result.points, 0);
-                  const maxPoints = problemResults.reduce((sum, result) => sum + result.maxPoints, 0);
-
-                  if (submissionIndex !== -1) {
-                    // Update existing submission
-                    submissions[submissionIndex] = {
-                      ...submissions[submissionIndex],
-                      problemResults,
-                      score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
-                      lastUpdated: Date.now()
-                    };
-                  } else {
-                    // Add new submission
-                    submissions.push({
-                      studentId,
-                      problemResults,
-                      score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
-                      status: 'in-progress',
-                      submittedAt: Date.now(),
-                      lastUpdated: Date.now()
-                    });
-                  }
                 });
 
-                // Save to Firebase
-                const progressRef = ref(realtimeDb, `student-progress/${classId}/${activeContent.id}`);
-                set(progressRef, updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress);
-              }
-            }
+                const totalScore = problemResults.reduce((sum, result) => sum + result.points, 0);
+                const maxPoints = problemResults.reduce((sum, result) => sum + result.maxPoints, 0);
 
-            return updatedCurriculum;
-          });
-        } else {
-          console.log("No real-time data available");
-          setRealTimeUpdates({});
-        }
+                if (submissionIndex !== -1) {
+                  // Update existing submission
+                  submissions[submissionIndex] = {
+                    ...submissions[submissionIndex],
+                    problemResults,
+                    score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
+                    lastUpdated: new Date()
+                  };
+                } else {
+                  // Add new submission
+                  submissions.push({
+                    studentId,
+                    problemResults,
+                    score: maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0,
+                    status: 'in-progress',
+                    submittedAt: new Date(),
+                    lastUpdated: new Date()
+                  });
+                }
+              });
+
+              // Save to Firestore
+              const progressRef = doc(db, 'student-progress', `${classId}_${activeContent.id}`);
+              setDoc(progressRef, updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress);
+            }
+          }
+
+          return updatedCurriculum;
+        });
       } catch (error) {
         console.error("Error processing real-time data:", error);
         setRealTimeUpdates({});
