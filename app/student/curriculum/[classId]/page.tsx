@@ -780,8 +780,8 @@ export default function StudentCurriculum() {
     console.log('Active content:', activeContent);
     console.log('Problem data:', problem);
     
-    // Get user ID from all possible sources
-    const userId = currentUser?.uid || currentUser?.id || currentUser?.user?.uid;
+    // Use currentUser.uid as the studentId
+    const userId = currentUser?.uid;
     const userName = currentUser?.displayName || currentUser?.name || currentUser?.user?.displayName || 'Unknown Student';
     const userEmail = currentUser?.email || currentUser?.user?.email || '';
     const userAvatar = currentUser?.photoURL || currentUser?.avatar || currentUser?.user?.photoURL || '';
@@ -1079,7 +1079,7 @@ export default function StudentCurriculum() {
                        lessonsWithContent[activeLesson - 1]?.contents
                         .filter((content: Content) => content && content.isPublished)
                         .map((content: Content) => (
-                          <Card key={(content.id ?? `content-${Math.random()}`) as string} className="overflow-hidden">
+                          <Card key={content.id ? content.id : `content-${Math.random()}`} className="overflow-hidden">
                             <div
                               className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
                               onClick={() => handleSelectContent(content)}
