@@ -822,7 +822,7 @@ export default function StudentAssignments() {
             const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
             if (directPublishedContent) {
               const parsedContent = JSON.parse(directPublishedContent);
-              console.log("Found direct published content in localStorage");
+              console.log("Found direct published content in localStorage:", parsedContent);
               
               if (Array.isArray(parsedContent)) {
                 // Group assignments by lesson
@@ -843,7 +843,76 @@ export default function StudentAssignments() {
                   return acc;
                 }, {});
 
+                console.log("Grouped assignments by lesson:", lessonGroups);
+
                 // Convert grouped assignments to array format
+                const groupedAssignments = Object.entries(lessonGroups).map(([lessonId, assignments]) => ({
+                  lessonId,
+                  lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
+                  assignments: assignments as EnrichedAssignment[],
+                  courseId: classItem.id
+                }));
+
+                console.log("Converted to lesson groups:", groupedAssignments);
+
+                if (groupedAssignments.length > 0) {
+                  allAssignments.push(...groupedAssignments);
+                  foundPublishedContent = true;
+                  foundAnyPublishedContent = true;
+
+                  // Check for assignments due soon
+                  const now = new Date();
+                  const oneWeekFromNow = new Date();
+                  oneWeekFromNow.setDate(now.getDate() + 7);
+
+                  groupedAssignments.forEach(group => {
+                    const pendingAssignments = group.assignments.filter((assignment: EnrichedAssignment) => {
+                      if (!assignment.dueDate) return false;
+                      const dueDate = new Date(assignment.dueDate);
+                      return dueDate > now && dueDate <= oneWeekFromNow;
+                    });
+                    dueAssignments.push(...pendingAssignments);
+                  });
+                }
+              }
+            } else {
+              console.log(`No published content found for class ${classItem.id}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`Error loading direct published content: ${error}`);
+        }
+
+        // 2. Try published curriculum format
+        if (!foundPublishedContent) {
+          try {
+            const publishedCurriculum = localStorage.getItem(`published-curriculum-${classItem.id}`);
+            if (publishedCurriculum) {
+              const parsedCurriculum = JSON.parse(publishedCurriculum);
+              console.log("Found published curriculum:", parsedCurriculum);
+
+              if (parsedCurriculum.lessons && Array.isArray(parsedCurriculum.lessons)) {
+                const lessonGroups = parsedCurriculum.lessons.reduce((acc: Record<string, any[]>, lesson: any) => {
+                  if (lesson.contents && Array.isArray(lesson.contents)) {
+                    const publishedContents = lesson.contents.filter((content: any) => 
+                      content.isPublished === true && 
+                      (content.type === 'assignment' || content.type === 'quiz')
+                    );
+
+                    if (publishedContents.length > 0) {
+                      const lessonId = lesson.id || 'ungrouped';
+                      acc[lessonId] = publishedContents.map((content: any) => ({
+                        ...content,
+                        classId: classItem.id,
+                        className: classItem.name,
+                        lessonId: lesson.id,
+                        lessonTitle: lesson.title
+                      }));
+                    }
+                  }
+                  return acc;
+                }, {});
+
                 const groupedAssignments = Object.entries(lessonGroups).map(([lessonId, assignments]) => ({
                   lessonId,
                   lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
@@ -872,18 +941,17 @@ export default function StudentAssignments() {
                 }
               }
             }
+          } catch (error) {
+            console.warn(`Error loading published curriculum: ${error}`);
           }
-        } catch (error) {
-          console.warn(`Error loading direct published content: ${error}`);
         }
-
-        // Continue with other methods if needed...
       } catch (error) {
         console.error(`Error loading assignments for class ${classItem.id}:`, error);
       }
     }
 
     console.log(`Found a total of ${allAssignments.length} published lesson groups across all classes`);
+    console.log("All assignments:", allAssignments);
     
     // Sort assignments by due date within each lesson group
     const sortedAssignments = allAssignments.map(group => ({
@@ -995,9 +1063,115 @@ export default function StudentAssignments() {
   if (loading) {
     return (
       <div className="flex min-h-screen">
-        <Sidebar navigation={navigation} user={currentUser || undefined} />
-        <div className="flex items-center justify-center flex-1">
-          <p>Loading assignments...</p>
+        <Sidebar navigation={navigation} user={currentUser} />
+        <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <img src="/logo.png" alt="Education More" className="h-8" />
+                <h2 className="text-lg font-semibold">Education More</h2>
+              </div>
+              <h1 className="text-3xl font-bold">Assignments</h1>
+              <p className="text-muted-foreground">
+                View and track your assignments
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col space-y-6">
+            {/* Pending Assignments Section */}
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold mb-4">Due Soon</h2>
+              <div className="space-y-4">
+                {pendingAssignments.length > 0 ? (
+                  pendingAssignments.map((assignment) => (
+                    <Card key={assignment.id}>
+                      <CardHeader className="pb-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                            <CardDescription>
+                              {assignment.className} • {assignment.lessonTitle} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
+                            </CardDescription>
+                          </div>
+                          <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
+                      </CardContent>
+                      <CardFooter>
+                        <Button 
+                          asChild 
+                          className="w-full"
+                        >
+                          <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
+                            Start Assignment
+                          </Link>
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                  ))
+                ) : (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                      <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                      <p className="text-muted-foreground">No pending assignments</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </section>
+
+            {/* All Assignments Section */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4">All Assignments</h2>
+              <div className="space-y-6">
+                {assignments.length > 0 ? (
+                  assignments.map((lessonGroup) => (
+                    <Card key={lessonGroup.lessonId}>
+                      <CardHeader>
+                        <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {lessonGroup.assignments.map((assignment) => (
+                            <div key={assignment.id} className="border rounded-lg p-4">
+                              <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  <h3 className="font-medium">{assignment.title}</h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
+                                  </p>
+                                </div>
+                                <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-4">{assignment.description || "No description provided"}</p>
+                              <Button 
+                                asChild 
+                                className="w-full"
+                              >
+                                <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
+                                  {assignment.completed ? 'View Submission' : 'Start Assignment'}
+                                </Link>
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                      <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                      <p className="text-muted-foreground">No assignments found</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     )
@@ -1006,7 +1180,7 @@ export default function StudentAssignments() {
   if (authError) {
     return (
       <div className="flex min-h-screen">
-        <Sidebar navigation={navigation} user={currentUser || undefined} />
+        <Sidebar navigation={navigation} user={currentUser} />
         <div className="flex items-center justify-center flex-1">
           <Card className="w-full max-w-md">
             <CardHeader>
@@ -1043,7 +1217,7 @@ export default function StudentAssignments() {
   if (!currentUser || currentUser.role !== "student") {
     return (
       <div className="flex min-h-screen">
-        <Sidebar navigation={navigation} user={currentUser || undefined} />
+        <Sidebar navigation={navigation} user={currentUser} />
         <div className="flex items-center justify-center flex-1">
           <Card className="w-full max-w-md">
             <CardHeader>
@@ -1084,100 +1258,116 @@ export default function StudentAssignments() {
   console.log("DEBUG - Completed assignments count:", completedAssignments.length);
 
   return (
-    <div className="container mx-auto py-6">
-      <div className="flex flex-col space-y-6">
-        {/* Pending Assignments Section */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">Due Soon</h2>
-          <div className="space-y-4">
-            {pendingAssignments.length > 0 ? (
-              pendingAssignments.map((assignment) => (
-                <Card key={assignment.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{assignment.title}</CardTitle>
-                        <CardDescription>
-                          {assignment.className} • {assignment.lessonTitle} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
-                        </CardDescription>
-                      </div>
-                      <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
-                  </CardContent>
-                  <CardFooter>
-                    <Button 
-                      asChild 
-                      className="w-full"
-                    >
-                      <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                        Start Assignment
-                      </Link>
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))
-            ) : (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground">No pending assignments</p>
-                </CardContent>
-              </Card>
-            )}
+    <div className="flex min-h-screen">
+      <Sidebar navigation={navigation} user={currentUser} />
+      <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/logo.png" alt="Education More" className="h-8" />
+              <h2 className="text-lg font-semibold">Education More</h2>
+            </div>
+            <h1 className="text-3xl font-bold">Assignments</h1>
+            <p className="text-muted-foreground">
+              View and track your assignments
+            </p>
           </div>
-        </section>
+        </div>
 
-        {/* All Assignments Section */}
-        <section>
-          <h2 className="text-xl font-semibold mb-4">All Assignments</h2>
-          <div className="space-y-6">
-            {assignments.length > 0 ? (
-              assignments.map((lessonGroup) => (
-                <Card key={lessonGroup.lessonId}>
-                  <CardHeader>
-                    <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {lessonGroup.assignments.map((assignment) => (
-                        <div key={assignment.id} className="border rounded-lg p-4">
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <h3 className="font-medium">{assignment.title}</h3>
-                              <p className="text-sm text-muted-foreground">
-                                Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
-                              </p>
-                            </div>
-                            <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground mb-4">{assignment.description || "No description provided"}</p>
-                          <Button 
-                            asChild 
-                            className="w-full"
-                          >
-                            <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
-                              {assignment.completed ? 'View Submission' : 'Start Assignment'}
-                            </Link>
-                          </Button>
+        <div className="flex flex-col space-y-6">
+          {/* Pending Assignments Section */}
+          <section className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Due Soon</h2>
+            <div className="space-y-4">
+              {pendingAssignments.length > 0 ? (
+                pendingAssignments.map((assignment) => (
+                  <Card key={assignment.id}>
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-lg">{assignment.title}</CardTitle>
+                          <CardDescription>
+                            {assignment.className} • {assignment.lessonTitle} • Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
+                          </CardDescription>
                         </div>
-                      ))}
-                    </div>
+                        <Badge>{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">{assignment.description || "No description provided"}</p>
+                    </CardContent>
+                    <CardFooter>
+                      <Button 
+                        asChild 
+                        className="w-full"
+                      >
+                        <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
+                          Start Assignment
+                        </Link>
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                    <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">No pending assignments</p>
                   </CardContent>
                 </Card>
-              ))
-            ) : (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground">No assignments found</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </section>
+              )}
+            </div>
+          </section>
+
+          {/* All Assignments Section */}
+          <section>
+            <h2 className="text-xl font-semibold mb-4">All Assignments</h2>
+            <div className="space-y-6">
+              {assignments.length > 0 ? (
+                assignments.map((lessonGroup) => (
+                  <Card key={lessonGroup.lessonId}>
+                    <CardHeader>
+                      <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {lessonGroup.assignments.map((assignment) => (
+                          <div key={assignment.id} className="border rounded-lg p-4">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <h3 className="font-medium">{assignment.title}</h3>
+                                <p className="text-sm text-muted-foreground">
+                                  Due: {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : "No due date"}
+                                </p>
+                              </div>
+                              <Badge variant="outline">{assignment.type === 'quiz' ? 'Quiz' : 'Assignment'}</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-4">{assignment.description || "No description provided"}</p>
+                            <Button 
+                              asChild 
+                              className="w-full"
+                            >
+                              <Link href={`/student/curriculum/${assignment.classId}?lesson=${assignment.lessonId}&content=${assignment.id}&type=${assignment.type}`}>
+                                {assignment.completed ? 'View Submission' : 'Start Assignment'}
+                              </Link>
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                    <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">No assignments found</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   )
