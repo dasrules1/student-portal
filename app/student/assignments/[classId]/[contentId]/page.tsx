@@ -1,7 +1,9 @@
+"use client"
+
 import React, { useState } from 'react';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { useAuth } from '@/lib/auth';
+import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/components/ui/use-toast';
 
 const AssignmentPage: React.FC = () => {
@@ -27,7 +29,7 @@ const AssignmentPage: React.FC = () => {
         timestamp: serverTimestamp(),
         score: 0,
         correct: false
-      });
+      }, { merge: true });
 
       // Update local state
       setAnswers(prev => ({
@@ -38,13 +40,15 @@ const AssignmentPage: React.FC = () => {
       toast({
         title: "Answer saved",
         description: "Your answer has been saved successfully.",
+        duration: 3000
       });
     } catch (error) {
       console.error("Error saving answer:", error);
       toast({
         title: "Error",
         description: "There was a problem saving your answer. Please try again.",
-        variant: "destructive"
+        variant: "destructive",
+        duration: 3000
       });
     }
   };

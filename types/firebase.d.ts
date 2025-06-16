@@ -15,6 +15,10 @@ declare module 'firebase/firestore' {
     id: string;
   }
   
+  export interface SetOptions {
+    merge?: boolean;
+  }
+  
   export function collection(db: any, collectionPath: string): any;
   export function doc(db: any, collectionPath: string, docPath: string): any;
   export function getDocs(query: any): Promise<{docs: QueryDocumentSnapshot[]}>;
@@ -25,7 +29,7 @@ declare module 'firebase/firestore' {
   export function query(collectionRef: any, ...constraints: any[]): any;
   export function where(field: string, opStr: string, value: any): any;
   export function serverTimestamp(): any;
-  export function setDoc(documentRef: any, data: any): Promise<void>;
+  export function setDoc(documentRef: any, data: any, options?: SetOptions): Promise<void>;
 }
 
 declare module 'firebase/storage' {
