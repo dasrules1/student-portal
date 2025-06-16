@@ -397,15 +397,14 @@ export default function TeacherCurriculum() {
 
     console.log("Setting up real-time listener for content:", activeContent.id);
 
-    // Create a query for student answers
+    // Create a query for student answers using the new nested path structure
     const answersQuery = query(
-      collection(db, 'student-answers'),
-      where('classId', '==', classId),
+      collection(db, `student-answers/${classId}/answers`),
       where('contentId', '==', activeContent.id)
     );
 
     // Set up real-time listener
-    const unsubscribe = onSnapshot(answersQuery, (snapshot) => {
+    const unsubscribe = onSnapshot(answersQuery, (snapshot: QuerySnapshot<DocumentData>) => {
       try {
         const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc) => {
           const data = doc.data();
