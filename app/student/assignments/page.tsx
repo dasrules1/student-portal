@@ -416,22 +416,32 @@ export default function StudentAssignments() {
     const directAssignments = await checkForDirectPublishedAssignments(studentId);
     if (directAssignments && directAssignments.length > 0) {
       console.log(`Found ${directAssignments.length} direct published assignments`);
-      setAssignments(directAssignments);
-      
+      // Group directAssignments by lesson
+      const lessonGroupsMap: Record<string, EnrichedAssignment[]> = {};
+      directAssignments.forEach((assignment) => {
+        const lessonId = assignment.lessonId || 'ungrouped';
+        if (!lessonGroupsMap[lessonId]) lessonGroupsMap[lessonId] = [];
+        lessonGroupsMap[lessonId].push(assignment);
+      });
+      const lessonGroups: LessonGroup[] = Object.entries(lessonGroupsMap).map(([lessonId, assignments]) => ({
+        lessonId,
+        lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
+        assignments,
+        courseId: assignments[0]?.classId || '',
+        className: assignments[0]?.className || '',
+      }));
+      setAssignments(lessonGroups);
       // Calculate pending assignments
       const now = new Date();
       const oneWeekFromNow = new Date();
       oneWeekFromNow.setDate(now.getDate() + 7);
-      
       const pendingAssignments = directAssignments.filter(assignment => {
         if (!assignment.dueDate) return false;
         const dueDate = new Date(assignment.dueDate);
         return dueDate > now && dueDate <= oneWeekFromNow;
       });
-      
       setPendingAssignments(pendingAssignments);
       setLoading(false);
-      
       return;
     }
     
@@ -560,31 +570,27 @@ export default function StudentAssignments() {
                 );
                 
                 const querySnapshot = await getDocs(q);
-                
-                if (!querySnapshot.empty) {
-                  querySnapshot.forEach((docSnapshot) => {
-                    const assignmentData = docSnapshot.data();
-                    console.log(`Found published assignment: ${assignmentData.title}`);
-                    
-                    // Convert to EnrichedAssignment format
-                    allAssignments.push({
-                      id: assignmentData.contentId,
-                      title: assignmentData.title,
-                      description: assignmentData.description,
-                      type: assignmentData.type,
-                      isPublished: true,
-                      dueDate: assignmentData.dueDate,
-                      classId: assignmentData.classId,
-                      className: assignmentData.className,
-                      lessonId: assignmentData.lessonId,
-                      lessonTitle: assignmentData.lessonTitle,
-                      problems: assignmentData.problems,
-                      points: assignmentData.points
-                    });
+                // Add type annotation for querySnapshot
+                if (!(querySnapshot as any).empty) return;
+                (querySnapshot as any).forEach((docSnapshot: any) => {
+                  const assignmentData = docSnapshot.data();
+                  // Convert to EnrichedAssignment format
+                  allAssignments.push({
+                    id: assignmentData.contentId,
+                    title: assignmentData.title,
+                    description: assignmentData.description,
+                    type: assignmentData.type,
+                    isPublished: true,
+                    dueDate: assignmentData.dueDate,
+                    classId: assignmentData.classId,
+                    className: assignmentData.className,
+                    lessonId: assignmentData.lessonId,
+                    lessonTitle: assignmentData.lessonTitle,
+                    problems: assignmentData.problems,
+                    points: assignmentData.points
                   });
-                  
-                  console.log(`Found ${querySnapshot.size} published assignments for class ${classId}`);
-                }
+                });
+                console.log(`Found ${(querySnapshot as any).size} published assignments for class ${classId}`);
               } catch (queryError) {
                 console.error(`Error querying published assignments for class ${classId}:`, queryError);
               }
@@ -976,13 +982,24 @@ export default function StudentAssignments() {
       const studentId = localStorage.getItem('userId')
       if (!studentId) return
 
-      const assignment = assignments.find(a => a.id === assignmentId)
-      if (!assignment) return
+      // Find the assignment in all lessons
+      let foundAssignment: EnrichedAssignment | undefined = undefined;
+      let lessonIdx = -1;
+      let assignmentIdx = -1;
+      (assignments as LessonGroup[]).forEach((lesson, lIdx) => {
+        const aIdx = lesson.assignments.findIndex(a => a.id === assignmentId);
+        if (aIdx !== -1) {
+          foundAssignment = lesson.assignments[aIdx];
+          lessonIdx = lIdx;
+          assignmentIdx = aIdx;
+        }
+      });
+      if (!foundAssignment) return;
 
-      const currentProgress = assignment.progress || {
+      const currentProgress = foundAssignment.progress || {
         studentId,
         assignmentId,
-        courseId: assignment.courseId,
+        courseId: foundAssignment.classId,
         status: 'in-progress',
         currentProblem: 0,
         answers: {}
@@ -1000,8 +1017,8 @@ export default function StudentAssignments() {
       }
 
       // Check if all problems are answered
-      const allProblemsAnswered = assignment.problems.every(
-        problem => updatedProgress.answers[problem.id]
+      const allProblemsAnswered = foundAssignment.problems && foundAssignment.problems.every(
+        (problem: any) => updatedProgress.answers[problem.id]
       )
 
       if (allProblemsAnswered) {
@@ -1012,11 +1029,15 @@ export default function StudentAssignments() {
       await updateStudentProgress(updatedProgress)
 
       // Update local state
-      setAssignments(prev => prev.map(a => 
-        a.id === assignmentId 
-          ? { ...a, progress: updatedProgress }
-          : a
-      ))
+      setAssignments(prev => (prev as LessonGroup[]).map((lesson, lIdx) => {
+        if (lIdx !== lessonIdx) return lesson;
+        return {
+          ...lesson,
+          assignments: lesson.assignments.map((a, aIdx) =>
+            aIdx === assignmentIdx ? { ...a, progress: updatedProgress } : a
+          )
+        };
+      }))
     } catch (error) {
       console.error('Error updating progress:', error)
     }
@@ -1220,6 +1241,18 @@ export default function StudentAssignments() {
               View your lessons with published assignments
             </p>
           </div>
+        </div>
+
+        {/* DEBUG SECTION */}
+        <div className="mb-6 p-4 border border-dashed border-gray-400 rounded bg-gray-50 text-xs text-gray-700">
+          <strong>DEBUG INFO</strong>
+          <div>User ID: {currentUser ? currentUser.id : 'N/A'}</div>
+          <div>
+            Enrolled Class IDs: {typeof window !== 'undefined' && currentUser && currentUser.id ? (
+              <span>{JSON.stringify(localStorage.getItem(`student-enrollments-${currentUser.id}`))}</span>
+            ) : 'N/A'}
+          </div>
+          <div>Assignments array: <pre style={{maxHeight: 200, overflow: 'auto'}}>{assignments ? JSON.stringify(assignments, null, 2) : 'N/A'}</pre></div>
         </div>
 
         <div className="flex flex-col space-y-6">
