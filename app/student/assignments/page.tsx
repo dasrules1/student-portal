@@ -530,126 +530,88 @@ export default function StudentAssignments() {
   const checkForDirectPublishedAssignments = async (studentId: string): Promise<EnrichedAssignment[]> => {
     try {
       if (typeof window === 'undefined') return [];
-      
+
       console.log("Checking for direct published assignments");
       const allAssignments: EnrichedAssignment[] = [];
-      
-      // NEW: First try the specialized published_assignments collection
-      try {
-        console.log("Checking published_assignments collection");
-        if (db) {
-          // Get classes student is enrolled in
-          let enrolledClassIds: string[] = [];
-          
-          // Try getting direct enrollment record from localStorage first
-          const enrollmentsKey = `student-enrollments-${studentId}`;
-          const enrollmentsJson = localStorage.getItem(enrollmentsKey);
-          
-          if (enrollmentsJson) {
-            try {
-              const parsedEnrollments = JSON.parse(enrollmentsJson);
-              if (Array.isArray(parsedEnrollments)) {
-                enrolledClassIds = parsedEnrollments;
-                console.log(`Found ${enrolledClassIds.length} enrolled classes in direct localStorage record`);
-              }
-            } catch (parseError) {
-              console.warn("Error parsing enrollments from localStorage:", parseError);
-            }
-          }
-          
-          // If we have enrolled classes, search for published assignments for those classes
-          if (enrolledClassIds.length > 0) {
-            for (const classId of enrolledClassIds) {
-              // Query for all published assignments for this class
-              try {
-                const assignmentsCollectionRef = collection(db, 'published_assignments');
-                const q = query(
-                  assignmentsCollectionRef, 
-                  where('classId', '==', classId),
-                  where('isPublished', '==', true)
-                );
-                
-                const querySnapshot = await getDocs(q);
-                // Add type annotation for querySnapshot
-                if (!(querySnapshot as any).empty) return;
-                (querySnapshot as any).forEach((docSnapshot: any) => {
-                  const assignmentData = docSnapshot.data();
-                  // Convert to EnrichedAssignment format
-                  allAssignments.push({
-                    id: assignmentData.contentId,
-                    title: assignmentData.title,
-                    description: assignmentData.description,
-                    type: assignmentData.type,
-                    isPublished: true,
-                    dueDate: assignmentData.dueDate,
-                    classId: assignmentData.classId,
-                    className: assignmentData.className,
-                    lessonId: assignmentData.lessonId,
-                    lessonTitle: assignmentData.lessonTitle,
-                    problems: assignmentData.problems,
-                    points: assignmentData.points
-                  });
-                });
-                console.log(`Found ${(querySnapshot as any).size} published assignments for class ${classId}`);
-              } catch (queryError) {
-                console.error(`Error querying published assignments for class ${classId}:`, queryError);
-              }
+
+      // Fetch enrolled class IDs from Firestore users collection
+      let enrolledClassIds: string[] = [];
+      if (db) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', studentId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            if (Array.isArray(userData.classes)) {
+              enrolledClassIds = userData.classes;
+              console.log(`Found ${enrolledClassIds.length} enrolled classes from Firestore user record`);
+            } else {
+              console.log('No classes array found in Firestore user record');
             }
           } else {
-            console.log("No enrolled classes found for published assignments query");
+            console.log('No user document found in Firestore for student:', studentId);
+          }
+        } catch (firestoreUserError) {
+          console.warn('Error fetching user from Firestore:', firestoreUserError);
+        }
+      }
+
+      // If we have enrolled classes, search for published assignments for those classes
+      if (enrolledClassIds.length > 0) {
+        for (const classId of enrolledClassIds) {
+          // Query for all published assignments for this class
+          try {
+            const assignmentsCollectionRef = collection(db, 'published_assignments');
+            const q = query(
+              assignmentsCollectionRef, 
+              where('classId', '==', classId),
+              where('isPublished', '==', true)
+            );
+            const querySnapshot = await getDocs(q);
+            if (!(querySnapshot as any).empty) {
+              (querySnapshot as any).forEach((docSnapshot: any) => {
+                const assignmentData = docSnapshot.data();
+                // Convert to EnrichedAssignment format
+                allAssignments.push({
+                  id: assignmentData.contentId,
+                  title: assignmentData.title,
+                  description: assignmentData.description,
+                  type: assignmentData.type,
+                  isPublished: true,
+                  dueDate: assignmentData.dueDate,
+                  classId: assignmentData.classId,
+                  className: assignmentData.className,
+                  lessonId: assignmentData.lessonId,
+                  lessonTitle: assignmentData.lessonTitle,
+                  problems: assignmentData.problems,
+                  points: assignmentData.points
+                });
+              });
+              console.log(`Found ${(querySnapshot as any).size} published assignments for class ${classId}`);
+            }
+          } catch (queryError) {
+            console.error(`Error querying published assignments for class ${classId}:`, queryError);
           }
         }
-      } catch (publishedAssignmentsError) {
-        console.warn("Error checking published_assignments collection:", publishedAssignmentsError);
+      } else {
+        console.log("No enrolled classes found for published assignments query");
       }
-      
+
       // 2. Next try Firestore published_curricula collection
       try {
         console.log("Checking Firestore published_curricula collection");
         if (db) {
-          // Get classes the student is enrolled in to check each one
-          let enrolledClassIds: string[] = [];
-          
-          // Try getting direct enrollment record from localStorage first
-          const enrollmentsKey = `student-enrollments-${studentId}`;
-          const enrollmentsJson = localStorage.getItem(enrollmentsKey);
-          
-          if (enrollmentsJson) {
-            try {
-              const parsedEnrollments = JSON.parse(enrollmentsJson);
-              if (Array.isArray(parsedEnrollments)) {
-                enrolledClassIds = parsedEnrollments;
-                console.log(`Found ${enrolledClassIds.length} enrolled classes in direct localStorage record`);
-              }
-            } catch (parseError) {
-              console.warn("Error parsing enrollments from localStorage:", parseError);
-            }
-          }
-          
-          // If no direct record, try getting the user to see their classes
-          if (enrolledClassIds.length === 0) {
-            const user = await storage.getUserById(studentId);
-            if (user && Array.isArray(user.classes)) {
-              enrolledClassIds = user.classes;
-              console.log(`Found ${enrolledClassIds.length} enrolled classes from user record`);
-            }
-          }
-          
           // For each class, check for published curriculum in Firestore
           for (const classId of enrolledClassIds) {
             try {
               const publishedRef = doc(db, 'published_curricula', classId);
               const publishedSnap = await getDoc(publishedRef);
-              
               if (publishedSnap.exists()) {
                 const publishedData = publishedSnap.data();
                 console.log(`Found published curriculum for class ${classId} in Firestore`);
-                
                 if (publishedData && publishedData.content) {
                   // Process this published curriculum to extract assignments
                   const classDetails = await storage.getClassById(classId);
                   const className = classDetails?.name || 'Class';
-                  
                   // Extract assignments from lessons
                   if (publishedData.content.lessons && Array.isArray(publishedData.content.lessons)) {
                     publishedData.content.lessons.forEach((lesson: any) => {
@@ -679,86 +641,15 @@ export default function StudentAssignments() {
       } catch (firestoreError) {
         console.warn("Error checking Firestore for published content:", firestoreError);
       }
-      
-      // 3. Then check localStorage including new direct keys
-      // Check for direct assignment publications in localStorage
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key) continue;
-        
-        // Check if it's a published content key (check all formats)
-        if (key.startsWith('published-contents-') || 
-            key.startsWith('published-curriculum-') ||
-            key.startsWith('assignment-')) {
-          try {
-            const content = localStorage.getItem(key);
-            if (content) {
-              const parsedContent = JSON.parse(content);
-              
-              // Handle array format (published-contents)
-              if (Array.isArray(parsedContent)) {
-                // Filter for assignment and quiz type content
-                const assignments = parsedContent.filter(item => 
-                  item && item.isPublished === true && 
-                  (item.type === 'assignment' || item.type === 'quiz')
-                );
-                
-                if (assignments.length > 0) {
-                  console.log(`Found ${assignments.length} assignments in ${key}`);
-                  allAssignments.push(...assignments);
-                }
-              } 
-              // Handle single assignment format (assignment-classId-contentId)
-              else if (key.startsWith('assignment-') && 
-                      parsedContent.isPublished === true &&
-                      (parsedContent.type === 'assignment' || parsedContent.type === 'quiz')) {
-                console.log(`Found direct assignment in ${key}`);
-                allAssignments.push(parsedContent);
-              }
-              // Handle nested format (published-curriculum)
-              else if (parsedContent.lessons && Array.isArray(parsedContent.lessons)) {
-                const extractedAssignments: EnrichedAssignment[] = [];
-                
-                parsedContent.lessons.forEach((lesson: any) => {
-                  if (lesson.contents && Array.isArray(lesson.contents)) {
-                    lesson.contents.forEach((content: any) => {
-                      if (content.isPublished === true && 
-                         (content.type === 'assignment' || content.type === 'quiz')) {
-                        extractedAssignments.push({
-                          ...content,
-                          classId: content.classId || lesson.classId || '',
-                          className: content.className || lesson.className || 'Class',
-                          lessonId: lesson.id,
-                          lessonTitle: lesson.title
-                        });
-                      }
-                    });
-                  }
-                });
-                
-                if (extractedAssignments.length > 0) {
-                  console.log(`Found ${extractedAssignments.length} assignments in nested curriculum format`);
-                  allAssignments.push(...extractedAssignments);
-                }
-              }
-            }
-          } catch (keyError) {
-            console.warn(`Error processing key ${key}:`, keyError);
-          }
-        }
-      }
-      
+
       // If we found assignments, deduplicate and sort them by due date
       if (allAssignments.length > 0) {
         console.log(`Found a total of ${allAssignments.length} published assignments`);
-        
         // Deduplicate assignments based on id
         const deduplicatedAssignments = Array.from(
           new Map(allAssignments.map(assignment => [assignment.id, assignment])).values()
         );
-        
         console.log(`After deduplication: ${deduplicatedAssignments.length} unique assignments`);
-        
         // Sort by due date
         return deduplicatedAssignments.sort((a, b) => {
           if (!a.dueDate) return 1;
@@ -766,7 +657,6 @@ export default function StudentAssignments() {
           return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
         });
       }
-      
       return [];
     } catch (error) {
       console.error("Error checking for direct published assignments:", error);
@@ -866,32 +756,32 @@ export default function StudentAssignments() {
 
                 if (groupedLessons.length > 0) {
                   allLessons.push(...groupedLessons);
-                  foundPublishedContent = true;
-                  foundAnyPublishedContent = true;
-
-                  // Check for assignments due soon
-                  const now = new Date();
-                  const oneWeekFromNow = new Date();
-                  oneWeekFromNow.setDate(now.getDate() + 7);
-
+                foundPublishedContent = true;
+                foundAnyPublishedContent = true;
+                
+                // Check for assignments due soon
+                const now = new Date();
+                const oneWeekFromNow = new Date();
+                oneWeekFromNow.setDate(now.getDate() + 7);
+                
                   groupedLessons.forEach(lesson => {
                     const pendingAssignments = lesson.assignments.filter((assignment: EnrichedAssignment) => {
-                      if (!assignment.dueDate) return false;
-                      const dueDate = new Date(assignment.dueDate);
-                      return dueDate > now && dueDate <= oneWeekFromNow;
-                    });
-                    dueAssignments.push(...pendingAssignments);
+                  if (!assignment.dueDate) return false;
+                  const dueDate = new Date(assignment.dueDate);
+                  return dueDate > now && dueDate <= oneWeekFromNow;
+                });
+                dueAssignments.push(...pendingAssignments);
                   });
-                }
               }
+            }
             } else {
               console.log(`No published content found for class ${classItem.id}`);
-            }
+          }
           }
         } catch (error) {
           console.warn(`Error loading direct published content: ${error}`);
         }
-
+        
         // 2. Try published curriculum format
         if (!foundPublishedContent) {
           try {
@@ -899,7 +789,7 @@ export default function StudentAssignments() {
             if (publishedCurriculum) {
               const parsedCurriculum = JSON.parse(publishedCurriculum);
               console.log("Found published curriculum:", parsedCurriculum);
-
+              
               if (parsedCurriculum.lessons && Array.isArray(parsedCurriculum.lessons)) {
                 const lessonGroups = parsedCurriculum.lessons.reduce((acc: Record<string, any[]>, lesson: any) => {
                   if (lesson.contents && Array.isArray(lesson.contents)) {
@@ -911,8 +801,8 @@ export default function StudentAssignments() {
                     if (publishedContents.length > 0) {
                       const lessonId = lesson.id || 'ungrouped';
                       acc[lessonId] = publishedContents.map((content: any) => ({
-                        ...content,
-                        classId: classItem.id,
+                          ...content,
+                          classId: classItem.id,
                         className: classItem.name,
                         lessonId: lesson.id,
                         lessonTitle: lesson.title
@@ -934,14 +824,14 @@ export default function StudentAssignments() {
 
                 if (groupedLessons.length > 0) {
                   allLessons.push(...groupedLessons);
-                  foundPublishedContent = true;
-                  foundAnyPublishedContent = true;
-
-                  // Check for assignments due soon
-                  const now = new Date();
-                  const oneWeekFromNow = new Date();
-                  oneWeekFromNow.setDate(now.getDate() + 7);
-
+                    foundPublishedContent = true;
+                    foundAnyPublishedContent = true;
+                    
+                    // Check for assignments due soon
+                    const now = new Date();
+                    const oneWeekFromNow = new Date();
+                    oneWeekFromNow.setDate(now.getDate() + 7);
+                    
                   groupedLessons.forEach(lesson => {
                     const pendingAssignments = lesson.assignments.filter((assignment: EnrichedAssignment) => {
                       if (!assignment.dueDate) return false;
@@ -1247,54 +1137,54 @@ export default function StudentAssignments() {
         <div className="mb-6 p-4 border border-dashed border-gray-400 rounded bg-gray-50 text-xs text-gray-700">
           <strong>DEBUG INFO</strong>
           <div>User ID: {currentUser ? currentUser.id : 'N/A'}</div>
-          <div>
+                      <div>
             Enrolled Class IDs: {typeof window !== 'undefined' && currentUser && currentUser.id ? (
               <span>{JSON.stringify(localStorage.getItem(`student-enrollments-${currentUser.id}`))}</span>
             ) : 'N/A'}
-          </div>
+                      </div>
           <div>Assignments array: <pre style={{maxHeight: 200, overflow: 'auto'}}>{assignments ? JSON.stringify(assignments, null, 2) : 'N/A'}</pre></div>
-        </div>
+                    </div>
 
         <div className="flex flex-col space-y-6">
           {/* Lessons Section */}
-          <section>
+        <section>
             <h2 className="text-xl font-semibold mb-4">All Lessons</h2>
             <div className="space-y-6">
-              {assignments.length > 0 ? (
+            {assignments.length > 0 ? (
                 assignments.map((lessonGroup) => (
                   <Card key={lessonGroup.lessonId}>
                     <CardHeader>
                       <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
-                      <CardDescription>
+                        <CardDescription>
                         {lessonGroup.className} • {lessonGroup.assignments.length} published assignments
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
+                        </CardDescription>
+                  </CardHeader>
+                  <CardContent>
                       <p className="text-sm text-muted-foreground mb-4">
                         This lesson contains {lessonGroup.assignments.length} published assignments. 
                         Click below to view and complete them.
                       </p>
-                      <Button 
-                        asChild 
-                        className="w-full"
-                      >
+                    <Button 
+                      asChild 
+                      className="w-full"
+                    >
                         <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}>
                           View Lesson
-                        </Link>
-                      </Button>
+                      </Link>
+                    </Button>
                     </CardContent>
-                  </Card>
-                ))
-              ) : (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                    <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground">No lessons with published assignments found</p>
-                  </CardContent>
                 </Card>
-              )}
-            </div>
-          </section>
+              ))
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                  <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">No lessons with published assignments found</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </section>
         </div>
       </div>
     </div>
