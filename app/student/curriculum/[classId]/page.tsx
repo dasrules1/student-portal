@@ -1289,4 +1289,77 @@ export default function StudentCurriculum() {
                                               {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
                                                 <div className="flex flex-col gap-1">
                                                   {problem.correctAnswers.map((answer, i) => (
-                                                    <div key={i}>{renderLatex(answer ? `
+                                                    <div key={i}>{renderLatex(String(answer))}</div>
+                                                  ))}
+                                                </div>
+                                              ) : (
+                                                <div>{renderLatex(String(problem.correctAnswer || ''))}</div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {problem.type === "open-ended" && (
+                                  <div className="space-y-3">
+                                    <div className="flex flex-col space-y-2">
+                                      <Label htmlFor={`open-ended-answer-${problemIndex}`}>Your Answer:</Label>
+                                      <div className="flex space-x-2">
+                                        <Input
+                                          id={`open-ended-answer-${problemIndex}`}
+                                          value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
+                                          onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
+                                          placeholder="Enter your answer"
+                                          disabled={isSubmitted}
+                                          className="flex-1"
+                                        />
+                                      </div>
+
+                                      {isSubmitted && (
+                                        <div
+                                          className={`p-2 mt-2 rounded-md ${
+                                            problemScore === problem.points
+                                              ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                              : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                          }`}
+                                        >
+                                          {problemScore === problem.points
+                                            ? "Correct!"
+                                            : "Incorrect. The correct answer is:"}
+                                          {problemScore !== problem.points && (
+                                            <div className="font-medium mt-1">
+                                              {renderLatex(String(problem.correctAnswer || ''))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-muted-foreground">No problems found</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="text-center">
+                  <p className="text-muted-foreground">No content selected</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
