@@ -143,7 +143,7 @@ class StorageService {
       if (!snapshot || !snapshot.docs) {
         console.warn("No snapshot or docs found in Firestore");
         // Return from localStorage
-        const localUsers = persistentStorage.getAllUsers();
+        const localUsers = PersistentStorage.getInstance().getAllUsers();
         this.users = Array.isArray(localUsers) ? localUsers : [];
         return this.users;
       }
@@ -170,7 +170,7 @@ class StorageService {
       console.error('Error getting users:', error);
       // Fallback to localStorage
       try {
-        const localUsers = persistentStorage.getAllUsers();
+        const localUsers = PersistentStorage.getInstance().getAllUsers();
         // Make sure we always return an array
         const safeUsers = Array.isArray(localUsers) ? localUsers : [];
         console.log('Falling back to local storage users:', safeUsers);
@@ -194,8 +194,8 @@ class StorageService {
       // Try to get from persistent storage
       try {
         // Only use persistentStorage if it's available
-        if (typeof persistentStorage !== 'undefined') {
-          const user = persistentStorage.getUserById(id);
+        if (typeof PersistentStorage.getInstance() !== 'undefined') {
+          const user = PersistentStorage.getInstance().getUserById(id);
           if (user) return user;
         }
       } catch (error) {
@@ -666,7 +666,7 @@ class StorageService {
 
       // Fall back to local storage
       try {
-        const localClasses = persistentStorage.getAllClasses();
+        const localClasses = PersistentStorage.getInstance().getAllClasses();
         if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
           console.log('Using local storage classes:', localClasses);
           this.classes = [...localClasses];
@@ -695,7 +695,7 @@ class StorageService {
     // If we don't have classes in cache, try to load them from persistent storage first
     if (!this.classes || this.classes.length === 0) {
       try {
-        const localClasses = persistentStorage.getAllClasses();
+        const localClasses = PersistentStorage.getInstance().getAllClasses();
         if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
           this.classes = [...localClasses];
           return [...localClasses];
@@ -768,10 +768,10 @@ class StorageService {
       
       console.log(`Class not found in Firestore, trying persistent storage: ${id}`);
       // Try to fall back to persistent storage
-      return persistentStorage.getClassById(id);
+      return PersistentStorage.getInstance().getClassById(id);
     } catch (error) {
       console.error(`Error in getClassById for ${id}:`, error);
-      return persistentStorage.getClassById(id);
+      return PersistentStorage.getInstance().getClassById(id);
     }
   }
 
@@ -801,7 +801,7 @@ class StorageService {
       
       // Also add to persistent storage as backup
       try {
-        persistentStorage.addClass(enhancedClassData);
+        PersistentStorage.getInstance().addClass(enhancedClassData);
       } catch (e) {
         console.log('Error adding class to persistent storage:', e);
       }
@@ -810,7 +810,7 @@ class StorageService {
     } catch (error) {
       console.error('Error adding class to Firestore:', error);
       // Try fallback to localStorage
-      const localClass = persistentStorage.addClass(classData);
+      const localClass = PersistentStorage.getInstance().addClass(classData);
       return localClass;
     }
   }
@@ -866,7 +866,7 @@ class StorageService {
       }
       
       // Also update in persistent storage
-      const updatedClass = await persistentStorage.updateClass(id, classData);
+      const updatedClass = await PersistentStorage.getInstance().updateClass(id, classData);
       
       // Return the updated class - either from persistent storage or our cache
       if (updatedClass) {
@@ -897,13 +897,13 @@ class StorageService {
       this.classes = this.classes.filter(cls => cls.id !== id);
       
       // Also delete from persistent storage
-      persistentStorage.deleteClass(id);
+      PersistentStorage.getInstance().deleteClass(id);
       
       console.log('Class deleted successfully:', id);
       return this.classes.length < initialLength;
     } catch (error) {
       console.error('Error deleting class from Firestore:', error);
-      return persistentStorage.deleteClass(id);
+      return PersistentStorage.getInstance().deleteClass(id);
     }
   }
 
@@ -959,7 +959,7 @@ class StorageService {
       
       // Try localStorage
       try {
-        const localLogs = persistentStorage.getActivityLogs();
+        const localLogs = PersistentStorage.getInstance().getActivityLogs();
         if (localLogs && Array.isArray(localLogs) && localLogs.length > 0) {
           console.log('Using local storage activity logs:', localLogs);
           this.activityLogs = localLogs;
@@ -1046,7 +1046,7 @@ class StorageService {
       
       // Also add to persistent storage as backup
       try {
-        persistentStorage.addActivityLog(safeLog);
+        PersistentStorage.getInstance().addActivityLog(safeLog);
       } catch (e) {
         console.log('Error adding activity log to persistent storage:', e);
       }
@@ -1056,7 +1056,7 @@ class StorageService {
       console.error('Error adding activity log to Firestore:', error);
       // Fallback to localStorage with error handling
       try {
-        return persistentStorage.addActivityLog(log);
+        return PersistentStorage.getInstance().addActivityLog(log);
       } catch (e) {
         console.error('Critical error adding activity log:', e);
         // Create a fallback log with generated ID
@@ -1378,7 +1378,7 @@ class StorageService {
         let persistentStorage;
         try {
           const PersistentStorage = (await import('./persistentStorage')).default;
-          persistentStorage = new PersistentStorage();
+          persistentStorage = PersistentStorage.getInstance();
           await persistentStorage.initStorage();
         } catch (error) {
           console.error(`Error initializing PersistentStorage: ${error}`);
@@ -1475,7 +1475,7 @@ class StorageService {
           
           // Fallback to persistent storage
           try {
-            const persistentStorage = new PersistentStorage();
+            const persistentStorage = PersistentStorage.getInstance();
             await persistentStorage.initStorage();
             classes = persistentStorage.getClasses();
           } catch (persistentError) {
@@ -1568,7 +1568,7 @@ class StorageService {
     
     // Save to persistent storage
     try {
-      const persistentStorage = new PersistentStorage();
+      const persistentStorage = PersistentStorage.getInstance();
       await persistentStorage.saveCurriculum(classId, curriculumData);
       console.log("Curriculum saved to persistent storage successfully");
       success = true;
@@ -1675,7 +1675,7 @@ class StorageService {
           
           // Last resort - check persistent storage
           if (!classExists) {
-            const localClass = persistentStorage.getClassById(classId);
+            const localClass = PersistentStorage.getInstance().getClassById(classId);
             classExists = !!localClass;
           }
         }
@@ -1714,7 +1714,7 @@ class StorageService {
         
         // Also update in persistent storage as fallback
         try {
-          await persistentStorage.updateCurriculum(classId, curriculum);
+          await PersistentStorage.getInstance().updateCurriculum(classId, curriculum);
         } catch (storageError) {
           console.log('Error updating curriculum in persistent storage:', storageError);
         }
@@ -1751,7 +1751,7 @@ class StorageService {
       
       // Try persistent storage as fallback
       try {
-        return await persistentStorage.updateCurriculum(classId, curriculum);
+        return await PersistentStorage.getInstance().updateCurriculum(classId, curriculum);
       } catch (persistentError) {
         console.error('Error updating in persistent storage too:', persistentError);
         
@@ -1849,7 +1849,7 @@ class StorageService {
       
       // Update enrollment in persistent storage as well
       try {
-        persistentStorage.enrollStudent(classId, studentId);
+        PersistentStorage.getInstance().enrollStudent(classId, studentId);
       } catch (persistentError) {
         console.error("Error enrolling in persistent storage:", persistentError);
       }
