@@ -163,7 +163,7 @@ interface Lesson {
 // Update Curriculum interface
 interface Curriculum {
   content?: {
-    lessons: Lesson[];
+  lessons: Lesson[];
   };
   lastUpdated?: string;
 }
@@ -448,13 +448,13 @@ export default function StudentCurriculum() {
                 console.log("DEBUG - Found class in Firestore:", classData);
                 setCurrentClass(classData);
                 loadCurriculum();
-              } else {
-                toast({
-                  title: "Class not found",
-                  description: "The requested class could not be found",
-                  variant: "destructive",
-                });
-                router.push("/student");
+          } else {
+            toast({
+              title: "Class not found",
+              description: "The requested class could not be found",
+              variant: "destructive",
+            });
+            router.push("/student");
               }
             } catch (error) {
               console.error("Error loading class from Firestore:", error);
@@ -1183,12 +1183,12 @@ export default function StudentCurriculum() {
   }
 
   if (!curriculum) {
-    return (
+  return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <p className="text-muted-foreground">No curriculum found</p>
-        </div>
-      </div>
+            </div>
+          </div>
     )
   }
 
@@ -1197,7 +1197,7 @@ export default function StudentCurriculum() {
       <div className="mb-6 flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()}><ArrowLeft className="w-5 h-5" /></Button>
         <h1 className="text-3xl font-bold">{currentClass?.name || "Class Curriculum"}</h1>
-      </div>
+              </div>
       {curriculum && curriculum.content && curriculum.content.lessons && curriculum.content.lessons.length > 0 ? (
         <div className="space-y-8">
           {curriculum.content.lessons.map((lesson: Lesson, lessonIdx: number) => (
@@ -1222,12 +1222,12 @@ export default function StudentCurriculum() {
                             <span className="font-semibold text-lg">{content.title}</span>
                             {content.isPublished && <Badge variant="default">Published</Badge>}
                             {content.dueDate && <Badge variant="secondary"><Clock className="w-4 h-4 mr-1 inline" />Due: {content.dueDate}</Badge>}
-                          </div>
-                          <div>
+              </div>
+              <div>
                             <Progress value={content.completed ? 100 : 0} className="w-24 h-2" />
-                          </div>
-                        </CardHeader>
-                        <CardContent>
+              </div>
+              </CardHeader>
+              <CardContent>
                           {content.description && (
                             <div className="mb-2 text-muted-foreground">{content.description}</div>
                           )}
@@ -1236,37 +1236,37 @@ export default function StudentCurriculum() {
                             <div className="space-y-4">
                               {content.problems.map((problem, problemIdx) => (
                                 <Card key={problem.id || problemIdx} className="bg-slate-50 border border-slate-200">
-                                  <CardHeader>
+                  <CardHeader>
                                     <CardTitle className="flex items-center gap-2">
                                       <FileQuestion className="w-4 h-4 text-primary" />
                                       Problem {problemIdx + 1}
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
                                     <div className="mb-2 font-medium">{problem.question}</div>
                                     {/* Render answer input/logic here (reuse existing student logic) */}
                                     {/* ... existing answer input and submission logic ... */}
                                   </CardContent>
-                                </Card>
-                              ))}
-                            </div>
+                          </Card>
+                        ))}
+                    </div>
                           ) : (
                             <div className="text-muted-foreground">No problems for this content.</div>
                           )}
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
+                  </CardContent>
+                </Card>
+                                                  ))}
+                                                </div>
+                                              ) : (
                   <div className="text-muted-foreground">No contents for this lesson.</div>
                 )}
               </CardContent>
             </Card>
-          ))}
-        </div>
-      ) : (
+                                              ))}
+                                            </div>
+                                          ) : (
         <div className="text-muted-foreground">No lessons found in this curriculum.</div>
       )}
-    </div>
+                                              </div>
   );
 }
