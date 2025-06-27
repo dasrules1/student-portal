@@ -1009,14 +1009,16 @@ export default function StudentAssignments() {
                           This lesson contains {lessonGroup.assignments.length} published assignments. 
                           Click below to view and complete them.
                         </p>
-                        <Button 
-                          asChild 
-                          className="w-full"
-                        >
-                          <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}>
-                            View Lesson
-                          </Link>
-                        </Button>
+                        {lessonGroup.courseId && lessonGroup.lessonId ? (
+                          <Button asChild className="w-full">
+                            <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}
+                              onClick={() => console.log('Navigating to:', `/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`)}>
+                              View Lesson
+                            </Link>
+                          </Button>
+                        ) : (
+                          <div className="text-red-500 text-xs mt-2">Lesson or class ID missing for this lesson. Cannot view lesson.</div>
+                        )}
                       </CardContent>
                     </Card>
                   ))
@@ -1164,14 +1166,16 @@ export default function StudentAssignments() {
                         This lesson contains {lessonGroup.assignments.length} published assignments. 
                         Click below to view and complete them.
                       </p>
-                    <Button 
-                      asChild 
-                      className="w-full"
-                    >
-                        <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}>
+                    {lessonGroup.courseId && lessonGroup.lessonId ? (
+                      <Button asChild className="w-full">
+                        <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}
+                          onClick={() => console.log('Navigating to:', `/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`)}>
                           View Lesson
-                      </Link>
-                    </Button>
+                        </Link>
+                      </Button>
+                    ) : (
+                      <div className="text-red-500 text-xs mt-2">Lesson or class ID missing for this lesson. Cannot view lesson.</div>
+                    )}
                     </CardContent>
                 </Card>
               ))
