@@ -477,41 +477,16 @@ export default function StudentCurriculum() {
     try {
       setIsLoading(true)
       console.log('Loading curriculum for classId:', classId)
-      
-      const curriculumDoc = await getDoc(doc(db, 'published_curricula', classId))
-      console.log('Published curriculum doc exists:', curriculumDoc.exists())
-      
-      if (curriculumDoc.exists()) {
-        const curriculumData = curriculumDoc.data() as Curriculum
-        console.log('Loaded curriculum data:', curriculumData)
-        setCurriculum(curriculumData)
+      const curriculumData = await storage.getCurriculum(classId)
+      if (curriculumData && curriculumData.content) {
+        setCurriculum(curriculumData.content)
+        console.log('Loaded curriculum data from storage.getCurriculum:', curriculumData.content)
       } else {
-        const classDoc = await getDoc(doc(db, 'classes', classId))
-        console.log('Class doc exists:', classDoc.exists())
-        
-        if (classDoc.exists()) {
-          const classData = classDoc.data()
-          console.log('Class data:', classData)
-          
-          if (classData.curriculum) {
-            console.log('Found curriculum in class data')
-            setCurriculum(classData.curriculum as Curriculum)
-          } else {
-            console.log('No curriculum found in class data')
-            toast({
-              title: "No Curriculum Available",
-              description: "This class doesn't have any curriculum content yet.",
-              variant: "destructive"
-            })
-          }
-        } else {
-          console.log('Class document not found')
-          toast({
-            title: "Error",
-            description: "Class not found",
-            variant: "destructive"
-          })
-        }
+        toast({
+          title: "No Curriculum Available",
+          description: "This class doesn't have any curriculum content yet.",
+          variant: "destructive"
+        })
       }
     } catch (error) {
       console.error('Error loading curriculum:', error)
