@@ -127,7 +127,7 @@ interface Curriculum {
       type: string;
       content?: string;
       problems?: {
-        id: string;
+    id: string;
         question: string;
         type: string;
         points: number;
@@ -255,17 +255,17 @@ export default function TeacherCurriculum() {
         }
 
         // Get curriculum data
-        const curriculumData = await storage.getCurriculum(classId)
-        if (curriculumData) {
+          const curriculumData = await storage.getCurriculum(classId)
+          if (curriculumData) {
           setCurriculum(curriculumData.content as Curriculum)
         }
 
         // Get enrolled students
-        const allUsers = await storage.getUsers()
+          const allUsers = await storage.getUsers()
         const enrolledStudents = allUsers.filter(
           (user) => user.role === "student" && 
-          (user.classes.includes(classId) || 
-           (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id)))
+              (user.classes.includes(classId) ||
+                (foundClass.enrolledStudents && foundClass.enrolledStudents.includes(user.id)))
         )
         setStudents(enrolledStudents)
 
@@ -323,53 +323,53 @@ export default function TeacherCurriculum() {
         const submissions = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }));
-        
-        // Update the curriculum state with the new submissions
-        setCurriculum((prevCurriculum: Curriculum | null) => {
-          if (!prevCurriculum) return prevCurriculum;
+          }));
           
-          const updatedCurriculum = { ...prevCurriculum };
-          submissions.forEach(submission => {
-            const lessonIndex = updatedCurriculum.lessons.findIndex(
-              lesson => lesson.id === submission.lessonId
-            );
+          // Update the curriculum state with the new submissions
+        setCurriculum((prevCurriculum: Curriculum | null) => {
+            if (!prevCurriculum) return prevCurriculum;
             
-            if (lessonIndex !== -1) {
-              const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
-                content => content.id === submission.contentId
+            const updatedCurriculum = { ...prevCurriculum };
+            submissions.forEach(submission => {
+              const lessonIndex = updatedCurriculum.lessons.findIndex(
+                lesson => lesson.id === submission.lessonId
               );
               
-              if (contentIndex !== -1) {
-                const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
-                const existingSubmissions = content.studentProgress?.submissions || [];
-                const submissionIndex = existingSubmissions.findIndex(
-                  sub => sub.studentId === submission.studentId
+              if (lessonIndex !== -1) {
+                const contentIndex = updatedCurriculum.lessons[lessonIndex].contents.findIndex(
+                  content => content.id === submission.contentId
                 );
                 
-                if (submissionIndex !== -1) {
-                  existingSubmissions[submissionIndex] = submission;
-                } else {
-                  existingSubmissions.push(submission);
-                }
-                
-                updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = existingSubmissions;
-                
-                // Show notification for new submissions
-                const student = students.find(s => s.id === submission.studentId);
-                if (student) {
-                  toast({
-                    title: "New Submission",
-                    description: `${student.name} has submitted their work for ${content.title}`,
-                    duration: 5000,
-                  });
+                if (contentIndex !== -1) {
+                  const content = updatedCurriculum.lessons[lessonIndex].contents[contentIndex];
+                  const existingSubmissions = content.studentProgress?.submissions || [];
+                  const submissionIndex = existingSubmissions.findIndex(
+                    sub => sub.studentId === submission.studentId
+                  );
+                  
+                  if (submissionIndex !== -1) {
+                    existingSubmissions[submissionIndex] = submission;
+                  } else {
+                    existingSubmissions.push(submission);
+                  }
+                  
+                  updatedCurriculum.lessons[lessonIndex].contents[contentIndex].studentProgress.submissions = existingSubmissions;
+                  
+                  // Show notification for new submissions
+                  const student = students.find(s => s.id === submission.studentId);
+                  if (student) {
+                    toast({
+                      title: "New Submission",
+                      description: `${student.name} has submitted their work for ${content.title}`,
+                      duration: 5000,
+                    });
+                  }
                 }
               }
-            }
+            });
+            
+            return updatedCurriculum;
           });
-          
-          return updatedCurriculum;
-        });
       } catch (error) {
         console.error("Error processing real-time data:", error);
       }
@@ -400,9 +400,9 @@ export default function TeacherCurriculum() {
           const data = doc.data();
           const studentId = data.studentId;
           
-          if (!acc[studentId]) {
-            acc[studentId] = {};
-          }
+                    if (!acc[studentId]) {
+                      acc[studentId] = {};
+                    }
           
           // Store the full answer data
           acc[studentId][`problem-${data.problemIndex}`] = {
@@ -418,11 +418,11 @@ export default function TeacherCurriculum() {
             problemPoints: data.problemPoints
           };
           
-          return acc;
-        }, {});
+            return acc;
+          }, {});
 
-        console.log("Transformed data:", transformedData);
-        setRealTimeUpdates(transformedData);
+          console.log("Transformed data:", transformedData);
+          setRealTimeUpdates(transformedData);
       } catch (error) {
         console.error("Error processing real-time data:", error);
       }
@@ -729,7 +729,7 @@ export default function TeacherCurriculum() {
       const answerDoc = await getDoc(answerRef);
       if (!answerDoc.exists()) {
         throw new Error('Answer not found');
-      }
+    }
 
       const answerData = answerDoc.data() as DocumentData;
       const problem = activeContent.problems[problemIndex];
@@ -772,9 +772,9 @@ export default function TeacherCurriculum() {
         description: `Score for problem ${problemIndex + 1} has been updated to ${newScore} points.`,
         variant: "default"
       });
-    } catch (error) {
+      } catch (error) {
       console.error('Error updating score:', error);
-      toast({
+    toast({
         title: "Error",
         description: "Failed to update score. Please try again.",
         variant: "destructive"
@@ -1078,12 +1078,12 @@ export default function TeacherCurriculum() {
                               {answer ? (
                                 <>
                                   <div className="flex items-center justify-between">
-                                    <span className={answer.correct ? "text-green-600" : "text-red-600"}>
-                                      {answer.answer || 'No answer'}
-                                    </span>
-                                    <span className="ml-2">
+                                  <span className={answer.correct ? "text-green-600" : "text-red-600"}>
+                                    {answer.answer || 'No answer'}
+                                  </span>
+                                  <span className="ml-2">
                                       {answer.score}/{maxPoints}
-                                    </span>
+                                  </span>
                                   </div>
                                   {answer.override && (
                                     <div className="text-xs text-muted-foreground mt-1">

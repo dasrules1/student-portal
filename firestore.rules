@@ -10,15 +10,15 @@ service cloud.firestore {
     function getUserRole() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
-
+    
     function isAdmin() {
       return isAuthenticated() && getUserRole() == 'admin';
     }
-
+    
     function isTeacher() {
       return isAuthenticated() && getUserRole() == 'teacher';
     }
-
+    
     function isStudent() {
       return isAuthenticated() && getUserRole() == 'student';
     }
@@ -116,7 +116,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isTeacher() || isAdmin();
     }
-
+      
     // Published Assignments collection
     match /published_assignments/{assignmentId} {
       allow read: if isAuthenticated();
