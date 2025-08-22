@@ -163,7 +163,7 @@ interface Lesson {
 // Update Curriculum interface
 interface Curriculum {
   content?: {
-    lessons: Lesson[];
+  lessons: Lesson[];
   };
   lastUpdated?: string;
 }
@@ -412,8 +412,8 @@ export default function StudentCurriculum() {
             
             // Check both the state-based params and direct URL params
             const hasDirectAssignmentAccess = 
-              (queryParams.content && queryParams.lesson) || 
-              (directLessonParam && directContentParam);
+              Boolean(queryParams.lesson) ||
+              Boolean(directLessonParam);
             
             console.log("DEBUG - Direct assignment access:", hasDirectAssignmentAccess, 
               "State params:", queryParams, 
@@ -442,13 +442,13 @@ export default function StudentCurriculum() {
                 console.log("DEBUG - Found class in Firestore:", classData);
                 setCurrentClass(classData);
                 loadCurriculum();
-              } else {
-                toast({
-                  title: "Class not found",
-                  description: "The requested class could not be found",
-                  variant: "destructive",
-                });
-                router.push("/student");
+          } else {
+            toast({
+              title: "Class not found",
+              description: "The requested class could not be found",
+              variant: "destructive",
+            });
+            router.push("/student");
               }
             } catch (error) {
               console.error("Error loading class from Firestore:", error);
@@ -507,6 +507,28 @@ export default function StudentCurriculum() {
       loadCurriculum()
     }
   }, [classId, toast])
+
+  // Auto-select first content in the requested lesson (if provided via query)
+  useEffect(() => {
+    if (!curriculum || !curriculum?.content?.lessons) return;
+    if (!queryParams?.lesson) return;
+    if (activeContent) return;
+
+    try {
+      const lesson = curriculum.content.lessons.find((l: any) => l && l.id === queryParams.lesson);
+      if (!lesson) return;
+
+      const firstContent = Array.isArray(lesson.contents) && lesson.contents.length > 0
+        ? lesson.contents.find((c: any) => c && (c.isPublished === true || c.isPublished === undefined)) || lesson.contents[0]
+        : null;
+
+      if (firstContent) {
+        handleSelectContent(firstContent as Content);
+      }
+    } catch (e) {
+      console.error('Error auto-selecting content for lesson param:', e);
+    }
+  }, [curriculum, queryParams?.lesson, activeContent])
 
   // Handle selecting a content item
   const handleSelectContent = async (content: Content) => {
@@ -883,7 +905,7 @@ export default function StudentCurriculum() {
       // Determine if the answer is correct based on the problem type
       let isCorrect = false;
       let score = 0;
-
+      
       if (type === 'multiple-choice') {
         isCorrect = Number(answer) === problem.correctAnswer;
         score = isCorrect ? (problem.points || 1) : 0;
@@ -1083,12 +1105,12 @@ export default function StudentCurriculum() {
   }
 
   if (!curriculum) {
-    return (
+  return (
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <p className="text-muted-foreground">No curriculum found</p>
-        </div>
-      </div>
+            </div>
+          </div>
     )
   }
 
@@ -1113,14 +1135,14 @@ export default function StudentCurriculum() {
             <div className="flex flex-col items-center space-y-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <p className="text-muted-foreground">Loading curriculum...</p>
-            </div>
-          </div>
+              </div>
+              </div>
         ) : !curriculum?.content?.lessons ? (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <p className="text-muted-foreground">No curriculum found</p>
-            </div>
-          </div>
+              </div>
+                </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {/* Sidebar */}
@@ -1128,33 +1150,33 @@ export default function StudentCurriculum() {
               {curriculum?.content?.lessons && curriculum.content.lessons.length > 0 ? (
                 curriculum.content.lessons.map((lesson: Lesson) => (
                   <Card key={lesson.id}>
-                    <CardHeader>
+              <CardHeader>
                       <CardTitle className="text-lg">{lesson.title}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
+              </CardHeader>
+              <CardContent>
                       <div className="space-y-2">
                         {lesson.contents?.map((content: Content) => (
-                          <Button
+                        <Button
                             key={content.id}
                             variant={activeContent?.id === content.id ? "default" : "ghost"}
                             className="w-full justify-start"
                             onClick={() => handleSelectContent(content)}
-                          >
+                        >
                             {renderContentTypeIcon(content.type)}
                             <span className="truncate">{content.title}</span>
                             {getStatusBadge(content)}
-                          </Button>
+                        </Button>
                         ))}
-                      </div>
+                  </div>
                     </CardContent>
                   </Card>
                 ))
-              ) : (
+                ) : (
                 <div className="p-4 border rounded-lg">
                   <p className="text-muted-foreground">No lessons available</p>
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+          </div>
 
             {/* Main Content */}
             <div className="md:col-span-3">
@@ -1170,13 +1192,13 @@ export default function StudentCurriculum() {
                   <CardContent>
                     {activeContent.problems && activeContent.problems.length > 0 ? (
                       <div className="space-y-6">
-                        {activeContent.problems.map((problem, problemIndex) => {
-                          const isSubmitted = isProblemSubmitted(problemIndex);
-                          const problemScore = getProblemScore(problemIndex);
-                          return (
-                            <div key={problemIndex} className="p-4 border rounded-lg">
+                      {activeContent.problems.map((problem, problemIndex) => {
+                        const isSubmitted = isProblemSubmitted(problemIndex);
+                        const problemScore = getProblemScore(problemIndex);
+                        return (
+                          <div key={problemIndex} className="p-4 border rounded-lg">
                               <div className="space-y-4">
-                                <div className="flex items-start justify-between">
+                            <div className="flex items-start justify-between">
                                   <div className="space-y-1">
                                     <h3 className="font-medium">
                                       Problem {problemIndex + 1}
@@ -1285,13 +1307,13 @@ export default function StudentCurriculum() {
                                       <div className="flex space-x-2">
                                         <Input
                                           id={`open-ended-answer-${problemIndex}`}
-                                          value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
-                                          onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
+                                        value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
+                                        onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
                                           placeholder="Enter your answer"
-                                          disabled={isSubmitted}
+                                        disabled={isSubmitted}
                                           className="flex-1"
                                         />
-                                      </div>
+                                            </div>
 
                                       {isSubmitted && (
                                         <div
@@ -1314,25 +1336,25 @@ export default function StudentCurriculum() {
                                     </div>
                                   </div>
                                 )}
+                                  </div>
                               </div>
-                            </div>
                           );
                         })}
-                      </div>
-                    ) : (
+                    </div>
+                  ) : (
                       <div className="text-center">
                         <p className="text-muted-foreground">No problems found</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
               ) : (
                 <div className="text-center">
                   <p className="text-muted-foreground">No content selected</p>
                 </div>
-              )}
-            </div>
+            )}
           </div>
+        </div>
         )}
       </div>
     </div>
