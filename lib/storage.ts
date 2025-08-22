@@ -3,7 +3,7 @@
 
 // Type declarations for external modules to suppress errors
 // @ts-ignore
-import { PersistentStorage } from "@/lib/persistentStorage"
+import { PersistentStorage, persistentStorage } from "./persistentStorage"
 // @ts-ignore
 import { 
   ref, 
@@ -47,6 +47,23 @@ class StorageService {
   private classes: Class[] = []
   private activityLogs: ActivityLog[] = []
 
+  constructor() {
+    // Debug PersistentStorage import
+    console.log("StorageService constructor - PersistentStorage:", PersistentStorage);
+    console.log("StorageService constructor - persistentStorage instance:", persistentStorage);
+    console.log("StorageService constructor - typeof PersistentStorage:", typeof PersistentStorage);
+    if (PersistentStorage && typeof PersistentStorage.getInstance === 'function') {
+      console.log("StorageService constructor - PersistentStorage.getInstance is available");
+    } else {
+      console.error("StorageService constructor - PersistentStorage.getInstance is NOT available");
+    }
+    if (persistentStorage) {
+      console.log("StorageService constructor - persistentStorage instance is available");
+    } else {
+      console.error("StorageService constructor - persistentStorage instance is NOT available");
+    }
+  }
+
   async getUsers(): Promise<User[]> {
     try {
       console.log("Getting users from Firestore...")
@@ -56,9 +73,21 @@ class StorageService {
       if (!snapshot || !snapshot.docs) {
         console.warn("No snapshot or docs found in Firestore");
         // Return from localStorage
-        const localUsers = PersistentStorage.getInstance().getAllUsers();
-        this.users = Array.isArray(localUsers) ? localUsers : [];
-        return this.users;
+        try {
+          if (PersistentStorage && typeof PersistentStorage.getInstance === 'function') {
+            const localUsers = PersistentStorage.getInstance().getAllUsers();
+            this.users = Array.isArray(localUsers) ? localUsers : [];
+            return this.users;
+          } else {
+            console.error("PersistentStorage not available, using empty array");
+            this.users = [];
+            return [];
+          }
+        } catch (error) {
+          console.error("Error accessing PersistentStorage:", error);
+          this.users = [];
+          return [];
+        }
       }
       
       const loadedUsers = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
