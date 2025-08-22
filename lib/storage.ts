@@ -1382,15 +1382,15 @@ class StorageService {
         let classes = [];
         try {
           // Try to get from storage
-          classes = await getClasses();
+          classes = await this.getClasses();
         } catch (error) {
           console.error(`Error getting classes from storage: ${error}`);
           
           // Fallback to persistent storage
           try {
             const persistentStorage = PersistentStorage.getInstance();
-            await persistentStorage.initStorage();
-            classes = persistentStorage.getClasses();
+            await persistentStorage.ensureInitialized();
+            classes = persistentStorage.getAllClasses();
           } catch (persistentError) {
             console.error(`Error getting classes from persistent storage: ${persistentError}`);
           }

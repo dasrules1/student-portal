@@ -1182,6 +1182,3 @@ export class PersistentStorage {
 
 // Create and export instance
 export const persistentStorage = PersistentStorage.getInstance()
-
-// Ensure storage is initialized on import
-persistentStorage.ensureInitialized()
