@@ -2,7 +2,7 @@
 // This uses a combination of localStorage and sessionStorage with versioning
 
 // Import existing types
-import type { User, Class, ActivityLog } from "./storage"
+import type { User, Class, ActivityLog } from "./types"
 import { db } from "./firebase"
 import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc } from "firebase/firestore"
 
