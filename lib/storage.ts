@@ -1317,26 +1317,44 @@ class StorageService {
         console.log(`Attempting to fetch curriculum for class ${classId} from persistent storage`)
         
         // Get persistent storage instance safely
-        let persistentStorage;
+        let persistentStorageInstance;
         try {
-          const PersistentStorage = (await import('./persistentStorage')).default;
-          persistentStorage = PersistentStorage.getInstance();
-          await persistentStorage.initStorage();
+          // Use the already imported PersistentStorage from the top of the file
+          if (PersistentStorage && typeof PersistentStorage.getInstance === 'function') {
+            persistentStorageInstance = PersistentStorage.getInstance();
+            persistentStorageInstance.ensureInitialized();
+          } else {
+            // Fallback: try dynamic import with named exports
+            const persistentStorageModule = await import('./persistentStorage');
+            if (persistentStorageModule.PersistentStorage && typeof persistentStorageModule.PersistentStorage.getInstance === 'function') {
+              persistentStorageInstance = persistentStorageModule.PersistentStorage.getInstance();
+              persistentStorageInstance.ensureInitialized();
+            } else {
+              throw new Error("PersistentStorage.getInstance is not available");
+            }
+          }
         } catch (error) {
           console.error(`Error initializing PersistentStorage: ${error}`);
           throw new Error("Failed to initialize persistent storage");
         }
         
-        if (persistentStorage && persistentStorage.getCurriculumByClassId) {
-          const storedCurriculum = await persistentStorage.getCurriculumByClassId(classId);
+        if (persistentStorageInstance && persistentStorageInstance.getCurriculumByClassId) {
+          const storedCurriculum = await persistentStorageInstance.getCurriculumByClassId(classId);
           
           if (storedCurriculum) {
             console.log(`Found curriculum for class ${classId} in persistent storage`);
             
+            // Handle both direct curriculum and wrapped curriculum formats
+            const curriculumContent = storedCurriculum.content || storedCurriculum;
+            
             // For students, only return curriculum if it has published content
             if (userRole === 'student') {
-              if (this.hasPublishedContent(storedCurriculum.content)) {
-                curriculum = storedCurriculum;
+              if (this.hasPublishedContent(curriculumContent)) {
+                curriculum = {
+                  classId,
+                  content: curriculumContent,
+                  lastUpdated: storedCurriculum.lastUpdated || new Date().toISOString()
+                };
                 console.log(`Returning published curriculum for student from persistent storage`);
               } else {
                 console.log(`No published content found for student in persistent storage`);
@@ -1344,7 +1362,11 @@ class StorageService {
               }
             } else {
               // For teachers and admins, return the full curriculum
-              curriculum = storedCurriculum;
+              curriculum = {
+                classId,
+                content: curriculumContent,
+                lastUpdated: storedCurriculum.lastUpdated || new Date().toISOString()
+              };
             }
           }
         }
@@ -1417,9 +1439,13 @@ class StorageService {
           
           // Fallback to persistent storage
           try {
-            const persistentStorage = PersistentStorage.getInstance();
-            await persistentStorage.ensureInitialized();
-            classes = persistentStorage.getAllClasses();
+            if (PersistentStorage && typeof PersistentStorage.getInstance === 'function') {
+              const persistentStorageInstance = PersistentStorage.getInstance();
+              persistentStorageInstance.ensureInitialized();
+              classes = persistentStorageInstance.getAllClasses();
+            } else {
+              console.error("PersistentStorage.getInstance is not available");
+            }
           } catch (persistentError) {
             console.error(`Error getting classes from persistent storage: ${persistentError}`);
           }

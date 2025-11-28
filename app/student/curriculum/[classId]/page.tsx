@@ -477,7 +477,8 @@ export default function StudentCurriculum() {
     try {
       setIsLoading(true)
       console.log('Loading curriculum for classId:', classId)
-      const curriculumData = await storage.getCurriculum(classId)
+      // Pass 'student' role to ensure only published content is returned
+      const curriculumData = await storage.getCurriculum(classId, 'student')
       if (curriculumData && curriculumData.content) {
         setCurriculum(curriculumData.content)
         console.log('Loaded curriculum data from storage.getCurriculum:', curriculumData.content)
