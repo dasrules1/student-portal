@@ -1265,14 +1265,43 @@ class StorageService {
 
     // Attempt to fetch from Firestore
     try {
-      // First attempt: Firestore
-      console.log(`Attempting to fetch curriculum for class ${classId} from Firestore`)
       const db = getFirestore();
       if (!db) {
         console.error("Firestore instance not available")
         throw new Error("Firestore instance not available")
       }
 
+      // 1) For students, first try the dedicated published_curricula collection
+      if (userRole === 'student') {
+        try {
+          console.log(`Attempting to fetch PUBLISHED curriculum for class ${classId} from Firestore (published_curricula)`)
+          const publishedRef = collection(db, 'published_curricula')
+          const publishedQuery = query(publishedRef, where('classId', '==', classId))
+          const publishedSnap = await getDocs(publishedQuery)
+
+          if (publishedSnap && publishedSnap.docs && publishedSnap.docs.length > 0) {
+            const publishedData = publishedSnap.docs[0].data()
+            if (publishedData && publishedData.content) {
+              console.log(`Found published curriculum for class ${classId} in published_curricula`)
+              curriculum = {
+                classId,
+                content: publishedData.content,
+                lastUpdated: publishedData.lastUpdated || new Date().toISOString()
+              }
+              // If we successfully found published curriculum, we can skip other Firestore lookups
+              return curriculum
+            }
+          } else {
+            console.log(`No document found in published_curricula for class ${classId}`)
+          }
+        } catch (publishedError) {
+          console.error(`Error fetching published curriculum from Firestore: ${publishedError}`)
+          // Fall through to other strategies
+        }
+      }
+
+      // 2) Fall back to curriculum embedded in the class document
+      console.log(`Attempting to fetch curriculum for class ${classId} from Firestore (classes document)`)
       const classDocRef = doc(db, 'classes', classId)
       const classDocSnap = await getDoc(classDocRef)
 
@@ -1280,7 +1309,7 @@ class StorageService {
         const classData = classDocSnap.data()
         
         if (classData.curriculum) {
-          console.log(`Found curriculum for class ${classId} in Firestore`)
+          console.log(`Found curriculum for class ${classId} in Firestore classes document`)
           
           // For students, only return curriculum if it has published content
           if (userRole === 'student') {
@@ -1290,9 +1319,9 @@ class StorageService {
                 content: classData.curriculum,
                 lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
               }
-              console.log(`Returning published curriculum for student`)
+              console.log(`Returning published curriculum for student from classes document`)
             } else {
-              console.log(`No published content found for student`)
+              console.log(`No published content found for student in classes document`)
               return null
             }
           } else {
