@@ -540,7 +540,11 @@ export default function StudentCurriculum() {
 
   // Handle selecting a content item
   const handleSelectContent = async (content: Content) => {
-    console.log('Selecting content:', content);
+    console.log('Student selecting content:', {
+      contentId: content.id,
+      contentTitle: content.title,
+      fullContent: content
+    });
     setActiveContent(content);
     setUserAnswers({});
     setMathExpressionInputs({});
@@ -985,7 +989,14 @@ export default function StudentCurriculum() {
         problemIndex: problemIndex
       };
 
-      console.log('Attempting to save answer data:', answerData);
+      console.log('Student saving answer:', {
+        contentId: activeContent.id,
+        contentTitle: activeContent.title,
+        classId: classId,
+        problemIndex: problemIndex,
+        answerData: answerData,
+        documentId: `${activeContent.id}_${userId}_problem-${problemIndex}`
+      });
 
       // Save to Firestore using the correct nested path structure
       const answerRef = doc(db, 'student-answers', classId, 'answers', `${activeContent.id}_${userId}_problem-${problemIndex}`);

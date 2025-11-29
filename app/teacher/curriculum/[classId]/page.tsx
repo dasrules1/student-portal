@@ -59,7 +59,8 @@ import {
   DocumentData,
   getDoc,
   QueryDocumentSnapshot,
-  QuerySnapshot
+  QuerySnapshot,
+  getDocs
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
@@ -1374,7 +1375,14 @@ export default function TeacherCurriculum() {
                           <Card key={content.id || `content-${Math.random()}`} className="overflow-hidden">
                             <div
                               className="p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
-                              onClick={() => setActiveContent(content)}
+                              onClick={() => {
+                                console.log("Teacher selecting content:", {
+                                  contentId: content.id,
+                                  contentTitle: content.title,
+                                  fullContent: content
+                                });
+                                setActiveContent(content);
+                              }}
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center">
