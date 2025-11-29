@@ -551,11 +551,46 @@ export default function StudentCurriculum() {
     // Load existing answers for this content
     if (typeof content.id === 'string' && currentUser?.uid) {
       try {
-        const answersRef = doc(db, 'student-answers', classId, 'answers', content.id);
-        const answersDoc = await getDoc(answersRef);
+        const userId = currentUser.uid || currentUser.id;
+        // Query for all answers for this content and student
+        const answersQuery = query(
+          collection(db, 'student-answers', classId, 'answers'),
+          where('contentId', '==', content.id),
+          where('studentId', '==', userId)
+        );
+        const answersSnapshot = await getDocs(answersQuery);
         
-        if (answersDoc.exists()) {
-          const answersData = answersDoc.data();
+        if (answersSnapshot.docs && answersSnapshot.docs.length > 0) {
+          // Reconstruct the answer data structure from individual problem answers
+          const answersData: any = {
+            answers: {},
+            mathExpressionInputs: {},
+            openEndedAnswers: {},
+            submittedProblems: {},
+            problemState: {}
+          };
+          
+          answersSnapshot.docs.forEach((doc) => {
+            const data = doc.data();
+            const problemIndex = data.problemIndex;
+            
+            if (data.answerType === 'multiple-choice') {
+              answersData.answers[problemIndex] = data.answer;
+            } else if (data.answerType === 'math-expression') {
+              answersData.mathExpressionInputs[problemIndex] = data.answer;
+            } else if (data.answerType === 'open-ended') {
+              answersData.openEndedAnswers[problemIndex] = data.answer;
+            }
+            
+            if (data.submitted) {
+              answersData.submittedProblems[problemIndex] = true;
+            }
+            
+            if (data.problemState) {
+              answersData.problemState[problemIndex] = data.problemState;
+            }
+          });
+          
           console.log('Loaded existing answers:', answersData);
           
           // Update state with existing answers

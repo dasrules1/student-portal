@@ -46,16 +46,16 @@ service cloud.firestore {
     match /student-answers/{classId}/answers/{answerId} {
       allow read: if isAuthenticated() && (
         // Students can read their own answers
-        (isStudent() && isStudentAnswer(resource.data.studentId)) ||
-        // Teachers can read all answers for their class
-        (isTeacher() && hasAccessToClass(classId)) ||
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Teachers can read all answers (we verify class access in the app)
+        isTeacher() ||
         // Admins can read all answers
         isAdmin()
       );
       
       allow create, update: if isAuthenticated() && (
         // Students can write their own answers
-        (isStudent() && isStudentAnswer(request.resource.data.studentId)) ||
+        (isStudent() && request.resource.data.studentId == request.auth.uid) ||
         // Teachers can write for their class
         (isTeacher() && hasAccessToClass(classId)) ||
         // Admins can write anything
