@@ -1508,7 +1508,17 @@ class StorageService {
         }
       };
 
-      console.log(`Returning filtered curriculum with ${filteredLessons.length} lessons containing published content`);
+      // Log summary of what student will see
+      const totalPublishedContent = filteredLessons.reduce((sum: number, lesson: any) => 
+        sum + (lesson.contents?.length || 0), 0
+      );
+      console.log(`✅ Returning filtered curriculum for student:`);
+      console.log(`   - ${filteredLessons.length} lessons with published content`);
+      console.log(`   - ${totalPublishedContent} total published content items`);
+      filteredLessons.forEach((lesson: any) => {
+        console.log(`   - Lesson "${lesson.title || lesson.id}": ${lesson.contents?.length || 0} published items`);
+      });
+      
       return filteredCurriculum;
     }
 
