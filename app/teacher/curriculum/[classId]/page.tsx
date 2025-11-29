@@ -200,12 +200,8 @@ export default function TeacherCurriculum() {
   const [studentFeedback, setStudentFeedback] = useState<Record<string, any>>({})
   const [gradeOverrideDialogOpen, setGradeOverrideDialogOpen] = useState(false)
   const [studentToGrade, setStudentToGrade] = useState<any>(null)
-  const [overrideScore, setOverrideScore] = useState("")
+  const [problemScores, setProblemScores] = useState<Record<number, number>>({})
   const [overrideFeedback, setOverrideFeedback] = useState("")
-  const [halfCredit, setHalfCredit] = useState(false)
-  const [manualGradingDialogOpen, setManualGradingDialogOpen] = useState(false)
-  const [studentSubmission, setStudentSubmission] = useState<any>(null)
-  const [problemGrades, setProblemGrades] = useState<Record<string, any>>({})
   const [students, setStudents] = useState<User[]>([])
   const [studentProgress, setStudentProgress] = useState<Record<string, any>>({})
   const [realTimeUpdates, setRealTimeUpdates] = useState<Record<string, any>>({})
@@ -1258,26 +1254,6 @@ export default function TeacherCurriculum() {
                                 <span className="text-gray-500">Not attempted</span>
                               )}
                             </div>
-                            {answer && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="mt-1"
-                                onClick={() => {
-                                  setStudentToGrade(student);
-                                  setStudentSubmission({
-                                    problemIndex: index,
-                                    answer: answer.answer || '',
-                                    currentScore: answer.score || 0,
-                                    maxPoints: maxPoints
-                                  });
-                                  setManualGradingDialogOpen(true);
-                                }}
-                              >
-                                <Edit className="w-4 h-4 mr-1" />
-                                Grade
-                              </Button>
-                            )}
                           </div>
                         </td>
                       );
@@ -1294,11 +1270,19 @@ export default function TeacherCurriculum() {
                         size="sm"
                         onClick={() => {
                           setStudentToGrade(student);
+                          // Initialize problem scores with current values
+                          const initialScores: Record<number, number> = {};
+                          activeContent.problems.forEach((_, index) => {
+                            const answer = studentAnswers[`problem-${index}`];
+                            initialScores[index] = answer?.score || 0;
+                          });
+                          setProblemScores(initialScores);
+                          setOverrideFeedback("");
                           setGradeOverrideDialogOpen(true);
                         }}
                       >
                         <Edit className="w-4 h-4 mr-1" />
-                        Override
+                        Override Scores
                       </Button>
                     </td>
                   </tr>
@@ -1586,55 +1570,178 @@ export default function TeacherCurriculum() {
 
       {/* Grade override dialog */}
       <AlertDialog open={gradeOverrideDialogOpen} onOpenChange={setGradeOverrideDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <AlertDialogHeader>
-            <AlertDialogTitle>{studentToGrade ? `Grade ${studentToGrade.name}` : "Grade Student"}</AlertDialogTitle>
-            <AlertDialogDescription>Manually update the student's grade and provide feedback</AlertDialogDescription>
+            <AlertDialogTitle>{studentToGrade ? `Override Scores: ${studentToGrade.name}` : "Override Scores"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Adjust individual problem scores. Changes will update the problem score, overall score, and student's total score.
+            </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div>
-              <Label htmlFor="override-score">Score (%)</Label>
+          <div className="space-y-4 py-4">
+            {activeContent?.problems?.map((problem, index) => {
+              const studentAnswers = realTimeUpdates[studentToGrade?.id] || {};
+              const answer = studentAnswers[`problem-${index}`];
+              const maxPoints = problem.points || 1;
+              const currentScore = problemScores[index] ?? (answer?.score || 0);
+              const totalScore = activeContent.problems.reduce((sum, p, i) => {
+                return sum + (problemScores[i] ?? (realTimeUpdates[studentToGrade?.id]?.[`problem-${i}`]?.score || 0));
+              }, 0);
+              const maxScore = activeContent.problems.reduce((sum, p) => sum + (p.points || 1), 0);
+
+              return (
+                <div key={index} className="p-4 border rounded-lg space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="font-medium">Problem {index + 1}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">{renderLatex(problem.question)}</p>
+                    </div>
+                    <Badge variant="outline">
+                      {maxPoints} {maxPoints === 1 ? 'point' : 'points'}
+                    </Badge>
+                  </div>
+
+                  {answer && (
+                    <div className="p-3 bg-muted rounded-md">
+                      <div className="text-sm">
+                        <span className="font-medium">Student Answer: </span>
+                        <span className={answer.correct ? "text-green-600" : "text-red-600"}>
+                          {answer.answer || 'No answer'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Current Score: {answer.score || 0}/{maxPoints}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor={`problem-${index}-score`}>
+                        Score: {currentScore}/{maxPoints}
+                      </Label>
+                      <span className="text-sm text-muted-foreground">
+                        {Math.round((currentScore / maxPoints) * 100)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
               <Input
-                id="override-score"
+                        id={`problem-${index}-score`}
                 type="number"
                 min="0"
-                max="100"
-                value={overrideScore}
-                onChange={(e) => setOverrideScore(e.target.value)}
-                placeholder="Enter score (0-100)"
-              />
+                        max={maxPoints}
+                        step="0.5"
+                        value={currentScore}
+                        onChange={(e) => {
+                          const newScore = Math.max(0, Math.min(maxPoints, parseFloat(e.target.value) || 0));
+                          setProblemScores(prev => ({
+                            ...prev,
+                            [index]: newScore
+                          }));
+                        }}
+                        className="flex-1"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setProblemScores(prev => ({
+                            ...prev,
+                            [index]: maxPoints
+                          }));
+                        }}
+                      >
+                        Full
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setProblemScores(prev => ({
+                            ...prev,
+                            [index]: 0
+                          }));
+                        }}
+                      >
+                        Zero
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Summary */}
+            <div className="p-4 bg-muted rounded-lg border-2">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold">Total Score:</span>
+                <span className="font-bold text-lg">
+                  {activeContent?.problems?.reduce((sum, p, i) => {
+                    return sum + (problemScores[i] ?? (realTimeUpdates[studentToGrade?.id]?.[`problem-${i}`]?.score || 0));
+                  }, 0)} / {activeContent?.problems?.reduce((sum, p) => sum + (p.points || 1), 0)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Percentage:</span>
+                <span className="text-sm font-medium">
+                  {Math.round(
+                    (activeContent?.problems?.reduce((sum, p, i) => {
+                      return sum + (problemScores[i] ?? (realTimeUpdates[studentToGrade?.id]?.[`problem-${i}`]?.score || 0));
+                    }, 0) /
+                      activeContent?.problems?.reduce((sum, p) => sum + (p.points || 1), 0)) *
+                    100
+                  )}%
+                </span>
+              </div>
             </div>
 
             <div>
-              <Label htmlFor="override-feedback">Feedback (Optional)</Label>
+              <Label htmlFor="override-feedback">Overall Feedback (Optional)</Label>
               <Textarea
                 id="override-feedback"
                 value={overrideFeedback}
                 onChange={(e) => setOverrideFeedback(e.target.value)}
-                placeholder="Provide feedback to the student"
+                placeholder="Provide overall feedback to the student"
                 rows={3}
+                className="mt-1"
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <Label htmlFor="half-credit">Half Credit</Label>
-            <Switch id="half-credit" checked={halfCredit} onCheckedChange={setHalfCredit} />
-          </div>
-
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              handleGradeOverride(studentToGrade.id, 0, Number.parseInt(overrideScore));
+            <AlertDialogCancel onClick={() => {
+              setProblemScores({});
+              setOverrideFeedback("");
+            }}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => {
+              if (!studentToGrade || !activeContent) return;
+              
+              // Update all problem scores
+              for (let index = 0; index < activeContent.problems.length; index++) {
+                const newScore = problemScores[index];
+                if (newScore !== undefined) {
+                  await handleGradeOverride(studentToGrade.id, index, newScore);
+                }
+              }
+              
               setGradeOverrideDialogOpen(false);
-            }}>Save Grade</AlertDialogAction>
+              setProblemScores({});
+              setOverrideFeedback("");
+              
+              toast({
+                title: "Scores Updated",
+                description: `All problem scores for ${studentToGrade.name} have been updated.`,
+                variant: "default"
+              });
+            }}>
+              Save All Scores
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Manual grading dialog */}
-      <AlertDialog open={manualGradingDialogOpen} onOpenChange={setManualGradingDialogOpen} className="max-w-4xl">
+      {/* Manual grading dialog - REMOVED: functionality consolidated into Override dialog */}
+      {/* <AlertDialog open={false} onOpenChange={() => {}} className="max-w-4xl">
         <AlertDialogContent className="max-w-4xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Manual Grading: {studentToGrade?.name}</AlertDialogTitle>
