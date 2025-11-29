@@ -128,5 +128,18 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isTeacher() || isAdmin();
     }
+
+    // Curricula collection (canonical source)
+    match /curricula/{classId} {
+      allow read: if isAuthenticated() && (
+        // Students can read curriculum for classes they're enrolled in
+        (isStudent() && isEnrolledInClass(classId)) ||
+        // Teachers can read curriculum for their classes
+        (isTeacher() && hasAccessToClass(classId)) ||
+        // Admins can read all curriculum
+        isAdmin()
+      );
+      allow write: if isTeacher() || isAdmin();
+    }
   }
 } 
