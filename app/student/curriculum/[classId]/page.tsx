@@ -1143,8 +1143,8 @@ export default function StudentCurriculum() {
             <div className="flex flex-col items-center space-y-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <p className="text-muted-foreground">Loading curriculum...</p>
-              </div>
-              </div>
+            </div>
+          </div>
         ) : (() => {
           // Handle both structures: curriculum.content.lessons (from API) or curriculum.lessons (direct)
           const lessons = curriculum?.content?.lessons || curriculum?.lessons;
@@ -1158,7 +1158,7 @@ export default function StudentCurriculum() {
             );
           }
           return (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {/* Sidebar */}
             <div className="md:col-span-1 space-y-4">
               {lessons.length > 0 ? (
@@ -1366,9 +1366,9 @@ export default function StudentCurriculum() {
                 <div className="text-center">
                   <p className="text-muted-foreground">No content selected</p>
                 </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
           </div>
           );
         })()}
