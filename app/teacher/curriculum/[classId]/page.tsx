@@ -401,12 +401,37 @@ export default function TeacherCurriculum() {
     // First, do a one-time check to see if any answers exist
     const checkAnswers = async () => {
       try {
+        console.log("Checking for existing answers with query:", {
+          collectionPath: `student-answers/${classId}/answers`,
+          contentId: activeContent.id,
+          classId: classId
+        });
+        
         const checkQuery = query(
           collection(db, `student-answers/${classId}/answers`),
           where('contentId', '==', activeContent.id)
         );
         const checkSnapshot = await getDocs(checkQuery);
         console.log(`Initial check: Found ${checkSnapshot.docs.length} existing answers for contentId: ${activeContent.id}`);
+        
+        // Also check ALL answers in this class to see what contentIds exist
+        const allAnswersQuery = query(
+          collection(db, `student-answers/${classId}/answers`)
+        );
+        const allAnswersSnapshot = await getDocs(allAnswersQuery);
+        console.log(`Total answers in class ${classId}: ${allAnswersSnapshot.docs.length}`);
+        
+        const contentIds = new Set<string>();
+        allAnswersSnapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          if (data.contentId) {
+            contentIds.add(data.contentId);
+          }
+        });
+        console.log("All contentIds found in student answers:", Array.from(contentIds));
+        console.log("Looking for contentId:", activeContent.id);
+        console.log("Match found:", contentIds.has(activeContent.id));
+        
         if (checkSnapshot.docs.length > 0) {
           checkSnapshot.docs.forEach((doc) => {
             const data = doc.data();
@@ -417,9 +442,18 @@ export default function TeacherCurriculum() {
               problemIndex: data.problemIndex
             });
           });
+        } else {
+          console.warn("No answers found for this contentId. This could mean:");
+          console.warn("1. No students have submitted answers yet");
+          console.warn("2. The contentId doesn't match what students are using");
+          console.warn("3. There's a permission issue");
         }
       } catch (error) {
         console.error("Error checking existing answers:", error);
+        console.error("Error details:", {
+          code: (error as any)?.code,
+          message: (error as any)?.message
+        });
       }
     };
     checkAnswers();
