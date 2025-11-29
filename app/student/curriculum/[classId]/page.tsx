@@ -29,8 +29,21 @@ import { Input } from "@/components/ui/input"
 import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
-import { ref, set, push, serverTimestamp, get } from "firebase/database"
-import { doc, setDoc, getDoc, collection, query, where, getDocs, DocumentData, QueryDocumentSnapshot } from "firebase/firestore"
+import { ref, set, push, get } from "firebase/database"
+import { 
+  doc, 
+  setDoc, 
+  getDoc, 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  DocumentData, 
+  QueryDocumentSnapshot, 
+  serverTimestamp
+} from "firebase/firestore"
+// @ts-ignore - onSnapshot is available in Firebase but TypeScript types may not reflect it
+import { onSnapshot as firestoreOnSnapshot } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
 // Content types for curriculum
@@ -179,7 +192,7 @@ interface ProblemScores {
 }
 
 interface SubmittedProblems {
-  [key: string]: boolean;
+  [key: string]: { isSubmitted: boolean; score: number } | boolean;
 }
 
 interface Problem {
@@ -788,53 +801,86 @@ export default function StudentCurriculum() {
   };
 
   // Handle submitting a single problem
-  const handleSubmitProblem = (problemIndex: number) => {
-    if (!activeContent?.problems) return;
+  const handleSubmitProblem = async (problemIndex: number) => {
+    if (!activeContent?.problems || !currentUser) return;
 
     const problem = activeContent.problems[problemIndex];
     let result: GradingResult = { correct: false, score: 0 };
 
+    // Get the answer based on problem type
+    let answer: string | number = '';
     if (problem.type === "multiple-choice") {
       const selectedOption = userAnswers[activeContent.id]?.[problemIndex];
+      if (selectedOption === undefined || selectedOption === null) {
+        toast({
+          title: "No answer selected",
+          description: "Please select an answer before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      answer = selectedOption;
       result = {
         correct: selectedOption === problem.correctAnswer,
         score: selectedOption === problem.correctAnswer ? (problem.points || 1) : 0
       };
     } else if (problem.type === "math-expression") {
-      result = gradeMathExpression(problem, mathExpressionInputs[activeContent.id]?.[problemIndex] || "");
+      answer = mathExpressionInputs[activeContent.id]?.[problemIndex] || "";
+      if (!answer) {
+        toast({
+          title: "No answer provided",
+          description: "Please enter an answer before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      result = gradeMathExpression(problem, answer);
     } else if (problem.type === "open-ended") {
-      result = gradeOpenEnded(problem, openEndedAnswers[activeContent.id]?.[problemIndex] || "");
+      answer = openEndedAnswers[activeContent.id]?.[problemIndex] || "";
+      if (!answer) {
+        toast({
+          title: "No answer provided",
+          description: "Please enter an answer before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      result = gradeOpenEnded(problem, answer);
     }
+
+    const key = `${activeContent.id}-${problemIndex}`;
+
+    // Update problem state with submitted status and score
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        answer: answer,
+        submitted: true,
+        score: result.score || 0
+      }
+    }));
 
     // Update problem scores
     setProblemScores(prev => ({
       ...prev,
-      [`${activeContent.id}-${problemIndex}`]: result.score || 0
+      [key]: result.score || 0
     }));
 
     // Mark problem as submitted
     setSubmittedProblems(prev => ({
       ...prev,
-      [`${activeContent.id}-${problemIndex}`]: true
+      [key]: { isSubmitted: true, score: result.score || 0 }
     }));
 
     // Show feedback toast
     toast({
       title: result.correct ? "Correct!" : "Incorrect",
-      description: `You scored ${result.score || 0} points for this problem.`,
+      description: `You scored ${result.score || 0}/${problem.points || 1} points for this problem.`,
       variant: result.correct ? "default" : "destructive",
     });
 
-    // Send real-time update
-    if (currentUser) {
-      sendRealTimeUpdate(problemIndex, 
-        problem.type === "multiple-choice" ? userAnswers[activeContent.id]?.[problemIndex]?.toString() :
-        problem.type === "math-expression" ? mathExpressionInputs[activeContent.id]?.[problemIndex] :
-        openEndedAnswers[activeContent.id]?.[problemIndex],
-        problem.type,
-        problem
-      );
-    }
+    // Send real-time update with submitted status
+    await sendRealTimeUpdate(problemIndex, answer, problem.type, problem);
   };
 
   // Calculate total score
@@ -857,6 +903,13 @@ export default function StudentCurriculum() {
   const isProblemSubmitted = (problemIndex: number) => {
     if (!activeContent?.id) return false;
     const key = `${activeContent.id}-${problemIndex}`;
+    const submitted = submittedProblems[key];
+    if (typeof submitted === 'boolean') {
+      return submitted;
+    }
+    if (submitted && typeof submitted === 'object') {
+      return submitted.isSubmitted;
+    }
     return problemState[key]?.submitted || false;
   };
 
@@ -866,6 +919,7 @@ export default function StudentCurriculum() {
     const key = `${activeContent.id}-${problemIndex}`;
     return problemState[key]?.score || 0;
   };
+
 
   // Render content type icon
   const renderContentTypeIcon = (type: string | undefined) => {
@@ -966,6 +1020,18 @@ export default function StudentCurriculum() {
         score = result.score;
       }
 
+      // Check if this is a submission (problem is marked as submitted)
+      const key = `${activeContent.id}-${problemIndex}`;
+      const submitted = submittedProblems[key];
+      const isSubmitted = typeof submitted === 'boolean' 
+        ? submitted 
+        : (submitted && typeof submitted === 'object' ? submitted.isSubmitted : false) 
+        || problemState[key]?.submitted 
+        || false;
+      
+      // Use calculated score (teachers can override manually in their portal)
+      const finalScore = score;
+      
       // Create the answer object with standardized schema
       // Document ID format: ${contentId}_${studentId}_problem-${problemIndex}
       const answerData = {
@@ -979,7 +1045,7 @@ export default function StudentCurriculum() {
         answer: answer?.toString() || '',
         answerType: type,
         correct: isCorrect,
-        score: score,
+        score: finalScore,
         
         // Metadata
         updatedAt: serverTimestamp(),
@@ -995,7 +1061,9 @@ export default function StudentCurriculum() {
         problemType: problem.type,
         problemPoints: problem.points || 1,
         contentTitle: activeContent.title || 'Untitled Content',
-        status: "in-progress"
+        status: isSubmitted ? "submitted" : "in-progress",
+        submitted: isSubmitted,
+        submittedAt: isSubmitted ? serverTimestamp() : null
       };
 
       console.log('Student saving answer:', {
@@ -1106,7 +1174,7 @@ export default function StudentCurriculum() {
           
           // Update submitted problems and problem states
           const key = `${content.id}-${problemIndex}`;
-          submitted[key] = true;
+          submitted[key] = { isSubmitted: true, score: data.score || 0 };
           problemStates[key] = {
             answer: data.answer,
             submitted: true,
@@ -1156,6 +1224,91 @@ export default function StudentCurriculum() {
       loadExistingAnswers(content);
     }
   }, [activeContent, currentUser?.uid]);
+
+  // Real-time listener for score updates from teachers
+  useEffect(() => {
+    if (!activeContent?.id || !currentUser?.uid || !isClassIdValid(classId)) {
+      return;
+    }
+
+    const studentId = currentUser.uid;
+    const studentAltId = currentUser.id || currentUser.user?.id;
+
+    console.log("Setting up real-time listener for student score updates:", {
+      contentId: activeContent.id,
+      studentId: studentId,
+      classId: classId
+    });
+
+    // Query for all answers for this student and content
+    const answersQuery = query(
+      collection(db, 'student-answers', classId, 'answers'),
+      where('contentId', '==', activeContent.id),
+      where('studentId', 'in', [studentId, studentAltId].filter(Boolean))
+    );
+
+    // Set up real-time listener
+    const unsubscribe = firestoreOnSnapshot(
+      answersQuery,
+      (snapshot: any) => {
+        try {
+          console.log(`Real-time score update: Received ${snapshot.docs.length} documents`);
+          
+          snapshot.docs.forEach((docSnap: any) => {
+            const data = docSnap.data();
+            const problemIndex = data.problemIndex;
+            
+            if (problemIndex !== undefined) {
+              const key = `${activeContent.id}-${problemIndex}`;
+              const newScore = data.score || 0;
+              
+              // Update problem state with new score
+              setProblemState(prev => ({
+                ...prev,
+                [key]: {
+                  ...prev[key],
+                  score: newScore,
+                  submitted: true
+                }
+              }));
+
+              // Update submitted problems with new score
+              setSubmittedProblems(prev => ({
+                ...prev,
+                [key]: { isSubmitted: true, score: newScore }
+              }));
+
+              // Update problem scores
+              setProblemScores(prev => ({
+                ...prev,
+                [key]: newScore
+              }));
+
+              // Show notification if score was manually overridden by teacher
+              if (data.override && data.originalScore !== undefined && data.originalScore !== newScore) {
+                toast({
+                  title: "Score Updated",
+                  description: `Your score for Problem ${problemIndex + 1} has been updated to ${newScore} points.`,
+                  duration: 5000
+                });
+              }
+            }
+          });
+        } catch (error: any) {
+          console.error("Error processing real-time score update:", error);
+        }
+      },
+      (error: any) => {
+        console.error("Real-time listener error:", error);
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => {
+      console.log("Cleaning up real-time score listener");
+      unsubscribe();
+    };
+  }, [activeContent?.id, currentUser?.uid, classId]);
 
   // Main render function
   if (isLoading) {
@@ -1293,37 +1446,65 @@ export default function StudentCurriculum() {
                                 </div>
 
                                 {problem.type === "multiple-choice" && (
-                                  <RadioGroup
-                                    value={userAnswers[activeContent.id]?.[problemIndex]?.toString()}
-                                    onValueChange={(value) =>
-                                      handleMultipleChoiceSelect(problemIndex, parseInt(value))
-                                    }
-                                    disabled={isSubmitted}
-                                  >
-                                    {problem.options?.map((option, optionIndex) => (
-                                      <div key={optionIndex} className="flex items-center space-x-2">
-                                        <RadioGroupItem
-                                          value={optionIndex.toString()}
-                                          id={`option-${problemIndex}-${optionIndex}`}
-                                        />
-                                        <Label
-                                          htmlFor={`option-${problemIndex}-${optionIndex}`}
-                                          className="flex-1 cursor-pointer"
-                                        >
-                                          {renderLatex(option || '')}
-                                        </Label>
+                                  <div className="space-y-3">
+                                    <RadioGroup
+                                      value={userAnswers[activeContent.id]?.[problemIndex]?.toString()}
+                                      onValueChange={(value) =>
+                                        handleMultipleChoiceSelect(problemIndex, parseInt(value))
+                                      }
+                                      disabled={isSubmitted}
+                                    >
+                                      {problem.options?.map((option, optionIndex) => (
+                                        <div key={optionIndex} className="flex items-center space-x-2">
+                                          <RadioGroupItem
+                                            value={optionIndex.toString()}
+                                            id={`option-${problemIndex}-${optionIndex}`}
+                                          />
+                                          <Label
+                                            htmlFor={`option-${problemIndex}-${optionIndex}`}
+                                            className="flex-1 cursor-pointer"
+                                          >
+                                            {renderLatex(option || '')}
+                                          </Label>
 
-                                        {isSubmitted && optionIndex === problem.correctAnswer && (
-                                          <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
-                                        )}
-                                        {isSubmitted &&
-                                          userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
-                                          optionIndex !== problem.correctAnswer && (
-                                            <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
+                                          {isSubmitted && optionIndex === problem.correctAnswer && (
+                                            <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
                                           )}
+                                          {isSubmitted &&
+                                            userAnswers[activeContent.id]?.[problemIndex] === optionIndex &&
+                                            optionIndex !== problem.correctAnswer && (
+                                              <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
+                                            )}
+                                        </div>
+                                      ))}
+                                    </RadioGroup>
+                                    {!isSubmitted && (
+                                      <Button
+                                        onClick={() => handleSubmitProblem(problemIndex)}
+                                        className="w-full"
+                                        disabled={userAnswers[activeContent.id]?.[problemIndex] === undefined}
+                                      >
+                                        <Send className="w-4 h-4 mr-2" />
+                                        Submit Answer
+                                      </Button>
+                                    )}
+                                    {isSubmitted && (
+                                      <div className="p-3 bg-muted rounded-md space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-sm font-medium">Your Answer:</span>
+                                          <span className="text-sm">
+                                            Option {String.fromCharCode(65 + (userAnswers[activeContent.id]?.[problemIndex] || 0))}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-sm font-medium">Score:</span>
+                                          <span className="text-sm font-semibold">
+                                            {getProblemScore(problemIndex)} / {problem.points || 1} points
+                                          </span>
+                                        </div>
                                       </div>
-                                    ))}
-                                  </RadioGroup>
+                                    )}
+                                  </div>
                                 )}
 
                                 {problem.type === "math-expression" && (
@@ -1340,31 +1521,56 @@ export default function StudentCurriculum() {
                                           className="flex-1"
                                         />
                                       </div>
-
-                                      {isSubmitted && (
-                                        <div
-                                          className={`p-2 mt-2 rounded-md ${
-                                            problemScore === problem.points
-                                              ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-                                              : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
-                                          }`}
+                                      {!isSubmitted && (
+                                        <Button
+                                          onClick={() => handleSubmitProblem(problemIndex)}
+                                          className="w-full"
+                                          disabled={!mathExpressionInputs[activeContent.id]?.[problemIndex]}
                                         >
-                                          {problemScore === problem.points
-                                            ? "Correct!"
-                                            : "Incorrect. The correct answer is:"}
-                                          {problemScore !== problem.points && (
-                                            <div className="font-medium mt-1">
-                                              {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
-                                                <div className="flex flex-col gap-1">
-                                                  {problem.correctAnswers.map((answer, i) => (
-                                                    <div key={i}>{renderLatex(String(answer))}</div>
-                                                  ))}
-                                                </div>
-                                              ) : (
-                                                <div>{renderLatex(String(problem.correctAnswer || ''))}</div>
-                                              )}
+                                          <Send className="w-4 h-4 mr-2" />
+                                          Submit Answer
+                                        </Button>
+                                      )}
+                                      {isSubmitted && (
+                                        <div className="space-y-3">
+                                          <div
+                                            className={`p-3 rounded-md ${
+                                              problemScore === problem.points
+                                                ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                                : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                            }`}
+                                          >
+                                            <div className="font-medium mb-2">
+                                              {problemScore === problem.points
+                                                ? "Correct!"
+                                                : "Incorrect. The correct answer is:"}
                                             </div>
-                                          )}
+                                            {problemScore !== problem.points && (
+                                              <div className="font-medium mt-1">
+                                                {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
+                                                  <div className="flex flex-col gap-1">
+                                                    {problem.correctAnswers.map((answer, i) => (
+                                                      <div key={i}>{renderLatex(String(answer))}</div>
+                                                    ))}
+                                                  </div>
+                                                ) : (
+                                                  <div>{renderLatex(String(problem.correctAnswer || ''))}</div>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="p-3 bg-muted rounded-md space-y-2">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm font-medium">Your Answer:</span>
+                                              <span className="text-sm">{mathExpressionInputs[activeContent.id]?.[problemIndex] || 'No answer'}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm font-medium">Score:</span>
+                                              <span className="text-sm font-semibold">
+                                                {getProblemScore(problemIndex)} / {problem.points || 1} points
+                                              </span>
+                                            </div>
+                                          </div>
                                         </div>
                                       )}
                                     </div>
@@ -1385,23 +1591,48 @@ export default function StudentCurriculum() {
                                           className="flex-1"
                                         />
                                             </div>
-
-                                      {isSubmitted && (
-                                        <div
-                                          className={`p-2 mt-2 rounded-md ${
-                                            problemScore === problem.points
-                                              ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-                                              : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
-                                          }`}
+                                      {!isSubmitted && (
+                                        <Button
+                                          onClick={() => handleSubmitProblem(problemIndex)}
+                                          className="w-full"
+                                          disabled={!openEndedAnswers[activeContent.id]?.[problemIndex]}
                                         >
-                                          {problemScore === problem.points
-                                            ? "Correct!"
-                                            : "Incorrect. The correct answer is:"}
-                                          {problemScore !== problem.points && (
-                                            <div className="font-medium mt-1">
-                                              {renderLatex(String(problem.correctAnswer || ''))}
+                                          <Send className="w-4 h-4 mr-2" />
+                                          Submit Answer
+                                        </Button>
+                                      )}
+                                      {isSubmitted && (
+                                        <div className="space-y-3">
+                                          <div
+                                            className={`p-3 rounded-md ${
+                                              problemScore === problem.points
+                                                ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                                : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                            }`}
+                                          >
+                                            <div className="font-medium mb-2">
+                                              {problemScore === problem.points
+                                                ? "Correct!"
+                                                : "Incorrect. The correct answer is:"}
                                             </div>
-                                          )}
+                                            {problemScore !== problem.points && (
+                                              <div className="font-medium mt-1">
+                                                {renderLatex(String(problem.correctAnswer || ''))}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="p-3 bg-muted rounded-md space-y-2">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm font-medium">Your Answer:</span>
+                                              <span className="text-sm">{openEndedAnswers[activeContent.id]?.[problemIndex] || 'No answer'}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm font-medium">Score:</span>
+                                              <span className="text-sm font-semibold">
+                                                {getProblemScore(problemIndex)} / {problem.points || 1} points
+                                              </span>
+                                            </div>
+                                          </div>
                                         </div>
                                       )}
                                     </div>
