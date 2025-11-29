@@ -712,32 +712,115 @@ export default function StudentAssignments() {
         
         // Try multiple sources for published content, in order of preference
         
-        // 1. First try direct published content array (newest format)
+        // 1. First try Firestore published_assignments collection (most reliable)
         try {
-          if (typeof window !== 'undefined') {
-            const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
-            if (directPublishedContent) {
-              const parsedContent = JSON.parse(directPublishedContent);
-              console.log("Found direct published content in localStorage:", parsedContent);
+          const assignmentsCollectionRef = collection(db, 'published_assignments');
+          const q = query(
+            assignmentsCollectionRef, 
+            where('classId', '==', classItem.id),
+            where('isPublished', '==', true)
+          );
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const firestoreAssignments: any[] = [];
+            querySnapshot.forEach((docSnapshot) => {
+              const assignmentData = docSnapshot.data();
+              // Only include if explicitly published
+              if (assignmentData.isPublished === true) {
+                firestoreAssignments.push({
+                  id: assignmentData.contentId,
+                  title: assignmentData.title,
+                  description: assignmentData.description,
+                  type: assignmentData.type,
+                  isPublished: true,
+                  dueDate: assignmentData.dueDate,
+                  classId: assignmentData.classId,
+                  className: assignmentData.className,
+                  lessonId: assignmentData.lessonId,
+                  lessonTitle: assignmentData.lessonTitle,
+                  problems: assignmentData.problems,
+                  points: assignmentData.points
+                });
+              }
+            });
+            
+            if (firestoreAssignments.length > 0) {
+              // Group by lesson
+              const lessonGroups = firestoreAssignments.reduce((acc: Record<string, any[]>, content: any) => {
+                const lessonId = content.lessonId || 'ungrouped';
+                if (!acc[lessonId]) {
+                  acc[lessonId] = [];
+                }
+                acc[lessonId].push(content);
+                return acc;
+              }, {});
               
-              if (Array.isArray(parsedContent)) {
-                // Group assignments by lesson
-                const lessonGroups = parsedContent.reduce((acc: Record<string, any[]>, content: any) => {
-                  if (content.isPublished === true && 
-                      (content.type === 'assignment' || content.type === 'quiz')) {
-                    const lessonId = content.lessonId || 'ungrouped';
-                    if (!acc[lessonId]) {
-                      acc[lessonId] = [];
+              const groupedLessons = Object.entries(lessonGroups)
+                .filter(([_, assignments]) => assignments.length > 0)
+                .map(([lessonId, assignments]) => ({
+                  lessonId,
+                  lessonTitle: assignments[0]?.lessonTitle || 'Unnamed Lesson',
+                  assignments: assignments as EnrichedAssignment[],
+                  courseId: classItem.id,
+                  className: classItem.name
+                }));
+              
+              if (groupedLessons.length > 0) {
+                allLessons.push(...groupedLessons);
+                foundPublishedContent = true;
+                foundAnyPublishedContent = true;
+                
+                // Check for assignments due soon
+                const now = new Date();
+                const oneWeekFromNow = new Date();
+                oneWeekFromNow.setDate(now.getDate() + 7);
+                
+                groupedLessons.forEach(lesson => {
+                  const pendingAssignments = lesson.assignments.filter((assignment: EnrichedAssignment) => {
+                    if (!assignment.dueDate) return false;
+                    const dueDate = new Date(assignment.dueDate);
+                    return dueDate > now && dueDate <= oneWeekFromNow;
+                  });
+                  dueAssignments.push(...pendingAssignments);
+                });
+                
+                console.log(`Found ${firestoreAssignments.length} published assignments from Firestore for class ${classItem.id}`);
+              }
+            }
+          }
+        } catch (firestoreError) {
+          console.warn(`Error loading published assignments from Firestore for class ${classItem.id}:`, firestoreError);
+        }
+        
+        // 2. Fallback to localStorage only if Firestore didn't have data
+        if (!foundPublishedContent) {
+          try {
+            if (typeof window !== 'undefined') {
+              const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
+              if (directPublishedContent) {
+                const parsedContent = JSON.parse(directPublishedContent);
+                console.log("Found direct published content in localStorage (fallback):", parsedContent);
+                
+                if (Array.isArray(parsedContent)) {
+                  // Group assignments by lesson - STRICT filtering for isPublished === true
+                  const lessonGroups = parsedContent.reduce((acc: Record<string, any[]>, content: any) => {
+                    // Only include if explicitly published (strict check)
+                    if (content.isPublished === true && 
+                        (content.type === 'assignment' || content.type === 'quiz')) {
+                      const lessonId = content.lessonId || 'ungrouped';
+                      if (!acc[lessonId]) {
+                        acc[lessonId] = [];
+                      }
+                      acc[lessonId].push({
+                        ...content,
+                        classId: classItem.id,
+                        className: classItem.name,
+                        lessonTitle: content.lessonTitle || 'Unnamed Lesson'
+                      });
                     }
-                    acc[lessonId].push({
-                      ...content,
-                      classId: classItem.id,
-                      className: classItem.name,
-                      lessonTitle: content.lessonTitle || 'Unnamed Lesson'
-                    });
-                  }
-                  return acc;
-                }, {});
+                    return acc;
+                  }, {});
 
                 console.log("Grouped assignments by lesson:", lessonGroups);
 
@@ -782,19 +865,20 @@ export default function StudentAssignments() {
           console.warn(`Error loading direct published content: ${error}`);
         }
         
-        // 2. Try published curriculum format
+        // 3. Final fallback: Try published curriculum format from localStorage
         if (!foundPublishedContent) {
           try {
             const publishedCurriculum = localStorage.getItem(`published-curriculum-${classItem.id}`);
             if (publishedCurriculum) {
               const parsedCurriculum = JSON.parse(publishedCurriculum);
-              console.log("Found published curriculum:", parsedCurriculum);
+              console.log("Found published curriculum in localStorage (fallback):", parsedCurriculum);
               
               if (parsedCurriculum.lessons && Array.isArray(parsedCurriculum.lessons)) {
                 const lessonGroups = parsedCurriculum.lessons.reduce((acc: Record<string, any[]>, lesson: any) => {
                   if (lesson.contents && Array.isArray(lesson.contents)) {
+                    // STRICT filtering - only isPublished === true
                     const publishedContents = lesson.contents.filter((content: any) => 
-                      content.isPublished === true && 
+                      content && content.isPublished === true && 
                       (content.type === 'assignment' || content.type === 'quiz')
                     );
 

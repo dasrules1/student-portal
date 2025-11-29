@@ -479,10 +479,14 @@ export default function StudentCurriculum() {
       console.log('Loading curriculum for classId:', classId)
       // Pass 'student' role to ensure only published content is returned
       const curriculumData = await storage.getCurriculum(classId, 'student')
+      console.log('Raw curriculum data received:', curriculumData)
       if (curriculumData && curriculumData.content) {
-        setCurriculum(curriculumData.content)
-        console.log('Loaded curriculum data from storage.getCurriculum:', curriculumData.content)
+        // Keep the full structure so curriculum.content.lessons works
+        setCurriculum(curriculumData)
+        console.log('Loaded curriculum data from storage.getCurriculum:', curriculumData)
+        console.log('Curriculum has lessons:', curriculumData.content?.lessons?.length || 0)
       } else {
+        console.log('No curriculum data or content found')
         toast({
           title: "No Curriculum Available",
           description: "This class doesn't have any curriculum content yet.",
@@ -511,12 +515,15 @@ export default function StudentCurriculum() {
 
   // Auto-select first content in the requested lesson (if provided via query)
   useEffect(() => {
-    if (!curriculum || !curriculum?.content?.lessons) return;
+    if (!curriculum) return;
+    // Handle both structures: curriculum.content.lessons (from API) or curriculum.lessons (direct)
+    const lessons = curriculum?.content?.lessons || curriculum?.lessons;
+    if (!lessons || !Array.isArray(lessons)) return;
     if (!queryParams?.lesson) return;
     if (activeContent) return;
 
     try {
-      const lesson = curriculum.content.lessons.find((l: any) => l && l.id === queryParams.lesson);
+      const lesson = lessons.find((l: any) => l && l.id === queryParams.lesson);
       if (!lesson) return;
 
       const firstContent = Array.isArray(lesson.contents) && lesson.contents.length > 0
@@ -1138,18 +1145,24 @@ export default function StudentCurriculum() {
               <p className="text-muted-foreground">Loading curriculum...</p>
               </div>
               </div>
-        ) : !curriculum?.content?.lessons ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <p className="text-muted-foreground">No curriculum found</p>
-              </div>
+        ) : (() => {
+          // Handle both structures: curriculum.content.lessons (from API) or curriculum.lessons (direct)
+          const lessons = curriculum?.content?.lessons || curriculum?.lessons;
+          if (!lessons || !Array.isArray(lessons) || lessons.length === 0) {
+            return (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <p className="text-muted-foreground">No curriculum found</p>
                 </div>
-        ) : (
+              </div>
+            );
+          }
+          return (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {/* Sidebar */}
             <div className="md:col-span-1 space-y-4">
-              {curriculum?.content?.lessons && curriculum.content.lessons.length > 0 ? (
-                curriculum.content.lessons.map((lesson: Lesson) => (
+              {lessons.length > 0 ? (
+                lessons.map((lesson: Lesson) => (
                   <Card key={lesson.id}>
               <CardHeader>
                       <CardTitle className="text-lg">{lesson.title}</CardTitle>
@@ -1356,7 +1369,9 @@ export default function StudentCurriculum() {
             )}
           </div>
         </div>
-        )}
+          </div>
+          );
+        })()}
       </div>
     </div>
   )

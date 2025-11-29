@@ -655,6 +655,27 @@ export default function TeacherCurriculum() {
           }
         }
         
+        // Also update the published-contents array when unpublishing
+        if (!newPublishedStatus) {
+          try {
+            const publishedContentsKey = `published-contents-${classId}`;
+            const existingContents = localStorage.getItem(publishedContentsKey);
+            if (existingContents) {
+              const contentsArray = JSON.parse(existingContents);
+              const filteredContents = contentsArray.filter((c: any) => c.id !== content.id);
+              if (filteredContents.length > 0) {
+                localStorage.setItem(publishedContentsKey, JSON.stringify(filteredContents));
+                console.log(`Removed unpublished content from published-contents array`);
+              } else {
+                localStorage.removeItem(publishedContentsKey);
+                console.log(`Removed empty published-contents array`);
+              }
+            }
+          } catch (error) {
+            console.error("Error updating published-contents array:", error);
+          }
+        }
+        
         // 2c. For backwards compatibility, also save in the legacy indexed format
         let legacyFormat = {};
         
