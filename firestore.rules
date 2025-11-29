@@ -130,18 +130,9 @@ service cloud.firestore {
     }
 
     // Curricula collection (canonical source)
+    // Allow any authenticated user to read - app will filter by role and isPublished flag
     match /curricula/{classId} {
-      allow read: if isAuthenticated() && (
-        // Students can read curriculum for classes they're enrolled in
-        (isStudent() && isEnrolledInClass(classId)) ||
-        // Teachers can read curriculum for their classes
-        (isTeacher() && hasAccessToClass(classId)) ||
-        // Admins can read all curriculum
-        isAdmin() ||
-        // Fallback: allow any authenticated user to read (app will filter by role)
-        // This is more permissive but ensures students can access curriculum
-        true
-      );
+      allow read: if isAuthenticated();
       allow write: if isTeacher() || isAdmin();
     }
   }
