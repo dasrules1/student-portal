@@ -1325,24 +1325,34 @@ class StorageService {
               lessonsCount: publishedData.content?.lessons?.length || 0,
               rawKeys: Object.keys(publishedData)
             })
-            const sanitizedPublished = this.filterPublishedContent(publishedData)
-            console.log(`After filtering published content:`, {
-              hasResult: !!sanitizedPublished,
-              hasContent: !!(sanitizedPublished && sanitizedPublished.content),
-              lessonsCount: sanitizedPublished?.content?.lessons?.length || 0
-            })
-            if (sanitizedPublished && sanitizedPublished.content) {
-              console.log(`✅ Found published curriculum for class ${classId} in published_curricula`)
+            
+            // published_curricula already contains only published content, so we can use it directly
+            // But we still need to ensure the structure is correct
+            if (publishedData.content && publishedData.content.lessons) {
+              console.log(`✅ Found published curriculum for class ${classId} in published_curricula (already filtered)`)
               curriculum = {
                 classId,
-                content: sanitizedPublished.content,
-                lastUpdated: sanitizedPublished.lastUpdated || publishedData.lastUpdated || new Date().toISOString()
+                content: publishedData.content,
+                lastUpdated: publishedData.lastUpdated || new Date().toISOString()
               }
               // If we successfully found published curriculum, we can skip other Firestore lookups
               console.log(`Returning curriculum with ${curriculum.content.lessons?.length || 0} lessons`)
               return curriculum
+            } else {
+              // Fallback: try filtering in case the structure is different
+              const sanitizedPublished = this.filterPublishedContent(publishedData)
+              if (sanitizedPublished && sanitizedPublished.content) {
+                console.log(`✅ Found published curriculum for class ${classId} in published_curricula (after filtering)`)
+                curriculum = {
+                  classId,
+                  content: sanitizedPublished.content,
+                  lastUpdated: sanitizedPublished.lastUpdated || publishedData.lastUpdated || new Date().toISOString()
+                }
+                console.log(`Returning curriculum with ${curriculum.content.lessons?.length || 0} lessons`)
+                return curriculum
+              }
+              console.log(`❌ Published curriculum record for class ${classId} contained no valid content structure`)
             }
-            console.log(`❌ Published curriculum record for class ${classId} contained no published content after filtering`)
           } else {
             console.log(`❌ No published curriculum record found for class ${classId}`)
           }

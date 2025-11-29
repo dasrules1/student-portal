@@ -554,23 +554,28 @@ export default function TeacherCurriculum() {
         try {
           const publishedRef = doc(db, 'published_curricula', classId);
           
-          // Create a direct published format with the explicit published flag for each item
+          // IMPORTANT: Only include published content in published_curricula
+          // Filter to only include lessons with published content
           const publishedContent = {
             classId,
             content: {
-              lessons: updatedCurriculum.lessons.map(lesson => ({
-                ...lesson,
-                contents: lesson.contents.map(item => ({
-                  ...item,
-                  isPublished: !!item.isPublished // Ensure boolean true/false
+              lessons: updatedCurriculum.lessons
+                .map(lesson => ({
+                  ...lesson,
+                  contents: lesson.contents
+                    .filter(item => item.isPublished === true) // Only published content
+                    .map(item => ({
+                      ...item,
+                      isPublished: true // Explicitly set to true
+                    }))
                 }))
-              }))
+                .filter(lesson => lesson.contents && lesson.contents.length > 0) // Only include lessons with published content
             },
             lastUpdated: new Date().toISOString()
           };
           
           await setDoc(publishedRef, publishedContent);
-          console.log("Successfully saved to published_curricula collection");
+          console.log("Successfully saved to published_curricula collection (only published content)");
         } catch (publishError) {
           console.error("Error saving to published curricula collection:", publishError);
         }
@@ -582,6 +587,30 @@ export default function TeacherCurriculum() {
           console.log("Removed from published_assignments collection");
         } catch (unpublishError) {
           console.error("Error removing from published_assignments collection:", unpublishError);
+        }
+        
+        // IMPORTANT: Also update published_curricula to remove unpublished content
+        try {
+          const publishedRef = doc(db, 'published_curricula', classId);
+          
+          // Filter to only include published content
+          const publishedContent = {
+            classId,
+            content: {
+              lessons: updatedCurriculum.lessons
+                .map(lesson => ({
+                  ...lesson,
+                  contents: lesson.contents.filter(item => item.isPublished === true)
+                }))
+                .filter(lesson => lesson.contents && lesson.contents.length > 0) // Only include lessons with published content
+            },
+            lastUpdated: new Date().toISOString()
+          };
+          
+          await setDoc(publishedRef, publishedContent);
+          console.log("Updated published_curricula to remove unpublished content");
+        } catch (unpublishCurriculaError) {
+          console.error("Error updating published_curricula when unpublishing:", unpublishCurriculaError);
         }
       }
     } catch (saveError) {
