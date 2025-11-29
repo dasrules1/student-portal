@@ -58,9 +58,9 @@ import {
   serverTimestamp,
   DocumentData,
   getDoc,
-  QueryDocumentSnapshot,
-  QuerySnapshot
+  QueryDocumentSnapshot
 } from 'firebase/firestore';
+import type { QuerySnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { realtimeDb } from '@/lib/firebase';
@@ -254,8 +254,8 @@ export default function TeacherCurriculum() {
           return
         }
 
-        // Get curriculum data
-          const curriculumData = await storage.getCurriculum(classId)
+        // Get curriculum data - teachers see full curriculum (published + unpublished)
+          const curriculumData = await storage.getCurriculum(classId, 'teacher')
           if (curriculumData) {
           setCurriculum(curriculumData.content as Curriculum)
         }
@@ -269,26 +269,32 @@ export default function TeacherCurriculum() {
         )
         setStudents(enrolledStudents)
 
-        // Set up real-time listener for student answers
+        // Set up real-time listener for student answers (global - for progress tracking)
+        // NOTE: This is a fallback listener. The main real-time updates use the content-specific listener below.
         const answersRef = collection(db, 'student-answers', classId, 'answers');
         const q = query(answersRef);
         const unsubscribe = firestoreOnSnapshot(q, (snapshot) => {
-          const newAnswers = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as StudentAnswer[];
-          
-          // Update student progress with new answers
+          // Use doc.data() fields instead of parsing doc.id
           const updatedProgress = { ...studentProgress };
-          newAnswers.forEach((answer: StudentAnswer) => {
-            const [studentId, contentId, problemIndex] = answer.id.split('_');
-            if (!updatedProgress[studentId]) {
-              updatedProgress[studentId] = {};
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            const studentId = data.studentId;
+            const contentId = data.contentId;
+            const problemIndex = data.problemIndex;
+            
+            // Only process if all required fields are present
+            if (studentId && contentId !== undefined && problemIndex !== undefined) {
+              if (!updatedProgress[studentId]) {
+                updatedProgress[studentId] = {};
+              }
+              if (!updatedProgress[studentId][contentId]) {
+                updatedProgress[studentId][contentId] = {};
+              }
+              updatedProgress[studentId][contentId][problemIndex] = {
+                id: docSnap.id,
+                ...data
+              };
             }
-            if (!updatedProgress[studentId][contentId]) {
-              updatedProgress[studentId][contentId] = {};
-            }
-            updatedProgress[studentId][contentId][problemIndex] = answer;
           });
           setStudentProgress(updatedProgress);
         });
@@ -466,7 +472,7 @@ export default function TeacherCurriculum() {
     // Set up real-time listener
     const unsubscribe = firestoreOnSnapshot(
       answersQuery, 
-      (snapshot: QuerySnapshot) => {
+      (snapshot: any) => {
         try {
           console.log(`Real-time update: Received ${snapshot.docs.length} documents for contentId: ${activeContent.id}`);
           
@@ -476,42 +482,60 @@ export default function TeacherCurriculum() {
             return;
           }
 
-          const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc: QueryDocumentSnapshot) => {
-            const data = doc.data();
-            const studentId = data.studentId;
-            const contentId = data.contentId;
+          // Transform answers grouped by student, using doc.data() fields (not parsing doc.id)
+          const transformedData = snapshot.docs.reduce((acc: Record<string, any>, docSnap: any) => {
+            const data = docSnap.data();
+            const studentId = data.studentId as string;
+            const contentId = data.contentId as string;
+            const problemIndex = data.problemIndex as number;
             
-            console.log("Processing answer:", {
-              docId: doc.id,
-              studentId,
-              contentId,
-              expectedContentId: activeContent.id,
-              match: contentId === activeContent.id,
-              problemIndex: data.problemIndex
-            });
-            
+            // Validate required fields from doc.data()
             if (!studentId) {
-              console.warn("Answer document missing studentId:", doc.id);
+              console.warn("Answer document missing studentId:", docSnap.id);
               return acc;
             }
+            
+            if (contentId !== activeContent.id) {
+              // This shouldn't happen due to the query filter, but log if it does
+              console.warn("Answer document contentId mismatch:", {
+                docId: docSnap.id,
+                expected: activeContent.id,
+                actual: contentId
+              });
+              return acc;
+            }
+            
+            if (problemIndex === undefined || problemIndex === null) {
+              console.warn("Answer document missing problemIndex:", docSnap.id);
+              return acc;
+            }
+            
+            console.log("Processing answer:", {
+              docId: docSnap.id,
+              studentId,
+              contentId,
+              problemIndex,
+              answer: data.answer
+            });
             
             if (!acc[studentId]) {
               acc[studentId] = {};
             }
             
-            // Store the full answer data
-            acc[studentId][`problem-${data.problemIndex}`] = {
+            // Store the full answer data using problemIndex from doc.data()
+            acc[studentId][`problem-${problemIndex}`] = {
               answer: data.answer || 'No answer provided',
               score: data.score || 0,
               correct: data.correct || false,
-              timestamp: data.timestamp?.toDate() || new Date(),
-              problemIndex: data.problemIndex,
+              timestamp: data.updatedAt?.toDate() || data.timestamp?.toDate() || new Date(),
+              problemIndex: problemIndex,
               questionId: data.questionId,
               questionText: data.questionText,
               answerType: data.answerType,
               problemType: data.problemType,
               problemPoints: data.problemPoints,
-              contentId: data.contentId
+              contentId: contentId,
+              updatedAt: data.updatedAt?.toDate() || data.timestamp?.toDate()
             };
             
             return acc;

@@ -1,34 +1,51 @@
 "use client"
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/components/ui/use-toast';
 
 const AssignmentPage: React.FC = () => {
+  const params = useParams<{ classId: string; contentId: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [classId, setClassId] = useState('');
-  const [contentId, setContentId] = useState('');
+  const classId = params.classId;
+  const contentId = params.contentId;
+  
+  useEffect(() => {
+    if (classId && contentId) {
+      console.log('Assignment page loaded with:', { classId, contentId });
+    }
+  }, [classId, contentId]);
 
   const saveAnswer = async (problemIndex: number, answer: string) => {
     if (!user || !classId || !contentId) return;
 
     try {
-      // Create a reference to the student's answer using the new nested path structure
-      const answerRef = doc(db, `student-answers/${classId}/answers/${user.uid}_${contentId}_${problemIndex}`);
+      // Use standardized document ID format: ${contentId}_${studentId}_problem-${problemIndex}
+      const docId = `${contentId}_${user.uid}_problem-${problemIndex}`;
+      const answerRef = doc(db, 'student-answers', classId, 'answers', docId);
       
+      // Use standardized schema matching the main curriculum page
       await setDoc(answerRef, {
+        // Required fields for real-time matching
         studentId: user.uid,
         classId: classId,
         contentId: contentId,
         problemIndex: problemIndex,
+        
+        // Answer data
         answer: answer,
-        timestamp: serverTimestamp(),
+        answerType: 'multiple-choice', // Default, adjust if needed
+        correct: false,
         score: 0,
-        correct: false
+        
+        // Metadata
+        updatedAt: serverTimestamp(),
+        timestamp: serverTimestamp() // Keep for backwards compatibility
       }, { merge: true });
 
       // Update local state

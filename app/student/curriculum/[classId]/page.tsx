@@ -966,27 +966,36 @@ export default function StudentCurriculum() {
         score = result.score;
       }
 
-      // Create the answer object with all required fields
+      // Create the answer object with standardized schema
+      // Document ID format: ${contentId}_${studentId}_problem-${problemIndex}
       const answerData = {
+        // Required fields for real-time matching
         studentId: userId,
+        classId: classId,
+        contentId: activeContent.id,
+        problemIndex: problemIndex,
+        
+        // Answer data
+        answer: answer?.toString() || '',
+        answerType: type,
+        correct: isCorrect,
+        score: score,
+        
+        // Metadata
+        updatedAt: serverTimestamp(),
+        timestamp: serverTimestamp(), // Keep for backwards compatibility
+        
+        // Additional fields (optional but useful)
         studentName: userName,
         studentEmail: userEmail,
         studentAvatar: userAvatar,
         questionId: problem.id || `problem-${problemIndex}`,
         questionText: problem.question || 'Question not available',
-        answer: answer?.toString() || '',
-        answerType: type,
-        timestamp: serverTimestamp(),
-        correct: isCorrect,
         partialCredit: 0,
         problemType: problem.type,
         problemPoints: problem.points || 1,
-        classId: classId,
-        contentId: activeContent.id,
         contentTitle: activeContent.title || 'Untitled Content',
-        status: "in-progress",
-        score: score,
-        problemIndex: problemIndex
+        status: "in-progress"
       };
 
       console.log('Student saving answer:', {
@@ -998,9 +1007,11 @@ export default function StudentCurriculum() {
         documentId: `${activeContent.id}_${userId}_problem-${problemIndex}`
       });
 
-      // Save to Firestore using the correct nested path structure
-      const answerRef = doc(db, 'student-answers', classId, 'answers', `${activeContent.id}_${userId}_problem-${problemIndex}`);
-      await setDoc(answerRef, answerData);
+      // Save to Firestore using standardized schema and document ID
+      // Document ID: ${contentId}_${studentId}_problem-${problemIndex}
+      const docId = `${activeContent.id}_${userId}_problem-${problemIndex}`;
+      const answerRef = doc(db, 'student-answers', classId, 'answers', docId);
+      await setDoc(answerRef, answerData, { merge: true });
 
       // Also save to student-progress collection
       const progressRef = doc(db, 'student-progress', `${classId}_${activeContent.id}_${userId}_problem-${problemIndex}`);
