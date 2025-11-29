@@ -857,12 +857,10 @@ export default function StudentAssignments() {
                   });
               }
             }
-            } else {
-              console.log(`No published content found for class ${classItem.id}`);
+            }
+          } catch (error) {
+            console.warn(`Error loading direct published content: ${error}`);
           }
-          }
-        } catch (error) {
-          console.warn(`Error loading direct published content: ${error}`);
         }
         
         // 3. Final fallback: Try published curriculum format from localStorage
