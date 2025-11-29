@@ -131,6 +131,7 @@ service cloud.firestore {
 
     // Curricula collection (canonical source)
     // Allow any authenticated user to read - app will filter by role and isPublished flag
+    // This is safe because the app verifies teacher/student access before showing curriculum
     match /curricula/{classId} {
       allow read: if isAuthenticated();
       allow write: if isTeacher() || isAdmin();
