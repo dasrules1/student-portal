@@ -442,13 +442,13 @@ export default function StudentCurriculum() {
                 console.log("DEBUG - Found class in Firestore:", classData);
                 setCurrentClass(classData);
                 loadCurriculum();
-          } else {
-            toast({
-              title: "Class not found",
-              description: "The requested class could not be found",
-              variant: "destructive",
-            });
-            router.push("/student");
+              } else {
+                toast({
+                  title: "Class not found",
+                  description: "The requested class could not be found",
+                  variant: "destructive",
+                });
+                router.push("/student");
               }
             } catch (error) {
               console.error("Error loading class from Firestore:", error);
@@ -1368,7 +1368,6 @@ export default function StudentCurriculum() {
                 </div>
               )}
             </div>
-          </div>
           </div>
           );
         })()}
