@@ -1471,11 +1471,12 @@ class StorageService {
           
       // Filter contents to only published items (strict check: isPublished must be exactly true)
       const publishedContents = lesson.contents.filter((c: any) => {
+        // Strict check: isPublished must be exactly true (not truthy, not undefined)
         const isPublished = c?.isPublished === true;
         if (isPublished) {
-          console.log(`✅ Including published content: ${c.title || c.id} (isPublished: ${c.isPublished})`);
+          console.log(`✅ Including published content: "${c.title || c.id}" (isPublished: ${c.isPublished}, type: ${typeof c.isPublished})`);
         } else {
-          console.log(`❌ Excluding unpublished content: ${c.title || c.id} (isPublished: ${c.isPublished})`);
+          console.log(`❌ Excluding content: "${c.title || c.id}" (isPublished: ${c.isPublished}, type: ${typeof c.isPublished})`);
         }
         return isPublished;
       });

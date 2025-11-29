@@ -628,8 +628,23 @@ export default function TeacherCurriculum() {
     }
 
     // Add explicit debugging
-    console.log(`Publishing status for ${content.title}: ${newPublishedStatus}`);
-    console.log(`Content after toggle:`, JSON.stringify(updatedCurriculum.lessons[lessonIndex].contents[contentIndex]).substring(0, 200));
+    console.log(`📝 Publishing status for "${content.title}": ${newPublishedStatus}`);
+    console.log(`Content ID: ${content.id}`);
+    console.log(`Content after toggle:`, {
+      id: updatedCurriculum.lessons[lessonIndex].contents[contentIndex].id,
+      title: updatedCurriculum.lessons[lessonIndex].contents[contentIndex].title,
+      isPublished: updatedCurriculum.lessons[lessonIndex].contents[contentIndex].isPublished,
+      type: updatedCurriculum.lessons[lessonIndex].contents[contentIndex].type
+    });
+    
+    // Log all published content in this curriculum for verification
+    const allPublishedContent = updatedCurriculum.lessons.flatMap((lesson: any) => 
+      (lesson.contents || []).filter((c: any) => c?.isPublished === true)
+    );
+    console.log(`📊 Total published content items in curriculum: ${allPublishedContent.length}`);
+    allPublishedContent.forEach((c: any) => {
+      console.log(`  - ${c.title || c.id} (isPublished: ${c.isPublished})`);
+    });
 
     // Get the current lesson
     const currentLesson = updatedCurriculum.lessons[lessonIndex];
