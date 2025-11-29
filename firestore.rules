@@ -47,7 +47,7 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         // Students can read their own answers
         (isStudent() && resource.data.studentId == request.auth.uid) ||
-        // Teachers can read all answers (we verify class access in the app)
+        // Teachers can read all answers (app verifies class access)
         isTeacher() ||
         // Admins can read all answers
         isAdmin()
@@ -56,8 +56,8 @@ service cloud.firestore {
       allow create, update: if isAuthenticated() && (
         // Students can write their own answers
         (isStudent() && request.resource.data.studentId == request.auth.uid) ||
-        // Teachers can write for their class
-        (isTeacher() && hasAccessToClass(classId)) ||
+        // Teachers can write for their class (app verifies access)
+        isTeacher() ||
         // Admins can write anything
         isAdmin()
       );

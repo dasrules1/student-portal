@@ -522,12 +522,23 @@ export default function TeacherCurriculum() {
                       acc[studentId] = {};
                     }
           
+            // Helper function to safely convert timestamps
+            const safeToDate = (timestamp: any): Date => {
+              if (!timestamp) return new Date();
+              if (timestamp instanceof Date) return timestamp;
+              if (typeof timestamp === 'string') return new Date(timestamp);
+              if (timestamp && typeof timestamp.toDate === 'function') {
+                return timestamp.toDate();
+              }
+              return new Date();
+            };
+            
             // Store the full answer data using problemIndex from doc.data()
             acc[studentId][`problem-${problemIndex}`] = {
             answer: data.answer || 'No answer provided',
             score: data.score || 0,
             correct: data.correct || false,
-              timestamp: data.updatedAt?.toDate() || data.timestamp?.toDate() || new Date(),
+              timestamp: safeToDate(data.updatedAt) || safeToDate(data.timestamp) || new Date(),
               problemIndex: problemIndex,
             questionId: data.questionId,
             questionText: data.questionText,
@@ -535,7 +546,7 @@ export default function TeacherCurriculum() {
             problemType: data.problemType,
               problemPoints: data.problemPoints,
               contentId: contentId,
-              updatedAt: data.updatedAt?.toDate() || data.timestamp?.toDate()
+              updatedAt: safeToDate(data.updatedAt) || safeToDate(data.timestamp)
           };
           
             return acc;
