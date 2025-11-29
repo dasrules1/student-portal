@@ -1469,18 +1469,28 @@ class StorageService {
             return null;
           }
           
-          // Filter contents to only published items
-          const publishedContents = lesson.contents.filter((c: any) => c?.isPublished === true);
-          
-          // Only include lesson if it has published content
-          if (publishedContents.length === 0) {
-            return null;
-          }
-          
-          return {
-            ...lesson,
-            contents: publishedContents
-          };
+      // Filter contents to only published items (strict check: isPublished must be exactly true)
+      const publishedContents = lesson.contents.filter((c: any) => {
+        const isPublished = c?.isPublished === true;
+        if (isPublished) {
+          console.log(`✅ Including published content: ${c.title || c.id} (isPublished: ${c.isPublished})`);
+        } else {
+          console.log(`❌ Excluding unpublished content: ${c.title || c.id} (isPublished: ${c.isPublished})`);
+        }
+        return isPublished;
+      });
+      
+      // Only include lesson if it has published content
+      if (publishedContents.length === 0) {
+        console.log(`Lesson "${lesson.title || lesson.id}" has no published content, excluding`);
+        return null;
+      }
+      
+      console.log(`Lesson "${lesson.title || lesson.id}" has ${publishedContents.length} published content items`);
+      return {
+        ...lesson,
+        contents: publishedContents
+      };
         })
         .filter((lesson: any) => lesson !== null); // Remove null lessons
 
@@ -1867,43 +1877,28 @@ class StorageService {
       // Non-critical, continue
     }
     
-    // Save to persistent storage
+    // Save to persistent storage (cache only - not source of truth)
     try {
       const persistentStorage = PersistentStorage.getInstance();
       await persistentStorage.saveCurriculum(classId, curriculumData);
-      console.log("Curriculum saved to persistent storage successfully");
+      console.log("Curriculum saved to persistent storage (cache)");
       success = true;
-      
-      // If content is published, also save a separate published version
-      if (this.hasPublishedContent(curriculumData.content)) {
-        const publishedContent = this.filterPublishedContent(curriculumData);
-        if (publishedContent) {
-          await persistentStorage.savePublishedCurriculum(classId, publishedContent);
-          console.log("Published curriculum saved to persistent storage successfully");
-        }
-      }
     } catch (persistentStorageError) {
       console.error("Error saving curriculum to persistent storage:", persistentStorageError);
+      // Non-critical, continue
     }
     
-    // Save to localStorage as a fallback
+    // Save to localStorage as a cache (not source of truth)
+    if (typeof window !== 'undefined') {
     try {
       const localStorageKey = `curriculum_${classId}`;
       localStorage.setItem(localStorageKey, JSON.stringify(curriculumData));
-      console.log("Curriculum saved to localStorage successfully");
+        console.log("Curriculum saved to localStorage (cache)");
       success = true;
-      
-      // If content is published, also save a separate published version
-      if (this.hasPublishedContent(curriculumData.content)) {
-        const publishedContent = this.filterPublishedContent(curriculumData);
-        if (publishedContent) {
-          const publishedKey = `published-curriculum-${classId}`;
-          localStorage.setItem(publishedKey, JSON.stringify(publishedContent.content));
-          console.log("Published curriculum saved to localStorage successfully");
-        }
-      }
     } catch (localStorageError) {
       console.error("Error saving curriculum to localStorage:", localStorageError);
+        // Non-critical, continue
+      }
     }
     
     return success;

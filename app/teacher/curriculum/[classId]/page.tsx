@@ -284,12 +284,12 @@ export default function TeacherCurriculum() {
             
             // Only process if all required fields are present
             if (studentId && contentId !== undefined && problemIndex !== undefined) {
-              if (!updatedProgress[studentId]) {
-                updatedProgress[studentId] = {};
-              }
-              if (!updatedProgress[studentId][contentId]) {
-                updatedProgress[studentId][contentId] = {};
-              }
+            if (!updatedProgress[studentId]) {
+              updatedProgress[studentId] = {};
+            }
+            if (!updatedProgress[studentId][contentId]) {
+              updatedProgress[studentId][contentId] = {};
+            }
               updatedProgress[studentId][contentId][problemIndex] = {
                 id: docSnap.id,
                 ...data
@@ -517,27 +517,27 @@ export default function TeacherCurriculum() {
               problemIndex,
               answer: data.answer
             });
-            
-            if (!acc[studentId]) {
-              acc[studentId] = {};
-            }
-            
+          
+                    if (!acc[studentId]) {
+                      acc[studentId] = {};
+                    }
+          
             // Store the full answer data using problemIndex from doc.data()
             acc[studentId][`problem-${problemIndex}`] = {
-              answer: data.answer || 'No answer provided',
-              score: data.score || 0,
-              correct: data.correct || false,
+            answer: data.answer || 'No answer provided',
+            score: data.score || 0,
+            correct: data.correct || false,
               timestamp: data.updatedAt?.toDate() || data.timestamp?.toDate() || new Date(),
               problemIndex: problemIndex,
-              questionId: data.questionId,
-              questionText: data.questionText,
-              answerType: data.answerType,
-              problemType: data.problemType,
+            questionId: data.questionId,
+            questionText: data.questionText,
+            answerType: data.answerType,
+            problemType: data.problemType,
               problemPoints: data.problemPoints,
               contentId: contentId,
               updatedAt: data.updatedAt?.toDate() || data.timestamp?.toDate()
-            };
-            
+          };
+          
             return acc;
           }, {});
 
@@ -546,9 +546,9 @@ export default function TeacherCurriculum() {
             data: transformedData
           });
           setRealTimeUpdates(transformedData);
-        } catch (error) {
-          console.error("Error processing real-time data:", error);
-        }
+      } catch (error) {
+        console.error("Error processing real-time data:", error);
+      }
       },
       (error) => {
         console.error("Real-time listener error:", error);
@@ -643,8 +643,9 @@ export default function TeacherCurriculum() {
         lastUpdated: new Date().toISOString()
       };
       
-      // Save the entire curriculum to ensure it's properly stored
-      console.log("Saving curriculum to storage...");
+      // Save the entire curriculum to canonical source (curricula collection)
+      // This is the single source of truth - students will read from here and filter by isPublished
+      console.log("Saving curriculum to canonical storage (curricula collection)...");
       const saveCurriculumResult = await storage.saveCurriculum(classId, curriculumData);
       
       if (!saveCurriculumResult) {
@@ -658,13 +659,12 @@ export default function TeacherCurriculum() {
         return;
       }
       
-      // ENHANCED: Save the specific content as a separate published item for easier discovery
+      console.log("✅ Curriculum saved to canonical source. Students will see filtered view based on isPublished flags.");
+      
+      // OPTIONAL: Also update published_assignments for easier querying (but not the source of truth)
       if (newPublishedStatus) {
         try {
-          // Create a special collection for easily finding all published assignments
-          // This makes it easier for students to find published assignments
           const publishedAssignmentRef = doc(db, 'published_assignments', `${classId}_${content.id}`);
-          
           await setDoc(publishedAssignmentRef, {
             contentId: content.id,
             classId: classId,
@@ -681,39 +681,10 @@ export default function TeacherCurriculum() {
             publishedAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           });
-          console.log("Successfully saved to published_assignments collection for easier discovery");
+          console.log("Also updated published_assignments collection (for easier querying)");
         } catch (assignmentPublishError) {
           console.error("Error saving to published_assignments collection:", assignmentPublishError);
-        }
-        
-        // Use the imported db directly to save to the published_curricula collection
-        try {
-          const publishedRef = doc(db, 'published_curricula', classId);
-          
-          // IMPORTANT: Only include published content in published_curricula
-          // Filter to only include lessons with published content
-          const publishedContent = {
-            classId,
-            content: {
-              lessons: updatedCurriculum.lessons
-                .map(lesson => ({
-                  ...lesson,
-                  contents: lesson.contents
-                    .filter(item => item.isPublished === true) // Only published content
-                    .map(item => ({
-                      ...item,
-                      isPublished: true // Explicitly set to true
-                    }))
-                }))
-                .filter(lesson => lesson.contents && lesson.contents.length > 0) // Only include lessons with published content
-            },
-            lastUpdated: new Date().toISOString()
-          };
-          
-          await setDoc(publishedRef, publishedContent);
-          console.log("Successfully saved to published_curricula collection (only published content)");
-        } catch (publishError) {
-          console.error("Error saving to published curricula collection:", publishError);
+          // Non-critical, continue
         }
       } else {
         // If we're unpublishing, delete from the published_assignments collection
@@ -723,32 +694,12 @@ export default function TeacherCurriculum() {
           console.log("Removed from published_assignments collection");
         } catch (unpublishError) {
           console.error("Error removing from published_assignments collection:", unpublishError);
-        }
-        
-        // IMPORTANT: Also update published_curricula to remove unpublished content
-        try {
-          const publishedRef = doc(db, 'published_curricula', classId);
-          
-          // Filter to only include published content
-          const publishedContent = {
-            classId,
-            content: {
-              lessons: updatedCurriculum.lessons
-                .map(lesson => ({
-                  ...lesson,
-                  contents: lesson.contents.filter(item => item.isPublished === true)
-                }))
-                .filter(lesson => lesson.contents && lesson.contents.length > 0) // Only include lessons with published content
-            },
-            lastUpdated: new Date().toISOString()
-          };
-          
-          await setDoc(publishedRef, publishedContent);
-          console.log("Updated published_curricula to remove unpublished content");
-        } catch (unpublishCurriculaError) {
-          console.error("Error updating published_curricula when unpublishing:", unpublishCurriculaError);
+          // Non-critical, continue
         }
       }
+      
+      // NOTE: We no longer maintain published_curricula as a separate collection
+      // Students read from the canonical curricula collection and filter by isPublished
     } catch (saveError) {
       console.error("Error saving curriculum:", saveError);
     }
