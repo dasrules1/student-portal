@@ -855,6 +855,7 @@ export default function StudentAssignments() {
                 });
                 dueAssignments.push(...pendingAssignments);
                   });
+                }
               }
             }
             }
