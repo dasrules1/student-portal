@@ -1275,24 +1275,36 @@ class StorageService {
       if (userRole === 'student') {
         try {
           console.log(`Attempting to fetch PUBLISHED curriculum for class ${classId} from Firestore (published_curricula)`)
-          const publishedRef = collection(db, 'published_curricula')
-          const publishedQuery = query(publishedRef, where('classId', '==', classId))
-          const publishedSnap = await getDocs(publishedQuery)
 
-          if (publishedSnap && publishedSnap.docs && publishedSnap.docs.length > 0) {
-            const publishedData = publishedSnap.docs[0].data()
-            if (publishedData && publishedData.content) {
-              console.log(`Found published curriculum for class ${classId} in published_curricula`)
-              curriculum = {
-                classId,
-                content: publishedData.content,
-                lastUpdated: publishedData.lastUpdated || new Date().toISOString()
-              }
-              // If we successfully found published curriculum, we can skip other Firestore lookups
-              return curriculum
-            }
+          // Try direct document lookup first (doc id == classId)
+          const publishedDocRef = doc(db, 'published_curricula', classId)
+          const publishedDocSnap = await getDoc(publishedDocRef)
+          let publishedData = null
+
+          if (publishedDocSnap.exists()) {
+            publishedData = publishedDocSnap.data()
           } else {
-            console.log(`No document found in published_curricula for class ${classId}`)
+            // Fallback to legacy query (older docs might not use classId as doc ID)
+            const publishedRef = collection(db, 'published_curricula')
+            const publishedQuery = query(publishedRef, where('classId', '==', classId))
+            const publishedSnap = await getDocs(publishedQuery)
+
+            if (publishedSnap && publishedSnap.docs && publishedSnap.docs.length > 0) {
+              publishedData = publishedSnap.docs[0].data()
+            }
+          }
+
+          if (publishedData && publishedData.content) {
+            console.log(`Found published curriculum for class ${classId} in published_curricula`)
+            curriculum = {
+              classId,
+              content: publishedData.content,
+              lastUpdated: publishedData.lastUpdated || new Date().toISOString()
+            }
+            // If we successfully found published curriculum, we can skip other Firestore lookups
+            return curriculum
+          } else {
+            console.log(`No published curriculum record found for class ${classId}`)
           }
         } catch (publishedError) {
           console.error(`Error fetching published curriculum from Firestore: ${publishedError}`)
@@ -1551,12 +1563,25 @@ class StorageService {
           if (publishedContent) {
             const publishedRef = doc(db, 'published_curricula', classId);
             await setDoc(publishedRef, {
+              classId,
               content: publishedContent.content,
               lastUpdated: new Date().toISOString()
             });
             console.log("Published curriculum saved to Firestore successfully");
           }
         }
+      if (this.hasPublishedContent(curriculumData.content)) {
+        const publishedContent = this.filterPublishedContent(curriculumData);
+        if (publishedContent) {
+          const publishedRef = doc(db, 'published_curricula', classId);
+          await setDoc(publishedRef, {
+            classId,
+            content: publishedContent.content,
+            lastUpdated: new Date().toISOString()
+          });
+          console.log("Published curriculum saved to Firestore successfully");
+        }
+      }
       }
     } catch (firestoreError) {
       console.error("Error saving curriculum to Firestore:", firestoreError);

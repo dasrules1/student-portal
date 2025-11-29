@@ -4,7 +4,7 @@
 // Import existing types
 import type { User, Class, ActivityLog } from "./types"
 import { db } from "./firebase"
-import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc } from "firebase/firestore"
+import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc, setDoc } from "firebase/firestore"
 
 // Constants
 const STORAGE_VERSION = "1.0.0"
@@ -1066,25 +1066,13 @@ export class PersistentStorage {
       // 1. Try to update in Firebase
       let firebaseSuccess = false;
       try {
-        const publishedRef = collection(db, "published_curricula");
-        const q = query(publishedRef, where("classId", "==", classId));
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
-          const docRef = doc(db, "published_curricula", querySnapshot.docs[0].id);
-          await updateDoc(docRef, {
-            content: curriculumData.content,
-            lastUpdated: new Date().toISOString()
-          });
-          firebaseSuccess = true;
-        } else {
-          await addDoc(publishedRef, {
-            classId,
-            content: curriculumData.content,
-            lastUpdated: new Date().toISOString()
-          });
-          firebaseSuccess = true;
-        }
+        const docRef = doc(db, "published_curricula", classId);
+        await setDoc(docRef, {
+          classId,
+          content: curriculumData.content,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        firebaseSuccess = true;
         console.log(`PersistentStorage: Successfully saved published curriculum to Firebase for class ${classId}`);
       } catch (firestoreError) {
         console.error("PersistentStorage: Error saving published curriculum to Firebase:", firestoreError);
@@ -1129,16 +1117,27 @@ export class PersistentStorage {
       
       // 1. First try to get from Firebase
       try {
-        const publishedRef = collection(db, "published_curricula");
-        const q = query(publishedRef, where("classId", "==", classId));
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
-          const data = querySnapshot.docs[0].data();
-          if (data && data.content) {
-            console.log(`PersistentStorage: Found published curriculum in Firebase for class ${classId}`);
-            return data.content;
+        // Direct lookup by classId (doc id)
+        const publishedDocRef = doc(db, "published_curricula", classId);
+        const publishedDocSnap = await getDoc(publishedDocRef);
+
+        let publishedData = null;
+        if (publishedDocSnap.exists()) {
+          publishedData = publishedDocSnap.data();
+        } else {
+          // Fallback to legacy query that relied on classId field
+          const publishedRef = collection(db, "published_curricula");
+          const q = query(publishedRef, where("classId", "==", classId));
+          const querySnapshot = await getDocs(q);
+          
+          if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
+            publishedData = querySnapshot.docs[0].data();
           }
+        }
+
+        if (publishedData && publishedData.content) {
+          console.log(`PersistentStorage: Found published curriculum in Firebase for class ${classId}`);
+          return publishedData.content;
         }
       } catch (firestoreError) {
         console.warn("PersistentStorage: Error fetching published curriculum from Firebase:", firestoreError);
