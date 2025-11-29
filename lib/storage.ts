@@ -1016,136 +1016,134 @@ class StorageService {
 
   // Filter curriculum data to only include published content for students
   filterPublishedContent(curriculumData: any): any {
-    if (!curriculumData || !curriculumData.content) {
+    if (!curriculumData) {
+      console.log("No curriculum data provided for filtering");
       return null;
     }
 
-    console.log("Filtering curriculum for published content");
-    const clonedData = structuredClone(curriculumData);
-    
-    // Handle different curriculum structures
-    if (Array.isArray(clonedData.content)) {
-      // Direct array of lessons
-      clonedData.content = clonedData.content.map(lesson => {
-        // If the lesson itself is published, include it entirely
-        if (lesson.isPublished === true) return lesson;
-        
-        // Otherwise, check for published content within the lesson
-        const lessonCopy = { ...lesson };
-        
-        // Filter contents array
-        if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
-          lessonCopy.contents = lessonCopy.contents.filter(content => {
-            // Ensure isPublished is explicit true, not just truthy
-            const isPublished = content.isPublished === true;
-            if (isPublished) {
-              console.log(`Including published content: ${content.title || 'Untitled content'}`);
-            }
-            return isPublished;
-          }).map(content => ({...content, isPublished: true})); // Ensure the flag stays true in the copy
-        }
-        
-        // Filter assignments array
-        if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
-          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => {
-            // Ensure isPublished is explicit true, not just truthy
-            const isPublished = assignment.isPublished === true;
-            if (isPublished) {
-              console.log(`Including published assignment: ${assignment.title || 'Untitled assignment'}`);
-            }
-            return isPublished;
-          }).map(assignment => ({...assignment, isPublished: true})); // Ensure the flag stays true in the copy
-        }
-        
-        // Filter quizzes array
-        if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
-          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => {
-            // Ensure isPublished is explicit true, not just truthy
-            const isPublished = quiz.isPublished === true;
-            if (isPublished) {
-              console.log(`Including published quiz: ${quiz.title || 'Untitled quiz'}`);
-            }
-            return isPublished;
-          }).map(quiz => ({...quiz, isPublished: true})); // Ensure the flag stays true in the copy
-        }
-        
-        return lessonCopy;
-      }).filter(lesson => {
-        // Keep lesson if it has any published content
-        const hasContent = (
-          (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
-          (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
-          (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
-        );
-        
-        if (hasContent) {
-          console.log(`Including lesson with published content: ${lesson.title || 'Untitled lesson'}`);
-        }
-        return hasContent;
-      });
-    } 
-    else if (clonedData.content.lessons && Array.isArray(clonedData.content.lessons)) {
-      // Structure with lessons array
-      clonedData.content.lessons = clonedData.content.lessons.map(lesson => {
-        // If the lesson itself is published, include it entirely
-        if (lesson.isPublished === true) return lesson;
-        
-        // Otherwise, check for published content within the lesson
-        const lessonCopy = { ...lesson };
-        
-        // Filter contents array
-        if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
-          lessonCopy.contents = lessonCopy.contents.filter(content => {
-            // Ensure isPublished is explicit true, not just truthy
-            const isPublished = content.isPublished === true;
-            if (isPublished) {
-              console.log(`Including published content: ${content.title || 'Untitled content'}`);
-            }
-            return isPublished;
-          }).map(content => ({...content, isPublished: true})); // Ensure the flag stays true in the copy
-        }
-        
-        // Filter assignments array
-        if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
-          lessonCopy.assignments = lessonCopy.assignments.filter(assignment => {
-            // Ensure isPublished is explicit true, not just truthy
-            const isPublished = assignment.isPublished === true;
-            if (isPublished) {
-              console.log(`Including published assignment: ${assignment.title || 'Untitled assignment'}`);
-            }
-            return isPublished;
-          }).map(assignment => ({...assignment, isPublished: true})); // Ensure the flag stays true in the copy
-        }
-        
-        // Filter quizzes array
-        if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
-          lessonCopy.quizzes = lessonCopy.quizzes.filter(quiz => {
-            // Ensure isPublished is explicit true, not just truthy
-            const isPublished = quiz.isPublished === true;
-            if (isPublished) {
-              console.log(`Including published quiz: ${quiz.title || 'Untitled quiz'}`);
-            }
-            return isPublished;
-          }).map(quiz => ({...quiz, isPublished: true})); // Ensure the flag stays true in the copy
-        }
-        
-        return lessonCopy;
-      }).filter(lesson => {
-        // Keep lesson if it has any published content
-        const hasContent = (
-          (lesson.contents && Array.isArray(lesson.contents) && lesson.contents.length > 0) ||
-          (lesson.assignments && Array.isArray(lesson.assignments) && lesson.assignments.length > 0) ||
-          (lesson.quizzes && Array.isArray(lesson.quizzes) && lesson.quizzes.length > 0)
-        );
-        
-        if (hasContent) {
-          console.log(`Including lesson with published content: ${lesson.title || 'Untitled lesson'}`);
-        }
-        return hasContent;
-      });
+    const hasContentWrapper = typeof curriculumData === "object" && curriculumData !== null && "content" in curriculumData;
+    const baseContent = hasContentWrapper ? curriculumData.content : curriculumData;
+
+    if (!baseContent) {
+      console.log("No curriculum content found for filtering");
+      return null;
     }
-    
-    console.log(`After filtering: ${clonedData.content.lessons ? clonedData.content.lessons.length : 'Unknown'} lessons with published content`);
+
+    let clonedContent: any;
+    try {
+      if (typeof structuredClone === "function") {
+        clonedContent = structuredClone(baseContent);
+      } else {
+        clonedContent = JSON.parse(JSON.stringify(baseContent));
+      }
+    } catch (error) {
+      console.error("Error cloning curriculum content for filtering:", error);
+      return null;
+    }
+
+    const clonedData: any = hasContentWrapper
+      ? { ...curriculumData, content: clonedContent }
+      : { content: clonedContent };
+
+    if (!hasContentWrapper) {
+      if (curriculumData.classId) clonedData.classId = curriculumData.classId;
+      if (curriculumData.lastUpdated) clonedData.lastUpdated = curriculumData.lastUpdated;
+    }
+
+    if (!clonedData.content) {
+      console.log("Cloned curriculum has no content to filter");
+      return null;
+    }
+
+    const filterLesson = (lesson: any) => {
+      if (!lesson || typeof lesson !== "object") return null;
+
+      if (lesson.isPublished === true) {
+        return { ...lesson, isPublished: true };
+      }
+
+      const lessonCopy = { ...lesson };
+
+      if (lessonCopy.contents && Array.isArray(lessonCopy.contents)) {
+        lessonCopy.contents = lessonCopy.contents
+          .filter((content) => {
+            const isPublished = content?.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published content: ${content.title || "Untitled content"}`);
+            }
+            return isPublished;
+          })
+          .map((content) => ({ ...content, isPublished: true }));
+      }
+
+      if (lessonCopy.assignments && Array.isArray(lessonCopy.assignments)) {
+        lessonCopy.assignments = lessonCopy.assignments
+          .filter((assignment) => {
+            const isPublished = assignment?.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published assignment: ${assignment.title || "Untitled assignment"}`);
+            }
+            return isPublished;
+          })
+          .map((assignment) => ({ ...assignment, isPublished: true }));
+      }
+
+      if (lessonCopy.quizzes && Array.isArray(lessonCopy.quizzes)) {
+        lessonCopy.quizzes = lessonCopy.quizzes
+          .filter((quiz) => {
+            const isPublished = quiz?.isPublished === true;
+            if (isPublished) {
+              console.log(`Including published quiz: ${quiz.title || "Untitled quiz"}`);
+            }
+            return isPublished;
+          })
+          .map((quiz) => ({ ...quiz, isPublished: true }));
+      }
+
+      const hasContent =
+        (lessonCopy.contents && lessonCopy.contents.length > 0) ||
+        (lessonCopy.assignments && lessonCopy.assignments.length > 0) ||
+        (lessonCopy.quizzes && lessonCopy.quizzes.length > 0);
+
+      return hasContent ? lessonCopy : null;
+    };
+
+    const content = clonedData.content;
+
+    if (Array.isArray(content)) {
+      clonedData.content = content.map(filterLesson).filter((lesson) => !!lesson);
+    } else if (content.lessons && Array.isArray(content.lessons)) {
+      clonedData.content.lessons = content.lessons.map(filterLesson).filter((lesson) => !!lesson);
+    } else if (content.lessonMap && typeof content.lessonMap === "object") {
+      const filteredLessonMap: Record<string, any> = {};
+
+      Object.entries(content.lessonMap).forEach(([lessonId, lessonData]) => {
+        const filteredLesson = filterLesson(lessonData);
+        if (filteredLesson) {
+          filteredLessonMap[lessonId] = filteredLesson;
+        }
+      });
+
+      clonedData.content.lessonMap = filteredLessonMap;
+    } else {
+      if (content.assignments && Array.isArray(content.assignments)) {
+        clonedData.content.assignments = content.assignments
+          .filter((assignment) => assignment?.isPublished === true)
+          .map((assignment) => ({ ...assignment, isPublished: true }));
+      }
+
+      if (content.contents && Array.isArray(content.contents)) {
+        clonedData.content.contents = content.contents
+          .filter((item) => item?.isPublished === true)
+          .map((item) => ({ ...item, isPublished: true }));
+      }
+    }
+
+    if (!this.hasPublishedContent(clonedData.content)) {
+      console.log("No published content found after filtering");
+      return null;
+    }
+
     return clonedData;
   }
 
@@ -1294,15 +1292,19 @@ class StorageService {
             }
           }
 
-          if (publishedData && publishedData.content) {
-            console.log(`Found published curriculum for class ${classId} in published_curricula`)
-            curriculum = {
-              classId,
-              content: publishedData.content,
-              lastUpdated: publishedData.lastUpdated || new Date().toISOString()
+          if (publishedData) {
+            const sanitizedPublished = this.filterPublishedContent(publishedData)
+            if (sanitizedPublished && sanitizedPublished.content) {
+              console.log(`Found published curriculum for class ${classId} in published_curricula`)
+              curriculum = {
+                classId,
+                content: sanitizedPublished.content,
+                lastUpdated: sanitizedPublished.lastUpdated || publishedData.lastUpdated || new Date().toISOString()
+              }
+              // If we successfully found published curriculum, we can skip other Firestore lookups
+              return curriculum
             }
-            // If we successfully found published curriculum, we can skip other Firestore lookups
-            return curriculum
+            console.log(`Published curriculum record for class ${classId} contained no published content`)
           } else {
             console.log(`No published curriculum record found for class ${classId}`)
           }
@@ -1323,18 +1325,22 @@ class StorageService {
         if (classData.curriculum) {
           console.log(`Found curriculum for class ${classId} in Firestore classes document`)
           
-          // For students, only return curriculum if it has published content
           if (userRole === 'student') {
-            if (this.hasPublishedContent(classData.curriculum)) {
+            const sanitizedClassCurriculum = this.filterPublishedContent({
+              classId,
+              content: classData.curriculum,
+              lastUpdated: classData.curriculumLastUpdated
+            })
+
+            if (sanitizedClassCurriculum && sanitizedClassCurriculum.content) {
               curriculum = {
                 classId,
-                content: classData.curriculum,
-                lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
+                content: sanitizedClassCurriculum.content,
+                lastUpdated: sanitizedClassCurriculum.lastUpdated || classData.curriculumLastUpdated || new Date().toISOString()
               }
-              console.log(`Returning published curriculum for student from classes document`)
+              console.log(`Returning filtered curriculum for student from classes document`)
             } else {
               console.log(`No published content found for student in classes document`)
-              return null
             }
           } else {
             // For teachers and admins, return the full curriculum
@@ -1385,28 +1391,32 @@ class StorageService {
           if (storedCurriculum) {
             console.log(`Found curriculum for class ${classId} in persistent storage`);
             
-            // Handle both direct curriculum and wrapped curriculum formats
-            const curriculumContent = storedCurriculum.content || storedCurriculum;
+            // Normalize structure so we always have a content property
+            const storedWrapper = storedCurriculum.content
+              ? storedCurriculum
+              : {
+                  classId,
+                  content: storedCurriculum,
+                  lastUpdated: storedCurriculum?.lastUpdated,
+                };
             
-            // For students, only return curriculum if it has published content
             if (userRole === 'student') {
-              if (this.hasPublishedContent(curriculumContent)) {
+              const sanitizedStored = this.filterPublishedContent(storedWrapper);
+              if (sanitizedStored && sanitizedStored.content) {
                 curriculum = {
                   classId,
-                  content: curriculumContent,
-                  lastUpdated: storedCurriculum.lastUpdated || new Date().toISOString()
+                  content: sanitizedStored.content,
+                  lastUpdated: sanitizedStored.lastUpdated || storedWrapper.lastUpdated || new Date().toISOString()
                 };
-                console.log(`Returning published curriculum for student from persistent storage`);
+                console.log(`Returning filtered curriculum for student from persistent storage`);
               } else {
                 console.log(`No published content found for student in persistent storage`);
-                return null;
               }
             } else {
-              // For teachers and admins, return the full curriculum
               curriculum = {
                 classId,
-                content: curriculumContent,
-                lastUpdated: storedCurriculum.lastUpdated || new Date().toISOString()
+                content: storedWrapper.content,
+                lastUpdated: storedWrapper.lastUpdated || new Date().toISOString()
               };
             }
           }
@@ -1428,17 +1438,19 @@ class StorageService {
           const localCurriculum = JSON.parse(localCurriculumStr);
           console.log(`Found curriculum for class ${classId} in localStorage`);
           
-          // For students, only return curriculum if it has published content
           if (userRole === 'student') {
-            if (this.hasPublishedContent(localCurriculum.content)) {
-              curriculum = localCurriculum;
-              console.log(`Returning published curriculum for student from localStorage`);
+            const sanitizedLocal = this.filterPublishedContent(localCurriculum);
+            if (sanitizedLocal && sanitizedLocal.content) {
+              curriculum = {
+                classId,
+                content: sanitizedLocal.content,
+                lastUpdated: sanitizedLocal.lastUpdated || localCurriculum.lastUpdated || new Date().toISOString()
+              };
+              console.log(`Returning filtered curriculum for student from localStorage`);
             } else {
               console.log(`No published content found for student in localStorage`);
-              return null;
             }
           } else {
-            // For teachers and admins, return the full curriculum
             curriculum = localCurriculum;
           }
         }
@@ -1497,21 +1509,24 @@ class StorageService {
         if (classData && classData.curriculum) {
           console.log(`Found curriculum for class ${classId} in embedded class data`);
           
-          // For students, only return curriculum if it has published content
           if (userRole === 'student') {
-            if (this.hasPublishedContent(classData.curriculum)) {
+            const sanitizedEmbedded = this.filterPublishedContent({
+              classId,
+              content: classData.curriculum,
+              lastUpdated: classData.curriculumLastUpdated
+            });
+
+            if (sanitizedEmbedded && sanitizedEmbedded.content) {
               curriculum = {
                 classId,
-                content: classData.curriculum,
-                lastUpdated: classData.curriculumLastUpdated || new Date().toISOString()
+                content: sanitizedEmbedded.content,
+                lastUpdated: sanitizedEmbedded.lastUpdated || classData.curriculumLastUpdated || new Date().toISOString()
               };
-              console.log(`Returning published curriculum for student from embedded class data`);
+              console.log(`Returning filtered curriculum for student from embedded class data`);
             } else {
               console.log(`No published content found for student in embedded class data`);
-              return null;
             }
           } else {
-            // For teachers and admins, return the full curriculum
             curriculum = {
               classId,
               content: classData.curriculum,
@@ -1570,18 +1585,6 @@ class StorageService {
             console.log("Published curriculum saved to Firestore successfully");
           }
         }
-      if (this.hasPublishedContent(curriculumData.content)) {
-        const publishedContent = this.filterPublishedContent(curriculumData);
-        if (publishedContent) {
-          const publishedRef = doc(db, 'published_curricula', classId);
-          await setDoc(publishedRef, {
-            classId,
-            content: publishedContent.content,
-            lastUpdated: new Date().toISOString()
-          });
-          console.log("Published curriculum saved to Firestore successfully");
-        }
-      }
       }
     } catch (firestoreError) {
       console.error("Error saving curriculum to Firestore:", firestoreError);
