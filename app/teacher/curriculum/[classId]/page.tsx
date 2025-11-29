@@ -383,9 +383,45 @@ export default function TeacherCurriculum() {
 
   // Update the real-time listener for student answers
   useEffect(() => {
-    if (!activeContent?.id || !classId) return;
+    if (!activeContent?.id || !classId) {
+      console.log("Real-time listener: Missing activeContent.id or classId", { 
+        activeContentId: activeContent?.id, 
+        classId 
+      });
+      return;
+    }
 
-    console.log("Setting up real-time listener for content:", activeContent.id);
+    console.log("Setting up real-time listener for content:", {
+      contentId: activeContent.id,
+      contentTitle: activeContent.title,
+      classId: classId
+    });
+
+    // First, do a one-time check to see if any answers exist
+    const checkAnswers = async () => {
+      try {
+        const checkQuery = query(
+          collection(db, `student-answers/${classId}/answers`),
+          where('contentId', '==', activeContent.id)
+        );
+        const checkSnapshot = await getDocs(checkQuery);
+        console.log(`Initial check: Found ${checkSnapshot.docs.length} existing answers for contentId: ${activeContent.id}`);
+        if (checkSnapshot.docs.length > 0) {
+          checkSnapshot.docs.forEach((doc) => {
+            const data = doc.data();
+            console.log("Existing answer:", {
+              docId: doc.id,
+              studentId: data.studentId,
+              contentId: data.contentId,
+              problemIndex: data.problemIndex
+            });
+          });
+        }
+      } catch (error) {
+        console.error("Error checking existing answers:", error);
+      }
+    };
+    checkAnswers();
 
     // Create a query for student answers using the new nested path structure
     const answersQuery = query(
@@ -394,41 +430,83 @@ export default function TeacherCurriculum() {
     );
 
     // Set up real-time listener
-    const unsubscribe = firestoreOnSnapshot(answersQuery, (snapshot: QuerySnapshot) => {
-      try {
-        const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc: QueryDocumentSnapshot) => {
-          const data = doc.data();
-          const studentId = data.studentId;
+    const unsubscribe = firestoreOnSnapshot(
+      answersQuery, 
+      (snapshot: QuerySnapshot) => {
+        try {
+          console.log(`Real-time update: Received ${snapshot.docs.length} documents for contentId: ${activeContent.id}`);
           
-                    if (!acc[studentId]) {
-                      acc[studentId] = {};
-                    }
-          
-          // Store the full answer data
-          acc[studentId][`problem-${data.problemIndex}`] = {
-            answer: data.answer || 'No answer provided',
-            score: data.score || 0,
-            correct: data.correct || false,
-            timestamp: data.timestamp?.toDate() || new Date(),
-            problemIndex: data.problemIndex,
-            questionId: data.questionId,
-            questionText: data.questionText,
-            answerType: data.answerType,
-            problemType: data.problemType,
-            problemPoints: data.problemPoints
-          };
-          
+          if (snapshot.docs.length === 0) {
+            console.log("No answers found yet for this content. Waiting for student submissions...");
+            setRealTimeUpdates({});
+            return;
+          }
+
+          const transformedData = snapshot.docs.reduce((acc: Record<string, any>, doc: QueryDocumentSnapshot) => {
+            const data = doc.data();
+            const studentId = data.studentId;
+            const contentId = data.contentId;
+            
+            console.log("Processing answer:", {
+              docId: doc.id,
+              studentId,
+              contentId,
+              expectedContentId: activeContent.id,
+              match: contentId === activeContent.id,
+              problemIndex: data.problemIndex
+            });
+            
+            if (!studentId) {
+              console.warn("Answer document missing studentId:", doc.id);
+              return acc;
+            }
+            
+            if (!acc[studentId]) {
+              acc[studentId] = {};
+            }
+            
+            // Store the full answer data
+            acc[studentId][`problem-${data.problemIndex}`] = {
+              answer: data.answer || 'No answer provided',
+              score: data.score || 0,
+              correct: data.correct || false,
+              timestamp: data.timestamp?.toDate() || new Date(),
+              problemIndex: data.problemIndex,
+              questionId: data.questionId,
+              questionText: data.questionText,
+              answerType: data.answerType,
+              problemType: data.problemType,
+              problemPoints: data.problemPoints,
+              contentId: data.contentId
+            };
+            
             return acc;
           }, {});
 
-          console.log("Transformed data:", transformedData);
+          console.log("Transformed real-time data:", {
+            studentCount: Object.keys(transformedData).length,
+            data: transformedData
+          });
           setRealTimeUpdates(transformedData);
-      } catch (error) {
-        console.error("Error processing real-time data:", error);
+        } catch (error) {
+          console.error("Error processing real-time data:", error);
+        }
+      },
+      (error) => {
+        console.error("Real-time listener error:", error);
+        console.error("Error details:", {
+          code: error.code,
+          message: error.message,
+          contentId: activeContent.id,
+          classId: classId
+        });
       }
-    });
+    );
 
-    return () => unsubscribe();
+    return () => {
+      console.log("Cleaning up real-time listener for content:", activeContent.id);
+      unsubscribe();
+    };
   }, [activeContent?.id, classId]);
 
   // Function to render LaTeX in the UI
