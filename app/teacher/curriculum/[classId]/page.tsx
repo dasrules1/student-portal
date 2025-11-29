@@ -59,8 +59,7 @@ import {
   DocumentData,
   getDoc,
   QueryDocumentSnapshot,
-  QuerySnapshot,
-  getDocs
+  QuerySnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
