@@ -1016,16 +1016,33 @@ class StorageService {
 
   // Filter curriculum data to only include published content for students
   filterPublishedContent(curriculumData: any): any {
+    console.log("🔍 filterPublishedContent called with:", {
+      hasData: !!curriculumData,
+      isObject: typeof curriculumData === "object" && curriculumData !== null,
+      keys: curriculumData ? Object.keys(curriculumData) : [],
+      hasContent: !!(curriculumData && "content" in curriculumData)
+    });
+    
     if (!curriculumData) {
-      console.log("No curriculum data provided for filtering");
+      console.log("❌ No curriculum data provided for filtering");
       return null;
     }
 
     const hasContentWrapper = typeof curriculumData === "object" && curriculumData !== null && "content" in curriculumData;
     const baseContent = hasContentWrapper ? curriculumData.content : curriculumData;
 
+    console.log("🔍 Base content structure:", {
+      hasContentWrapper,
+      hasBaseContent: !!baseContent,
+      baseContentType: typeof baseContent,
+      baseContentKeys: baseContent ? Object.keys(baseContent) : [],
+      hasLessons: !!(baseContent && baseContent.lessons),
+      lessonsIsArray: !!(baseContent && baseContent.lessons && Array.isArray(baseContent.lessons)),
+      lessonsCount: baseContent?.lessons?.length || 0
+    });
+
     if (!baseContent) {
-      console.log("No curriculum content found for filtering");
+      console.log("❌ No curriculum content found for filtering");
       return null;
     }
 
@@ -1139,11 +1156,20 @@ class StorageService {
       }
     }
 
-    if (!this.hasPublishedContent(clonedData.content)) {
-      console.log("No published content found after filtering");
+    const finalHasPublished = this.hasPublishedContent(clonedData.content);
+    console.log("🔍 Filter result:", {
+      hasPublishedContent: finalHasPublished,
+      lessonsCount: clonedData.content?.lessons?.length || 0,
+      contentType: typeof clonedData.content,
+      contentKeys: clonedData.content ? Object.keys(clonedData.content) : []
+    });
+
+    if (!finalHasPublished) {
+      console.log("❌ No published content found after filtering");
       return null;
     }
 
+    console.log(`✅ After filtering: ${clonedData.content.lessons ? clonedData.content.lessons.length : 'Unknown'} lessons with published content`);
     return clonedData;
   }
 
@@ -1258,7 +1284,7 @@ class StorageService {
 
   // Get curriculum data for a class
   async getCurriculum(classId: string, userRole?: 'student' | 'teacher' | 'admin'): Promise<Curriculum | null> {
-    console.log(`Getting curriculum for class ${classId}`)
+    console.log(`Getting curriculum for class ${classId} with userRole: ${userRole}`)
     let curriculum: Curriculum | null = null
 
     // Attempt to fetch from Firestore
@@ -1293,20 +1319,32 @@ class StorageService {
           }
 
           if (publishedData) {
+            console.log(`Found published_curricula document for class ${classId}, data structure:`, {
+              hasContent: !!publishedData.content,
+              hasLessons: !!(publishedData.content && publishedData.content.lessons),
+              lessonsCount: publishedData.content?.lessons?.length || 0,
+              rawKeys: Object.keys(publishedData)
+            })
             const sanitizedPublished = this.filterPublishedContent(publishedData)
+            console.log(`After filtering published content:`, {
+              hasResult: !!sanitizedPublished,
+              hasContent: !!(sanitizedPublished && sanitizedPublished.content),
+              lessonsCount: sanitizedPublished?.content?.lessons?.length || 0
+            })
             if (sanitizedPublished && sanitizedPublished.content) {
-              console.log(`Found published curriculum for class ${classId} in published_curricula`)
+              console.log(`✅ Found published curriculum for class ${classId} in published_curricula`)
               curriculum = {
                 classId,
                 content: sanitizedPublished.content,
                 lastUpdated: sanitizedPublished.lastUpdated || publishedData.lastUpdated || new Date().toISOString()
               }
               // If we successfully found published curriculum, we can skip other Firestore lookups
+              console.log(`Returning curriculum with ${curriculum.content.lessons?.length || 0} lessons`)
               return curriculum
             }
-            console.log(`Published curriculum record for class ${classId} contained no published content`)
+            console.log(`❌ Published curriculum record for class ${classId} contained no published content after filtering`)
           } else {
-            console.log(`No published curriculum record found for class ${classId}`)
+            console.log(`❌ No published curriculum record found for class ${classId}`)
           }
         } catch (publishedError) {
           console.error(`Error fetching published curriculum from Firestore: ${publishedError}`)
@@ -1540,10 +1578,10 @@ class StorageService {
     }
 
     if (curriculum) {
-      console.log(`Successfully retrieved curriculum for class ${classId}`);
+      console.log(`✅ Successfully retrieved curriculum for class ${classId} with ${curriculum.content?.lessons?.length || 0} lessons`);
       return curriculum;
     } else {
-      console.log(`No curriculum found for class ${classId}`);
+      console.log(`❌ No curriculum found for class ${classId} after checking all sources`);
       return null;
     }
   }
