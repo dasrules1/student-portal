@@ -11,8 +11,13 @@ import { storage } from '@/lib/storage';
 import { Sidebar } from '@/components/sidebar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckSquare, LayoutDashboard, Book, File, Cog, ArrowLeft } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { CheckSquare, LayoutDashboard, Book, File, Cog, ArrowLeft, Send, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import 'katex/dist/katex.min.css';
+import { InlineMath, BlockMath } from 'react-katex';
 
 interface Problem {
   id?: string;
@@ -20,6 +25,9 @@ interface Problem {
   type: string;
   options?: string[];
   correctAnswer?: string | number;
+  correctAnswers?: (string | number)[];
+  keywords?: string[];
+  tolerance?: number;
   points?: number;
   maxAttempts?: number;
 }
@@ -33,6 +41,46 @@ interface Content {
   points?: number;
 }
 
+interface UserAnswers {
+  [contentId: string]: {
+    [problemIndex: number]: number;
+  };
+}
+
+interface MathExpressionInputs {
+  [contentId: string]: {
+    [problemIndex: number]: string;
+  };
+}
+
+interface OpenEndedAnswers {
+  [contentId: string]: {
+    [problemIndex: number]: string;
+  };
+}
+
+interface SubmittedProblems {
+  [key: string]: {
+    isSubmitted: boolean;
+    score: number;
+  };
+}
+
+interface ProblemState {
+  [key: string]: {
+    answer?: string | number;
+    submitted?: boolean;
+    score?: number;
+    attempts?: number;
+    isHalfCredit?: boolean;
+  };
+}
+
+interface GradingResult {
+  correct: boolean;
+  score: number;
+}
+
 const AssignmentDetailPage: React.FC = () => {
   const params = useParams<{ classId: string; contentId: string }>();
   const router = useRouter();
@@ -41,19 +89,25 @@ const AssignmentDetailPage: React.FC = () => {
   const [content, setContent] = useState<Content | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
-  const [problemScores, setProblemScores] = useState<Record<number, number>>({});
+  const [problemScores, setProblemScores] = useState<Record<string, number>>({});
   const [totalScore, setTotalScore] = useState(0);
   const [problemStatuses, setProblemStatuses] = useState<Record<number, 'correct' | 'incorrect' | 'pending'>>({});
+  const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
+  const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({});
+  const [openEndedAnswers, setOpenEndedAnswers] = useState<OpenEndedAnswers>({});
+  const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({});
+  const [problemState, setProblemState] = useState<ProblemState>({});
+  const [attemptCounts, setAttemptCounts] = useState<Record<string, number>>({});
 
   const classId = params.classId;
   const contentId = params.contentId;
 
   useEffect(() => {
-    if (classId && contentId) {
+    if (classId && contentId && user) {
       loadAssignment();
       loadScores();
     }
-  }, [classId, contentId]);
+  }, [classId, contentId, user]);
 
   const loadAssignment = async () => {
     try {
@@ -65,6 +119,8 @@ const AssignmentDetailPage: React.FC = () => {
             const foundContent = lessonAny.contents.find((c: any) => c.id === contentId);
             if (foundContent) {
               setContent(foundContent);
+              // Load existing answers
+              await loadExistingAnswers(foundContent);
               break;
             }
           }
@@ -79,6 +135,79 @@ const AssignmentDetailPage: React.FC = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadExistingAnswers = async (content: Content) => {
+    if (!db || !user || !classId || !content.id) return;
+
+    try {
+      const userId = user.uid;
+      const answersQuery = query(
+        collection(db, 'student-answers', classId, 'answers'),
+        where('contentId', '==', content.id),
+        where('studentId', '==', userId)
+      );
+      const answersSnapshot = await getDocs(answersQuery);
+      
+      const answers: UserAnswers = {};
+      const mathExpressions: MathExpressionInputs = {};
+      const openEnded: OpenEndedAnswers = {};
+      const submitted: SubmittedProblems = {};
+      const problemStates: ProblemState = {};
+      const scores: Record<string, number> = {};
+      const statuses: Record<number, 'correct' | 'incorrect' | 'pending'> = {};
+      const attempts: Record<string, number> = {};
+      let total = 0;
+
+      answersSnapshot.docs.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        const problemIndex = data.problemIndex;
+        
+        if (problemIndex !== undefined) {
+          const key = `${content.id}-${problemIndex}`;
+          
+          // Update answers based on problem type
+          if (data.answerType === 'multiple-choice') {
+            if (!answers[content.id]) answers[content.id] = {};
+            answers[content.id][problemIndex] = Number(data.answer);
+          } else if (data.answerType === 'math-expression') {
+            if (!mathExpressions[content.id]) mathExpressions[content.id] = {};
+            mathExpressions[content.id][problemIndex] = data.answer;
+          } else if (data.answerType === 'open-ended') {
+            if (!openEnded[content.id]) openEnded[content.id] = {};
+            openEnded[content.id][problemIndex] = data.answer;
+          }
+          
+          // Update submitted problems and problem states
+          submitted[key] = { isSubmitted: data.submitted || data.status === 'submitted' || data.status === 'completed', score: data.score || 0 };
+          problemStates[key] = {
+            answer: data.answer,
+            submitted: data.submitted || data.status === 'submitted' || data.status === 'completed',
+            score: data.score || 0,
+            isHalfCredit: data.isHalfCredit || false
+          };
+          
+          scores[key] = data.score || 0;
+          total += data.score || 0;
+          statuses[problemIndex] = data.correct ? 'correct' : 'incorrect';
+          
+          // Count attempts (we'll need to track this separately or estimate)
+          attempts[key] = (attempts[key] || 0) + 1;
+        }
+      });
+      
+      setUserAnswers(answers);
+      setMathExpressionInputs(mathExpressions);
+      setOpenEndedAnswers(openEnded);
+      setSubmittedProblems(submitted);
+      setProblemState(problemStates);
+      setProblemScores(scores);
+      setTotalScore(total);
+      setProblemStatuses(statuses);
+      setAttemptCounts(attempts);
+    } catch (error) {
+      console.error('Error loading existing answers:', error);
     }
   };
 
@@ -108,12 +237,366 @@ const AssignmentDetailPage: React.FC = () => {
         }
       });
 
-      setProblemScores(scores);
+      setProblemScores(prev => ({ ...prev, ...scores }));
       setTotalScore(total);
       setProblemStatuses(statuses);
     } catch (error) {
       console.error('Error loading scores:', error);
     }
+  };
+
+  const gradeMathExpression = (problem: Problem, studentAnswer: string): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentAnswer || !problem) return result;
+
+    const cleanStudentAnswer = studentAnswer.trim().toLowerCase();
+    
+    if (problem.correctAnswers && Array.isArray(problem.correctAnswers)) {
+      for (const correctAnswer of problem.correctAnswers) {
+        const cleanCorrectAnswer = correctAnswer.toString().trim().toLowerCase();
+        
+        if (cleanStudentAnswer === cleanCorrectAnswer) {
+          result = { correct: true, score: problem.points || 0 };
+          return result;
+        }
+        
+        const studentNum = parseFloat(cleanStudentAnswer);
+        const correctNum = parseFloat(cleanCorrectAnswer);
+        
+        if (!isNaN(studentNum) && !isNaN(correctNum)) {
+          const tolerance = problem.tolerance || 0.001;
+          if (Math.abs(correctNum - studentNum) <= tolerance) {
+            result = { correct: true, score: problem.points || 0 };
+            return result;
+          }
+        }
+      }
+    } else if (problem.correctAnswer) {
+      const correctAnswer = problem.correctAnswer.toString();
+      const cleanCorrectAnswer = correctAnswer.trim().toLowerCase();
+      
+      if (cleanStudentAnswer === cleanCorrectAnswer) {
+        result = { correct: true, score: problem.points || 0 };
+        return result;
+      }
+      
+      const studentNum = parseFloat(cleanStudentAnswer);
+      const correctNum = parseFloat(correctAnswer);
+      
+      if (!isNaN(studentNum) && !isNaN(correctNum)) {
+        const tolerance = problem.tolerance || 0.001;
+        if (Math.abs(correctNum - studentNum) <= tolerance) {
+          result = { correct: true, score: problem.points || 0 };
+          return result;
+        }
+      }
+    }
+    
+    return result;
+  };
+
+  const gradeOpenEnded = (problem: Problem, studentAnswer: string): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentAnswer || !problem || !problem.keywords || !Array.isArray(problem.keywords)) {
+      return result;
+    }
+    
+    const foundKeywords = problem.keywords.filter(keyword => 
+      studentAnswer.toLowerCase().includes(keyword.toLowerCase())
+    );
+    
+    if (foundKeywords.length > 0) {
+      const keywordScore = (foundKeywords.length / problem.keywords.length) * (problem.points || 1);
+      result = { correct: keywordScore >= (problem.points || 1) * 0.5, score: Math.round(keywordScore) };
+    }
+    
+    return result;
+  };
+
+  const handleMultipleChoiceSelect = (problemIndex: number, value: number) => {
+    if (!content?.id) return;
+    const key = `${content.id}-${problemIndex}`;
+    
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        answer: value,
+        submitted: false
+      }
+    }));
+    
+    setUserAnswers(prev => ({
+      ...prev,
+      [content.id]: {
+        ...(prev[content.id] || {}),
+        [problemIndex]: value
+      }
+    }));
+  };
+
+  const handleMathExpressionInput = (problemIndex: number, value: string) => {
+    if (!content?.id) return;
+    const key = `${content.id}-${problemIndex}`;
+    
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        answer: value,
+        submitted: false
+      }
+    }));
+    
+    setMathExpressionInputs(prev => ({
+      ...prev,
+      [content.id]: {
+        ...(prev[content.id] || {}),
+        [problemIndex]: value
+      }
+    }));
+  };
+
+  const handleOpenEndedInput = (problemIndex: number, value: string) => {
+    if (!content?.id) return;
+    const key = `${content.id}-${problemIndex}`;
+    
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        answer: value,
+        submitted: false
+      }
+    }));
+    
+    setOpenEndedAnswers(prev => ({
+      ...prev,
+      [content.id]: {
+        ...(prev[content.id] || {}),
+        [problemIndex]: value
+      }
+    }));
+  };
+
+  const sendRealTimeUpdate = async (problemIndex: number, answer: string | number, type: string, problem: Problem, isSubmitted: boolean) => {
+    if (!user || !content?.id) return;
+
+    const userId = user.uid;
+    const userName = user.displayName || 'Student';
+    const userEmail = user.email || '';
+    
+    try {
+      let isCorrect = false;
+      let score = 0;
+      
+      if (type === 'multiple-choice') {
+        isCorrect = Number(answer) === problem.correctAnswer;
+        score = isCorrect ? (problem.points || 1) : 0;
+      } else if (type === 'math-expression') {
+        const result = gradeMathExpression(problem, answer.toString());
+        isCorrect = result.correct;
+        score = result.score;
+      } else if (type === 'open-ended') {
+        const result = gradeOpenEnded(problem, answer.toString());
+        isCorrect = result.correct;
+        score = result.score;
+      }
+
+      const key = `${content.id}-${problemIndex}`;
+      const currentAttempts = attemptCounts[key] || 0;
+      const maxAttempts = problem.maxAttempts || Infinity;
+      const hasExceededMaxAttempts = currentAttempts > maxAttempts;
+      
+      // Apply half credit if exceeded max attempts and answer is correct
+      if (hasExceededMaxAttempts && isCorrect) {
+        score = Math.floor((problem.points || 1) / 2);
+      }
+
+      const answerData = {
+        studentId: userId,
+        classId: classId,
+        contentId: content.id,
+        problemIndex: problemIndex,
+        answer: answer?.toString() || '',
+        answerType: type,
+        correct: isCorrect,
+        score: score,
+        updatedAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+        studentName: userName,
+        studentEmail: userEmail,
+        questionId: problem.id || `problem-${problemIndex}`,
+        questionText: problem.question || 'Question not available',
+        problemType: problem.type,
+        problemPoints: problem.points || 1,
+        contentTitle: content.title || 'Untitled Content',
+        status: isSubmitted ? "submitted" : "in-progress",
+        submitted: isSubmitted,
+        submittedAt: isSubmitted ? serverTimestamp() : null,
+        isHalfCredit: hasExceededMaxAttempts && isCorrect
+      };
+
+      const docId = `${content.id}_${userId}_problem-${problemIndex}`;
+      const answerRef = doc(db, 'student-answers', classId, 'answers', docId);
+      await setDoc(answerRef, answerData, { merge: true });
+
+      // Update local state
+      const newKey = `${content.id}-${problemIndex}`;
+      setProblemScores(prev => ({ ...prev, [newKey]: score }));
+      setProblemStatuses(prev => ({ ...prev, [problemIndex]: isCorrect ? 'correct' : 'incorrect' }));
+      setTotalScore(prev => {
+        const oldScore = prev - (problemScores[newKey] || 0);
+        return oldScore + score;
+      });
+    } catch (error) {
+      console.error('Error saving answer:', error);
+      toast({
+        title: "Error saving answer",
+        description: "There was a problem saving your answer. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSubmitProblem = async (problemIndex: number) => {
+    if (!content?.problems || !user) return;
+
+    const problem = content.problems[problemIndex];
+    const key = `${content.id}-${problemIndex}`;
+    
+    const currentAttempts = attemptCounts[key] || 0;
+    const maxAttempts = problem.maxAttempts || Infinity;
+    const newAttemptCount = currentAttempts + 1;
+    
+    setAttemptCounts(prev => ({
+      ...prev,
+      [key]: newAttemptCount
+    }));
+
+    let answer: string | number = '';
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (problem.type === "multiple-choice") {
+      const selectedOption = userAnswers[content.id]?.[problemIndex];
+      if (selectedOption === undefined || selectedOption === null) {
+        toast({
+          title: "No answer selected",
+          description: "Please select an answer before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      answer = selectedOption;
+      result = {
+        correct: selectedOption === problem.correctAnswer,
+        score: selectedOption === problem.correctAnswer ? (problem.points || 1) : 0
+      };
+    } else if (problem.type === "math-expression") {
+      answer = mathExpressionInputs[content.id]?.[problemIndex] || "";
+      if (!answer) {
+        toast({
+          title: "No answer provided",
+          description: "Please enter an answer before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      result = gradeMathExpression(problem, answer);
+    } else if (problem.type === "open-ended") {
+      answer = openEndedAnswers[content.id]?.[problemIndex] || "";
+      if (!answer) {
+        toast({
+          title: "No answer provided",
+          description: "Please enter an answer before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      result = gradeOpenEnded(problem, answer);
+    }
+
+    const hasExceededMaxAttempts = newAttemptCount > maxAttempts;
+    let finalScore = result.score;
+    
+    if (hasExceededMaxAttempts && result.correct) {
+      finalScore = Math.floor((problem.points || 1) / 2);
+    }
+
+    const isHalfCredit = hasExceededMaxAttempts && result.correct;
+
+    setSubmittedProblems(prev => ({
+      ...prev,
+      [key]: { isSubmitted: true, score: finalScore }
+    }));
+
+    setProblemState(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        submitted: true,
+        score: finalScore,
+        isHalfCredit: isHalfCredit
+      }
+    }));
+
+    await sendRealTimeUpdate(problemIndex, answer, problem.type, problem, true);
+
+    toast({
+      title: result.correct ? "Correct!" : "Incorrect",
+      description: isHalfCredit 
+        ? `You received ${finalScore} points (half credit for exceeding max attempts).`
+        : `You received ${finalScore} out of ${problem.points || 1} points.`,
+      variant: result.correct ? "default" : "destructive",
+    });
+  };
+
+  const isProblemSubmitted = (problemIndex: number): boolean => {
+    if (!content?.id) return false;
+    const key = `${content.id}-${problemIndex}`;
+    const submitted = submittedProblems[key];
+    return typeof submitted === 'boolean' 
+      ? submitted 
+      : (submitted && typeof submitted === 'object' ? submitted.isSubmitted : false) 
+      || problemState[key]?.submitted 
+      || false;
+  };
+
+  const getProblemScore = (problemIndex: number): number => {
+    if (!content?.id) return 0;
+    const key = `${content.id}-${problemIndex}`;
+    return problemScores[key] || problemState[key]?.score || submittedProblems[key]?.score || 0;
+  };
+
+  const renderLatex = (text: string) => {
+    if (!text) return "";
+    const parts = text.split(/(\$\$.*?\$\$|\$.*?\$)/g);
+    if (parts.length === 1) return text;
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (!part) return null;
+          if (part.startsWith("$$") && part.endsWith("$$")) {
+            const latex = part.slice(2, -2).trim();
+            try {
+              return <BlockMath key={index} math={latex} />;
+            } catch (error) {
+              return <span key={index}>{part}</span>;
+            }
+          } else if (part.startsWith("$") && part.endsWith("$")) {
+            const latex = part.slice(1, -1).trim();
+            try {
+              return <InlineMath key={index} math={latex} />;
+            } catch (error) {
+              return <span key={index}>{part}</span>;
+            }
+          }
+          return <span key={index}>{part}</span>;
+        })}
+      </>
+    );
   };
 
   const navigation = [
@@ -159,6 +642,7 @@ const AssignmentDetailPage: React.FC = () => {
   const problems = content.problems || [];
   const maxPoints = problems.reduce((sum, p) => sum + (p.points || 1), 0);
   const percentage = maxPoints > 0 ? Math.round((totalScore / maxPoints) * 100) : 0;
+  const currentProblem = problems[currentProblemIndex];
 
   return (
     <div className="flex min-h-screen">
@@ -177,27 +661,25 @@ const AssignmentDetailPage: React.FC = () => {
           )}
         </div>
 
-        {/* Score Display */}
-        <div className="mb-8 flex items-center justify-between">
+        {/* Score Display - Simple text, no circle */}
+        <div className="mb-8">
           <div className="flex items-center gap-4">
-            <div className="text-right">
+    <div>
               <p className="text-sm text-muted-foreground">Your Score</p>
               <p className="text-4xl font-bold">{percentage}</p>
-            </div>
-            <div className="w-32 h-32 rounded-full border-4 border-green-500 flex items-center justify-center bg-green-50">
-              <span className="text-2xl font-bold text-green-700">{percentage}</span>
             </div>
           </div>
         </div>
 
-        {/* Problem Boxes Grid */}
+        {/* Problem Boxes Grid - Numbers instead of letters */}
         <div className="mb-8">
           <h2 className="text-xl font-semibold mb-4">Problems</h2>
           <div className="grid grid-cols-5 gap-4">
             {problems.map((problem, index) => {
               const status = problemStatuses[index] || 'pending';
-              const score = problemScores[index] || 0;
+              const score = getProblemScore(index);
               const isCorrect = status === 'correct';
+              const isSubmitted = isProblemSubmitted(index);
               
               return (
                 <button
@@ -206,11 +688,11 @@ const AssignmentDetailPage: React.FC = () => {
                   className={`
                     relative p-4 rounded-lg border-2 transition-all
                     ${currentProblemIndex === index ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'}
-                    ${isCorrect ? 'bg-green-50 border-green-300' : status === 'incorrect' ? 'bg-red-50 border-red-300' : 'bg-white'}
+                    ${isCorrect && isSubmitted ? 'bg-green-50 border-green-300' : status === 'incorrect' && isSubmitted ? 'bg-red-50 border-red-300' : 'bg-white'}
                     hover:shadow-md
                   `}
                 >
-                  {isCorrect && (
+                  {isCorrect && isSubmitted && (
                     <div className="absolute top-1 left-1">
                       <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -218,8 +700,8 @@ const AssignmentDetailPage: React.FC = () => {
                     </div>
                   )}
                   <div className="text-center">
-                    <p className="text-sm font-medium text-gray-700">
-                      {String.fromCharCode(97 + index)} {/* a, b, c, etc. */}
+                    <p className="text-lg font-bold text-gray-700">
+                      {index + 1}
                     </p>
                     {score > 0 && (
                       <p className="text-xs text-gray-500 mt-1">{score}/{problem.points || 1}</p>
@@ -231,32 +713,197 @@ const AssignmentDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Current Problem View */}
-        {problems.length > 0 && (
+        {/* Current Problem View with Submission Interface */}
+        {currentProblem && (
           <Card>
             <CardHeader>
               <CardTitle>Problem {currentProblemIndex + 1}</CardTitle>
               <CardDescription>
-                {problems[currentProblemIndex].question}
+                {renderLatex(currentProblem.question)}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Points: {problems[currentProblemIndex].points || 1}
-                </p>
-                {problemScores[currentProblemIndex] !== undefined && (
-                  <div>
-                    <Badge variant={problemStatuses[currentProblemIndex] === 'correct' ? 'default' : 'destructive'}>
-                      Score: {problemScores[currentProblemIndex]}/{problems[currentProblemIndex].points || 1}
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Points: {currentProblem.points || 1}
+                  </p>
+                  {currentProblem.maxAttempts && currentProblem.maxAttempts !== Infinity && (
+                    <p className="text-xs text-muted-foreground">
+                      {(() => {
+                        const key = `${content.id}-${currentProblemIndex}`;
+                        const currentAttempts = attemptCounts[key] || 0;
+                        const remaining = currentProblem.maxAttempts - currentAttempts;
+                        return remaining > 0 
+                          ? `Attempts remaining: ${remaining}`
+                          : 'Maximum attempts reached';
+                      })()}
+                    </p>
+                  )}
+                  {isProblemSubmitted(currentProblemIndex) && (
+                    <Badge variant={getProblemScore(currentProblemIndex) === (currentProblem.points || 1) ? 'default' : 'destructive'}>
+                      Score: {getProblemScore(currentProblemIndex)}/{currentProblem.points || 1}
                     </Badge>
+                  )}
+                </div>
+
+                {currentProblem.type === "multiple-choice" && (
+                  <div className="space-y-3">
+                    <RadioGroup
+                      value={userAnswers[content.id]?.[currentProblemIndex]?.toString()}
+                      onValueChange={(value) =>
+                        handleMultipleChoiceSelect(currentProblemIndex, parseInt(value))
+                      }
+                      disabled={getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit}
+                    >
+                      {currentProblem.options?.map((option, optionIndex) => (
+                        <div key={optionIndex} className="flex items-center space-x-2">
+                          <RadioGroupItem
+                            value={optionIndex.toString()}
+                            id={`option-${currentProblemIndex}-${optionIndex}`}
+                          />
+                          <Label
+                            htmlFor={`option-${currentProblemIndex}-${optionIndex}`}
+                            className="flex-1 cursor-pointer"
+                          >
+                            {renderLatex(option || '')}
+                          </Label>
+                          {isProblemSubmitted(currentProblemIndex) && optionIndex === currentProblem.correctAnswer && (
+                            <CheckCircle2 className="w-4 h-4 ml-auto text-green-500" />
+                          )}
+                          {isProblemSubmitted(currentProblemIndex) &&
+                            userAnswers[content.id]?.[currentProblemIndex] === optionIndex &&
+                            optionIndex !== currentProblem.correctAnswer && (
+                              <AlertCircle className="w-4 h-4 ml-auto text-red-500" />
+                            )}
+                        </div>
+                      ))}
+                    </RadioGroup>
+                    {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
+                      <Button
+                        onClick={() => handleSubmitProblem(currentProblemIndex)}
+                        className="w-full"
+                        disabled={userAnswers[content.id]?.[currentProblemIndex] === undefined}
+                        variant={(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "secondary" : "default";
+                        })()}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "Submit for Half Credit" : "Submit Answer";
+                        })()}
+                      </Button>
+                    )}
                   </div>
                 )}
-                <Button asChild>
-                  <Link href={`/student/curriculum/${classId}?content=${contentId}&problem=${currentProblemIndex}`}>
-                    View Problem
-                  </Link>
-                </Button>
+
+                {currentProblem.type === "math-expression" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col space-y-2">
+                      <Label htmlFor={`math-answer-${currentProblemIndex}`}>Your Answer:</Label>
+                      <Input
+                        id={`math-answer-${currentProblemIndex}`}
+                        value={mathExpressionInputs[content.id]?.[currentProblemIndex] || ""}
+                        onChange={(e) => handleMathExpressionInput(currentProblemIndex, e.target.value)}
+                        placeholder="Enter your answer (e.g., 2x + 3 or 7)"
+                        disabled={getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit}
+                        className="flex-1"
+                      />
+                    </div>
+                    {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
+                      <Button
+                        onClick={() => handleSubmitProblem(currentProblemIndex)}
+                        className="w-full"
+                        disabled={!mathExpressionInputs[content.id]?.[currentProblemIndex]}
+                        variant={(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "secondary" : "default";
+                        })()}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "Submit for Half Credit" : "Submit Answer";
+                        })()}
+                      </Button>
+                    )}
+                    {isProblemSubmitted(currentProblemIndex) && (
+                      <div className="p-3 bg-muted rounded-md space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Your Answer:</span>
+                          <span className="text-sm">{mathExpressionInputs[content.id]?.[currentProblemIndex] || 'No answer'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Score:</span>
+                          <span className="text-sm font-semibold">
+                            {getProblemScore(currentProblemIndex)} / {currentProblem.points || 1} points
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {currentProblem.type === "open-ended" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col space-y-2">
+                      <Label htmlFor={`open-ended-answer-${currentProblemIndex}`}>Your Answer:</Label>
+                      <Input
+                        id={`open-ended-answer-${currentProblemIndex}`}
+                        value={openEndedAnswers[content.id]?.[currentProblemIndex] || ""}
+                        onChange={(e) => handleOpenEndedInput(currentProblemIndex, e.target.value)}
+                        placeholder="Enter your answer"
+                        disabled={getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit}
+                        className="flex-1"
+                      />
+                    </div>
+                    {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
+                      <Button
+                        onClick={() => handleSubmitProblem(currentProblemIndex)}
+                        className="w-full"
+                        disabled={!openEndedAnswers[content.id]?.[currentProblemIndex]}
+                        variant={(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "secondary" : "default";
+                        })()}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "Submit for Half Credit" : "Submit Answer";
+                        })()}
+                      </Button>
+                    )}
+                    {isProblemSubmitted(currentProblemIndex) && (
+                      <div className="p-3 bg-muted rounded-md space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Your Answer:</span>
+                          <span className="text-sm">{openEndedAnswers[content.id]?.[currentProblemIndex] || 'No answer'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Score:</span>
+                          <span className="text-sm font-semibold">
+                            {getProblemScore(currentProblemIndex)} / {currentProblem.points || 1} points
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
