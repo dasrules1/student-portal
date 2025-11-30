@@ -1326,9 +1326,11 @@ export default function TeacherCurriculum() {
                         }}
                       >
                         <div className="flex flex-col items-start flex-1">
+                          <span className="flex items-center"                      >
+                        <div className="flex flex-col items-start flex-1">
                           <span className="flex items-center">
-                        <span className="mr-2">{index + 1}.</span>
-                        {lesson.title || `Lesson ${index + 1}`}
+                            <span className="mr-2">{index + 1}.</span>
+                            {lesson.title || `Lesson ${index + 1}`}
                           </span>
                           {lesson.topic && (
                             <span className="text-xs text-muted-foreground mt-1 ml-4">
