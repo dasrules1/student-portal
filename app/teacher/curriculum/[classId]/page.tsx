@@ -65,6 +65,8 @@ import { db } from '@/lib/firebase';
 import { ref, onValue, set } from 'firebase/database';
 import { realtimeDb } from '@/lib/firebase';
 import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
+import 'katex/dist/katex.min.css';
+import { InlineMath, BlockMath } from 'react-katex';
 
 // Add interface definitions for types
 interface Class {
@@ -574,33 +576,134 @@ export default function TeacherCurriculum() {
     };
   }, [activeContent?.id, classId]);
 
-  // Function to render LaTeX in the UI
-  const renderLatex = (text) => {
+  // Function to render LaTeX in the UI with proper formatting support
+  const renderLatex = (text: string) => {
     if (!text) return ""
 
-    // Simple regex to identify LaTeX-like content between $$ delimiters
-    const parts = text.split(/(\$\$.*?\$\$)/g)
-
-    if (parts.length === 1) return text
-
+    // Process markdown-like formatting: **bold**, *italic*, - bullets
+    let processed = text
+    
+    // Split by LaTeX blocks ($$...$$) first
+    const latexBlockRegex = /(\$\$[\s\S]*?\$\$)/g
+    const parts: Array<{ type: 'text' | 'latex-block' | 'latex-inline', content: string }> = []
+    let lastIndex = 0
+    let match
+    
+    // Find all LaTeX blocks
+    const latexBlocks: Array<{ start: number, end: number, content: string }> = []
+    while ((match = latexBlockRegex.exec(text)) !== null) {
+      latexBlocks.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        content: match[1]
+      })
+    }
+    
+    // Find inline LaTeX ($...$)
+    const inlineLatexRegex = /(\$[^$\n]+?\$)/g
+    const inlineLatex: Array<{ start: number, end: number, content: string }> = []
+    while ((match = inlineLatexRegex.exec(text)) !== null) {
+      inlineLatex.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        content: match[1]
+      })
+    }
+    
+    // Combine and sort all LaTeX matches
+    const allLatex = [...latexBlocks.map(b => ({ ...b, isBlock: true })), ...inlineLatex.map(i => ({ ...i, isBlock: false }))]
+      .sort((a, b) => a.start - b.start)
+    
+    // Build parts array
+    let currentIndex = 0
+    const result: Array<{ type: 'text' | 'latex-block' | 'latex-inline', content: string }> = []
+    
+    for (const latex of allLatex) {
+      // Add text before LaTeX
+      if (latex.start > currentIndex) {
+        const textContent = text.substring(currentIndex, latex.start)
+        if (textContent) {
+          result.push({ type: 'text', content: textContent })
+        }
+      }
+      
+      // Add LaTeX
+      if (latex.isBlock) {
+        const latexContent = latex.content.slice(2, -2) // Remove $$
+        result.push({ type: 'latex-block', content: latexContent })
+      } else {
+        const latexContent = latex.content.slice(1, -1) // Remove $
+        result.push({ type: 'latex-inline', content: latexContent })
+      }
+      
+      currentIndex = latex.end
+    }
+    
+    // Add remaining text
+    if (currentIndex < text.length) {
+      result.push({ type: 'text', content: text.substring(currentIndex) })
+    }
+    
+    // If no LaTeX found, return original text with formatting
+    if (result.length === 0 || (result.length === 1 && result[0].type === 'text')) {
+      return formatText(text)
+    }
+    
+    // Render with LaTeX
     return (
       <>
-        {parts.map((part, index) => {
-          if (part.startsWith("$$") && part.endsWith("$$")) {
-            const latex = part.slice(2, -2)
-            return (
-              <span
-                key={index}
-                className="inline-block px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-sm"
-              >
-                {latex}
-              </span>
-            )
+        {result.map((part, index) => {
+          if (part.type === 'latex-block') {
+            try {
+              return <BlockMath key={index} math={part.content} />
+            } catch (e) {
+              return <span key={index} className="text-red-500">LaTeX Error: {part.content}</span>
+            }
+          } else if (part.type === 'latex-inline') {
+            try {
+              return <InlineMath key={index} math={part.content} />
+            } catch (e) {
+              return <span key={index} className="text-red-500">LaTeX Error: {part.content}</span>
+            }
+          } else {
+            return <span key={index}>{formatText(part.content)}</span>
           }
-          return part
         })}
       </>
     )
+  }
+  
+  // Helper function to format text (bold, italic, bullets)
+  const formatText = (text: string) => {
+    // Process **bold**
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Process *italic*
+    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Process - bullets (convert to list)
+    const lines = text.split('\n')
+    const formattedLines = lines.map((line, index) => {
+      if (line.trim().startsWith('- ')) {
+        return `<li key="${index}">${line.trim().substring(2)}</li>`
+      }
+      return line
+    })
+    
+    // Check if we have any list items
+    const hasList = formattedLines.some(line => line.startsWith('<li'))
+    if (hasList) {
+      return (
+        <div>
+          {formattedLines.map((line, index) => {
+            if (line.startsWith('<li')) {
+              return <ul key={index} className="list-disc list-inside my-2"><li dangerouslySetInnerHTML={{ __html: line.replace(/<li key="\d+">(.+?)<\/li>/, '$1') }} /></ul>
+            }
+            return <div key={index} dangerouslySetInnerHTML={{ __html: line }} />
+          })}
+        </div>
+      )
+    }
+    
+    return <span dangerouslySetInnerHTML={{ __html: text }} />
   }
 
   // Handle publishing content
@@ -1222,8 +1325,17 @@ export default function TeacherCurriculum() {
                           setActiveContent(null)
                         }}
                       >
+                        <div className="flex flex-col items-start flex-1">
+                          <span className="flex items-center">
                         <span className="mr-2">{index + 1}.</span>
                         {lesson.title || `Lesson ${index + 1}`}
+                          </span>
+                          {lesson.topic && (
+                            <span className="text-xs text-muted-foreground mt-1 ml-4">
+                              Topic: {lesson.topic}
+                            </span>
+                          )}
+                        </div>
                         {hasContent && (
                           <Badge variant="secondary" className="ml-auto">
                             {lesson.contents.length}
@@ -1375,6 +1487,7 @@ export default function TeacherCurriculum() {
                       <Tabs value={activeTab} onValueChange={setActiveTab}>
                         <TabsList>
                           <TabsTrigger value="content">Content</TabsTrigger>
+                          <TabsTrigger value="teachers-instructions">Teacher's Instructions</TabsTrigger>
                           <TabsTrigger value="progress">Student Progress</TabsTrigger>
                         </TabsList>
                         <TabsContent value="content">
@@ -1385,12 +1498,23 @@ export default function TeacherCurriculum() {
                             </div>
                           ) : (
                             <div className="p-4 border rounded-lg">
-                              <p>{renderLatex(activeContent.description)}</p>
+                              <p>{renderLatex(activeContent.description || '')}</p>
                               <p className="mt-4 text-sm text-muted-foreground">
                                 This content doesn't have any problems to solve.
                               </p>
                             </div>
                           )}
+                        </TabsContent>
+                        <TabsContent value="teachers-instructions">
+                          <div className="p-4 border rounded-lg">
+                            {activeContent.teachersInstructions ? (
+                              <div className="prose max-w-none">
+                                {renderLatex(activeContent.teachersInstructions)}
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground">No teacher instructions provided for this content.</p>
+                            )}
+                          </div>
                         </TabsContent>
                         <TabsContent value="progress">
                           <StudentProgressTable />
@@ -1461,13 +1585,13 @@ export default function TeacherCurriculum() {
                 <div key={index} className="p-4 border rounded-lg space-y-3">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
-                      <h3 className="font-medium">Problem {index + 1}</h3>
+                    <h3 className="font-medium">Problem {index + 1}</h3>
                       <p className="text-sm text-muted-foreground mt-1">{renderLatex(problem.question)}</p>
-                    </div>
-                    <Badge variant="outline">
-                      {maxPoints} {maxPoints === 1 ? 'point' : 'points'}
-                    </Badge>
                   </div>
+                  <Badge variant="outline">
+                      {maxPoints} {maxPoints === 1 ? 'point' : 'points'}
+                  </Badge>
+                </div>
 
                   {answer && (
                     <div className="p-3 bg-muted rounded-md">
@@ -1476,11 +1600,11 @@ export default function TeacherCurriculum() {
                         <span className={answer.correct ? "text-green-600" : "text-red-600"}>
                           {answer.answer || 'No answer'}
                         </span>
-                      </div>
+                  </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         Current Score: {answer.score || 0}/{maxPoints}
-                      </div>
-                    </div>
+                  </div>
+                </div>
                   )}
 
                   <div className="space-y-2">
@@ -1561,19 +1685,19 @@ export default function TeacherCurriculum() {
                   )}%
                 </span>
               </div>
-            </div>
+                  </div>
 
-            <div>
+                  <div>
               <Label htmlFor="override-feedback">Overall Feedback (Optional)</Label>
-              <Textarea
+                    <Textarea
                 id="override-feedback"
                 value={overrideFeedback}
                 onChange={(e) => setOverrideFeedback(e.target.value)}
                 placeholder="Provide overall feedback to the student"
                 rows={3}
-                className="mt-1"
-              />
-            </div>
+                      className="mt-1"
+                    />
+                  </div>
           </div>
 
           <AlertDialogFooter>

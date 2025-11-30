@@ -4,6 +4,9 @@ import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Search } from "lucide-react"
 import { persistentStorage } from "@/lib/persistentStorage" // Use persistentStorage instead of storage
 import { storage } from "@/lib/storage" // Add storage import
 
@@ -18,6 +21,8 @@ export default function ClassEnrollment() {
   const [unenrolledStudents, setUnenrolledStudents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     // Get class data
@@ -134,8 +139,22 @@ export default function ClassEnrollment() {
 
   const handleUnenrollStudent = async (studentId: string) => {
     try {
-      // Use the dedicated unenrollment method instead of manual updates
-      const success = await storage.unenrollStudent(classId, studentId);
+      // Use persistentStorage for unenrollment
+      const success = persistentStorage.unenrollStudent(classId, studentId);
+      
+      // Also update in main storage if needed
+      try {
+        const classToUpdate = await storage.getClassById(classId);
+        if (classToUpdate && classToUpdate.enrolledStudents) {
+          const updatedEnrolledStudents = classToUpdate.enrolledStudents.filter((id: string) => id !== studentId);
+          await storage.updateClass(classId, { 
+            enrolledStudents: updatedEnrolledStudents,
+            students: updatedEnrolledStudents.length
+          });
+        }
+      } catch (storageErr) {
+        console.error("Error updating main storage:", storageErr);
+      }
       
       if (!success) {
         throw new Error("Unenrollment failed");
@@ -161,6 +180,32 @@ export default function ClassEnrollment() {
       setError("Failed to unenroll student")
     }
   }
+
+  const handleBulkEnroll = async () => {
+    if (selectedStudents.size === 0) return
+    
+    try {
+      const enrollPromises = Array.from(selectedStudents).map(studentId => 
+        storage.enrollStudent(classId, studentId)
+      )
+      
+      await Promise.all(enrollPromises)
+      
+      // Update UI
+      const studentsToEnroll = unenrolledStudents.filter(s => selectedStudents.has(s.id))
+      setEnrolledStudents([...enrolledStudents, ...studentsToEnroll])
+      setUnenrolledStudents(unenrolledStudents.filter(s => !selectedStudents.has(s.id)))
+      setSelectedStudents(new Set())
+    } catch (err) {
+      console.error("Error bulk enrolling students:", err)
+      setError("Failed to enroll some students")
+    }
+  }
+
+  const filteredUnenrolledStudents = unenrolledStudents.filter(student =>
+    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.email.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   if (loading) {
     return (
@@ -236,14 +281,48 @@ export default function ClassEnrollment() {
         </div>
 
         <div>
-          <h2 className="text-2xl font-semibold mb-4">Available Students ({unenrolledStudents.length})</h2>
-          {unenrolledStudents.length > 0 ? (
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-semibold">Available Students ({filteredUnenrolledStudents.length})</h2>
+            {selectedStudents.size > 0 && (
+              <Button onClick={handleBulkEnroll} size="sm">
+                Enroll Selected ({selectedStudents.size})
+              </Button>
+            )}
+          </div>
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <Input
+                placeholder="Search students by name or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          {filteredUnenrolledStudents.length > 0 ? (
             <div className="space-y-4">
-              {unenrolledStudents.map((student) => (
+              {filteredUnenrolledStudents.map((student) => (
                 <Card key={student.id}>
                   <CardHeader className="pb-2">
-                    <CardTitle>{student.name}</CardTitle>
-                    <CardDescription>{student.email}</CardDescription>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        checked={selectedStudents.has(student.id)}
+                        onCheckedChange={(checked) => {
+                          const newSelected = new Set(selectedStudents)
+                          if (checked) {
+                            newSelected.add(student.id)
+                          } else {
+                            newSelected.delete(student.id)
+                          }
+                          setSelectedStudents(newSelected)
+                        }}
+                      />
+                      <div className="flex-1">
+                        <CardTitle>{student.name}</CardTitle>
+                        <CardDescription>{student.email}</CardDescription>
+                      </div>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <Button size="sm" onClick={() => handleEnrollStudent(student.id)}>
@@ -254,7 +333,9 @@ export default function ClassEnrollment() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500">No available students to enroll.</p>
+            <p className="text-gray-500">
+              {searchTerm ? "No students match your search." : "No available students to enroll."}
+            </p>
           )}
         </div>
       </div>

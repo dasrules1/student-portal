@@ -70,10 +70,12 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [isAddingLesson, setIsAddingLesson] = useState(false)
   const [newLessonTitle, setNewLessonTitle] = useState("")
   const [newLessonDescription, setNewLessonDescription] = useState("")
+  const [newLessonTopic, setNewLessonTopic] = useState("")
   const [isAddingContent, setIsAddingContent] = useState(false)
   const [newContentType, setNewContentType] = useState("new-material")
   const [newContentTitle, setNewContentTitle] = useState("")
   const [newContentDescription, setNewContentDescription] = useState("")
+  const [newContentTeachersInstructions, setNewContentTeachersInstructions] = useState("")
   const [isAddingProblem, setIsAddingProblem] = useState(false)
   const [newProblemType, setNewProblemType] = useState("multiple-choice")
   const [newProblemQuestion, setNewProblemQuestion] = useState("")
@@ -81,7 +83,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [newProblemCorrectAnswer, setNewProblemCorrectAnswer] = useState(0)
   const [newProblemCorrectAnswers, setNewProblemCorrectAnswers] = useState<string[]>([])
   const [newProblemExplanation, setNewProblemExplanation] = useState("")
-  const [newProblemPoints, setNewProblemPoints] = useState(10)
+  const [newProblemPoints, setNewProblemPoints] = useState(3)
   const [newProblemKeywords, setNewProblemKeywords] = useState<string[]>([])
   const [newKeyword, setNewKeyword] = useState("")
   const [newProblemAllowPartialCredit, setNewProblemAllowPartialCredit] = useState(false)
@@ -338,6 +340,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       id: newLessonId,
       title: newLessonTitle,
       description: newLessonDescription,
+      topic: newLessonTopic,
       contents: [],
     }
     
@@ -365,6 +368,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setIsAddingLesson(false)
     setNewLessonTitle("")
     setNewLessonDescription("")
+    setNewLessonTopic("")
 
     // Save to storage
     setTimeout(() => {
@@ -395,6 +399,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       type: newContentType,
       title: newContentTitle,
       description: newContentDescription,
+      teachersInstructions: newContentTeachersInstructions,
       problems: [],
       isPublished: false,
     }
@@ -418,6 +423,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setIsAddingContent(false)
     setNewContentTitle("")
     setNewContentDescription("")
+    setNewContentTeachersInstructions("")
 
     // Save to storage
     saveCurriculum()
@@ -438,6 +444,21 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         variant: "destructive",
       })
       return
+    }
+
+    // Get the current content to determine its type for default attempts
+    const currentContent = curriculum.lessons
+      .find((l: any) => l.id === activeLesson)
+      ?.contents?.find((c: any) => c.id === activeContent)
+    
+    // Set default attempts based on content type if not already set
+    if (newProblemMaxAttempts === null && currentContent) {
+      const contentType = currentContent.type
+      if (contentType === "test" || contentType === "quiz") {
+        setNewProblemMaxAttempts(1)
+      } else {
+        setNewProblemMaxAttempts(5)
+      }
     }
 
     // Validate based on problem type
@@ -491,9 +512,21 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       newProblem.allowPartialCredit = newProblemAllowPartialCredit
     }
 
-    // Add max attempts if specified
+    // Add max attempts - use default if not specified
+    const currentContent = curriculum.lessons
+      .find((l: any) => l.id === activeLesson)
+      ?.contents?.find((c: any) => c.id === activeContent)
+    
     if (newProblemMaxAttempts !== null && newProblemMaxAttempts > 0) {
       newProblem.maxAttempts = newProblemMaxAttempts
+    } else if (currentContent) {
+      // Set default based on content type
+      const contentType = currentContent.type
+      if (contentType === "test" || contentType === "quiz") {
+        newProblem.maxAttempts = 1
+      } else {
+        newProblem.maxAttempts = 5
+      }
     }
 
     const updatedCurriculum = {
@@ -539,12 +572,21 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setNewProblemCorrectAnswer(0)
     setNewProblemCorrectAnswers([])
     setNewProblemExplanation("")
-    setNewProblemPoints(10)
+    setNewProblemPoints(3) // Default points
     setNewProblemKeywords([])
     setNewKeyword("")
     setNewProblemAllowPartialCredit(false)
     setNewProblemTolerance(0.01)
-    setNewProblemMaxAttempts(null)
+    // Set default attempts based on content type
+    const currentContent = curriculum.lessons
+      .find((l: any) => l.id === activeLesson)
+      ?.contents?.find((c: any) => c.id === activeContent)
+    if (currentContent) {
+      const contentType = currentContent.type
+      setNewProblemMaxAttempts(contentType === "test" || contentType === "quiz" ? 1 : 5)
+    } else {
+      setNewProblemMaxAttempts(5)
+    }
   }
 
   // Update lesson
@@ -857,14 +899,27 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="lesson-topic">Topic (Visible to Teachers)</Label>
+                      <Input
+                        id="lesson-topic"
+                        value={newLessonTopic}
+                        onChange={(e) => setNewLessonTopic(e.target.value)}
+                        placeholder="Enter lesson topic (e.g., Linear Equations)"
+                      />
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="lesson-description">Description (Optional)</Label>
                       <Textarea
                         id="lesson-description"
                         value={newLessonDescription}
                         onChange={(e) => setNewLessonDescription(e.target.value)}
-                        placeholder="Enter lesson description"
-                        rows={3}
+                        placeholder="Enter lesson description (supports basic formatting)"
+                        rows={6}
+                        className="font-mono text-sm"
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                      </p>
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-between">
@@ -903,13 +958,28 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                             <Trash2 className="w-4 h-4 text-red-500" />
                           </Button>
                         </div>
-                        <Textarea
-                          value={currentLesson?.description || ""}
-                          onChange={(e) => updateLesson(activeLesson, "description", e.target.value)}
-                          placeholder="Enter lesson description"
-                          className="text-muted-foreground"
-                          rows={2}
-                        />
+                        <div className="space-y-2">
+                          <Label htmlFor="lesson-topic-edit">Topic (Visible to Teachers)</Label>
+                          <Input
+                            id="lesson-topic-edit"
+                            value={currentLesson?.topic || ""}
+                            onChange={(e) => updateLesson(activeLesson, "topic", e.target.value)}
+                            placeholder="Enter lesson topic"
+                            className="mb-2"
+                          />
+                          <Label htmlFor="lesson-description-edit">Description</Label>
+                          <Textarea
+                            id="lesson-description-edit"
+                            value={currentLesson?.description || ""}
+                            onChange={(e) => updateLesson(activeLesson, "description", e.target.value)}
+                            placeholder="Enter lesson description (supports basic formatting)"
+                            className="text-muted-foreground font-mono text-sm"
+                            rows={6}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                          </p>
+                        </div>
                       </div>
                       <div className="flex items-center space-x-2">
                         <div className="flex items-center space-x-2">
@@ -1018,6 +1088,20 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                                 rows={3}
                               />
                             </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="content-teachers-instructions">Teacher's Instructions (Visible to Teachers Only)</Label>
+                              <Textarea
+                                id="content-teachers-instructions"
+                                value={newContentTeachersInstructions}
+                                onChange={(e) => setNewContentTeachersInstructions(e.target.value)}
+                                placeholder="Enter instructions for teachers (supports basic formatting)"
+                                rows={8}
+                                className="font-mono text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                              </p>
+                            </div>
                           </CardContent>
                           <CardFooter className="flex justify-between">
                             <Button variant="outline" onClick={() => setIsAddingContent(false)}>
@@ -1057,10 +1141,27 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                           <Textarea
                             value={currentContent.description || ""}
                             onChange={(e) => updateContent(activeLesson, activeContent, "description", e.target.value)}
-                            placeholder="Enter content description"
-                            className="text-muted-foreground"
-                            rows={2}
+                            placeholder="Enter content description (supports basic formatting)"
+                            className="text-muted-foreground font-mono text-sm"
+                            rows={4}
                           />
+                          <p className="text-xs text-muted-foreground">
+                            Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                          </p>
+                          <div className="mt-4 space-y-2">
+                            <Label htmlFor="content-teachers-instructions-edit">Teacher's Instructions (Visible to Teachers Only)</Label>
+                            <Textarea
+                              id="content-teachers-instructions-edit"
+                              value={currentContent.teachersInstructions || ""}
+                              onChange={(e) => updateContent(activeLesson, activeContent, "teachersInstructions", e.target.value)}
+                              placeholder="Enter instructions for teachers (supports basic formatting)"
+                              className="font-mono text-sm"
+                              rows={8}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                            </p>
+                          </div>
                         </div>
                         <div className="flex items-center space-x-2">
                           <div className="flex items-center space-x-2">

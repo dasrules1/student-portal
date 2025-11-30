@@ -656,7 +656,7 @@ export default function AdminDashboard() {
                               </div>
                               <div className="flex items-center">
                                 <Badge variant={cls.status === "active" ? "default" : "secondary"} className="mr-4">
-                                  {cls.students} students
+                                  {cls.enrolledStudents && Array.isArray(cls.enrolledStudents) ? cls.enrolledStudents.length : (cls.students || 0)} students
                                 </Badge>
                                 <div className="flex space-x-2">
                                   <Button variant="outline" size="sm" onClick={() => handleManageEnrollment(cls.id)}>
