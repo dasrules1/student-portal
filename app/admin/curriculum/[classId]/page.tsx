@@ -513,10 +513,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     }
 
     // Add max attempts - use default if not specified
-    const currentContent = curriculum.lessons
-      .find((l: any) => l.id === activeLesson)
-      ?.contents?.find((c: any) => c.id === activeContent)
-    
+    // currentContent is already defined above
     if (newProblemMaxAttempts !== null && newProblemMaxAttempts > 0) {
       newProblem.maxAttempts = newProblemMaxAttempts
     } else if (currentContent) {

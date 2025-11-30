@@ -576,17 +576,45 @@ export default function TeacherCurriculum() {
     };
   }, [activeContent?.id, classId]);
 
+  // Helper function to format text (bold, italic, bullets)
+  const formatText = (text: string) => {
+    // Process **bold**
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Process *italic*
+    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Process - bullets (convert to list)
+    const lines = text.split('\n')
+    const formattedLines = lines.map((line, index) => {
+      if (line.trim().startsWith('- ')) {
+        return `<li key="${index}">${line.trim().substring(2)}</li>`
+      }
+      return line
+    })
+    
+    // Check if we have any list items
+    const hasList = formattedLines.some(line => line.startsWith('<li'))
+    if (hasList) {
+      return (
+        <div>
+          {formattedLines.map((line, index) => {
+            if (line.startsWith('<li')) {
+              return <ul key={index} className="list-disc list-inside my-2"><li dangerouslySetInnerHTML={{ __html: line.replace(/<li key="\d+">(.+?)<\/li>/, '$1') }} /></ul>
+            }
+            return <div key={index} dangerouslySetInnerHTML={{ __html: line }} />
+          })}
+        </div>
+      )
+    }
+    
+    return <span dangerouslySetInnerHTML={{ __html: text }} />
+  }
+
   // Function to render LaTeX in the UI with proper formatting support
   const renderLatex = (text: string) => {
-    if (!text) return ""
+    if (!text) return <></>
 
-    // Process markdown-like formatting: **bold**, *italic*, - bullets
-    let processed = text
-    
     // Split by LaTeX blocks ($$...$$) first
     const latexBlockRegex = /(\$\$[\s\S]*?\$\$)/g
-    const parts: Array<{ type: 'text' | 'latex-block' | 'latex-inline', content: string }> = []
-    let lastIndex = 0
     let match
     
     // Find all LaTeX blocks
@@ -671,39 +699,6 @@ export default function TeacherCurriculum() {
         })}
       </>
     )
-  }
-  
-  // Helper function to format text (bold, italic, bullets)
-  const formatText = (text: string) => {
-    // Process **bold**
-    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Process *italic*
-    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Process - bullets (convert to list)
-    const lines = text.split('\n')
-    const formattedLines = lines.map((line, index) => {
-      if (line.trim().startsWith('- ')) {
-        return `<li key="${index}">${line.trim().substring(2)}</li>`
-      }
-      return line
-    })
-    
-    // Check if we have any list items
-    const hasList = formattedLines.some(line => line.startsWith('<li'))
-    if (hasList) {
-      return (
-        <div>
-          {formattedLines.map((line, index) => {
-            if (line.startsWith('<li')) {
-              return <ul key={index} className="list-disc list-inside my-2"><li dangerouslySetInnerHTML={{ __html: line.replace(/<li key="\d+">(.+?)<\/li>/, '$1') }} /></ul>
-            }
-            return <div key={index} dangerouslySetInnerHTML={{ __html: line }} />
-          })}
-        </div>
-      )
-    }
-    
-    return <span dangerouslySetInnerHTML={{ __html: text }} />
   }
 
   // Handle publishing content
@@ -1326,11 +1321,9 @@ export default function TeacherCurriculum() {
                         }}
                       >
                         <div className="flex flex-col items-start flex-1">
-                          <span className="flex items-center"                      >
-                        <div className="flex flex-col items-start flex-1">
                           <span className="flex items-center">
-                            <span className="mr-2">{index + 1}.</span>
-                            {lesson.title || `Lesson ${index + 1}`}
+                        <span className="mr-2">{index + 1}.</span>
+                        {lesson.title || `Lesson ${index + 1}`}
                           </span>
                           {lesson.topic && (
                             <span className="text-xs text-muted-foreground mt-1 ml-4">
