@@ -861,6 +861,9 @@ export default function StudentCurriculum() {
       result = gradeOpenEnded(problem, answer);
     }
 
+    // Check if they've already exceeded max attempts BEFORE this submission
+    const hasExceededMaxAttempts = currentAttempts >= maxAttempts;
+    
     // Increment attempt count
     const newAttemptCount = currentAttempts + 1;
     setAttemptCounts(prev => ({
@@ -868,10 +871,10 @@ export default function StudentCurriculum() {
       [key]: newAttemptCount
     }));
 
-    // If at max attempts and correct, apply half credit (penalty for exceeding attempts)
+    // If they've exceeded max attempts and get it correct, apply half credit (penalty for exceeding attempts)
     let finalScore = result.score;
     const isAtMaxAttempts = newAttemptCount >= maxAttempts;
-    if (isAtMaxAttempts && result.correct) {
+    if (hasExceededMaxAttempts && result.correct) {
       finalScore = Math.floor((problem.points || 1) / 2);
       result = { correct: true, score: finalScore };
     }
