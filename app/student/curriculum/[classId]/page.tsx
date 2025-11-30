@@ -861,19 +861,20 @@ export default function StudentCurriculum() {
       result = gradeOpenEnded(problem, answer);
     }
 
-    // Check if they've already exceeded max attempts BEFORE this submission
-    const hasExceededMaxAttempts = currentAttempts >= maxAttempts;
-    
-    // Increment attempt count
+    // Increment attempt count FIRST
     const newAttemptCount = currentAttempts + 1;
     setAttemptCounts(prev => ({
       ...prev,
       [key]: newAttemptCount
     }));
 
+    // Check if this attempt EXCEEDS max attempts (not equal to, but greater than)
+    // If maxAttempts = 3: attempts 1, 2, 3 get full credit; attempt 4+ gets half credit
+    const hasExceededMaxAttempts = newAttemptCount > maxAttempts;
+    const isAtMaxAttempts = newAttemptCount >= maxAttempts;
+
     // If they've exceeded max attempts and get it correct, apply half credit (penalty for exceeding attempts)
     let finalScore = result.score;
-    const isAtMaxAttempts = newAttemptCount >= maxAttempts;
     if (hasExceededMaxAttempts && result.correct) {
       finalScore = Math.floor((problem.points || 1) / 2);
       result = { correct: true, score: finalScore };
@@ -887,7 +888,7 @@ export default function StudentCurriculum() {
         submitted: true,
         score: finalScore,
         attempts: newAttemptCount,
-        isHalfCredit: isAtMaxAttempts && result.correct
+        isHalfCredit: hasExceededMaxAttempts && result.correct
       }
     }));
 
