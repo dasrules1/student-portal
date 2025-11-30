@@ -1511,7 +1511,7 @@ export default function StudentCurriculum() {
                                       onValueChange={(value) =>
                                         handleMultipleChoiceSelect(problemIndex, parseInt(value))
                                       }
-                                      disabled={isSubmitted}
+                                      disabled={problemScore === problem.points || isHalfCredit}
                                     >
                                       {problem.options?.map((option, optionIndex) => (
                                         <div key={optionIndex} className="flex items-center space-x-2">
@@ -1537,7 +1537,7 @@ export default function StudentCurriculum() {
                                         </div>
                                       ))}
                                     </RadioGroup>
-                                    {(!isSubmitted || isAtMaxAttempts) && (
+                                    {!(problemScore === problem.points || isHalfCredit) && (
                                       <Button
                                         onClick={() => handleSubmitProblem(problemIndex)}
                                         className="w-full"
@@ -1577,11 +1577,11 @@ export default function StudentCurriculum() {
                                           value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
                                           onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
                                           placeholder="Enter your answer (e.g., 2x + 3 or 7)"
-                                          disabled={isSubmitted && !isAtMaxAttempts}
+                                          disabled={problemScore === problem.points || isHalfCredit}
                                           className="flex-1"
                                         />
                                       </div>
-                                      {(!isSubmitted || isAtMaxAttempts) && (
+                                      {!(problemScore === problem.points || isHalfCredit) && (
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
@@ -1639,11 +1639,11 @@ export default function StudentCurriculum() {
                                         value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
                                         onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
                                           placeholder="Enter your answer"
-                                        disabled={isSubmitted && !isAtMaxAttempts}
+                                        disabled={problemScore === problem.points || isHalfCredit}
                                           className="flex-1"
                                         />
                                             </div>
-                                      {(!isSubmitted || isAtMaxAttempts) && (
+                                      {!(problemScore === problem.points || isHalfCredit) && (
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
