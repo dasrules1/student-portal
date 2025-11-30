@@ -697,7 +697,7 @@ const AssignmentDetailPage: React.FC = () => {
     let finalScore = result.score;
     
     if (hasExceededMaxAttempts && result.correct) {
-      finalScore = Math.floor((problem.points || 1) / 2);
+      finalScore = (problem.points || 1) / 2;
     }
 
     const isHalfCredit = hasExceededMaxAttempts && result.correct;
@@ -745,7 +745,7 @@ const AssignmentDetailPage: React.FC = () => {
     toast({
       title: result.correct ? "Correct!" : "Incorrect",
       description: isHalfCredit 
-        ? `You received ${finalScore} points (half credit for exceeding max attempts).`
+        ? `You received ${finalScore.toFixed(1)} points (half credit for exceeding max attempts).`
         : `You received ${finalScore} out of ${problem.points || 1} points.`,
       variant: result.correct ? "default" : "destructive",
     });

@@ -876,7 +876,7 @@ export default function StudentCurriculum() {
     // If they've exceeded max attempts and get it correct, apply half credit (penalty for exceeding attempts)
     let finalScore = result.score;
     if (hasExceededMaxAttempts && result.correct) {
-      finalScore = Math.floor((problem.points || 1) / 2);
+      finalScore = (problem.points || 1) / 2;
       result = { correct: true, score: finalScore };
     }
 
@@ -907,7 +907,7 @@ export default function StudentCurriculum() {
     // Show feedback toast
     let toastMessage = "";
     if (result.correct && isAtMaxAttempts) {
-      toastMessage = `Correct! However, you've exceeded the maximum attempts, so you receive half credit: ${finalScore}/${problem.points || 1} points.`;
+      toastMessage = `Correct! However, you've exceeded the maximum attempts, so you receive half credit: ${finalScore.toFixed(1)}/${problem.points || 1} points.`;
     } else if (result.correct) {
       toastMessage = `Correct! You scored ${finalScore}/${problem.points || 1} points.`;
     } else if (isAtMaxAttempts) {
