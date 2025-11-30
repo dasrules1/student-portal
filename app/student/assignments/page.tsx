@@ -110,6 +110,7 @@ export default function StudentAssignments() {
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
   const [pendingAssignments, setPendingAssignments] = useState<EnrichedAssignment[]>([])
+  const [assignmentScores, setAssignmentScores] = useState<Record<string, { score: number; status: string }>>({})
 
   useEffect(() => {
     // Pre-initialize storage service
@@ -724,9 +725,9 @@ export default function StudentAssignments() {
           );
           const querySnapshot = await getDocs(q);
           
-          if (!querySnapshot.empty) {
+          if (querySnapshot.docs.length > 0) {
             const firestoreAssignments: any[] = [];
-            querySnapshot.forEach((docSnapshot) => {
+            querySnapshot.docs.forEach((docSnapshot) => {
               const assignmentData = docSnapshot.data();
               // Only include if explicitly published
               if (assignmentData.isPublished === true) {
@@ -972,8 +973,8 @@ export default function StudentAssignments() {
           
           // Group answers by contentId
           const answersByContent: Record<string, any[]> = {};
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
+          querySnapshot.docs.forEach((docSnapshot) => {
+            const data = docSnapshot.data();
             const contentId = data.contentId;
             if (contentId) {
               if (!answersByContent[contentId]) {
