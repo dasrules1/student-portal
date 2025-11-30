@@ -1373,7 +1373,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                               )}
 
                               <div className="space-y-2">
-                                <Label htmlFor="problem-points">Points</Label>
+                                <Label htmlFor="problem-points">Points (Default: 3)</Label>
                                 <Input
                                   id="problem-points"
                                   type="number"
@@ -1384,7 +1384,18 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                               </div>
 
                               <div className="space-y-2">
-                                <Label htmlFor="problem-max-attempts">Max Attempts (Optional)</Label>
+                                <Label htmlFor="problem-max-attempts">
+                                  Max Attempts (Default: {(() => {
+                                    const currentContent = curriculum.lessons
+                                      .find((l: any) => l.id === activeLesson)
+                                      ?.contents?.find((c: any) => c.id === activeContent)
+                                    if (currentContent) {
+                                      const contentType = currentContent.type
+                                      return contentType === "test" || contentType === "quiz" ? "1" : "5"
+                                    }
+                                    return "5"
+                                  })()})
+                                </Label>
                                 <Input
                                   id="problem-max-attempts"
                                   type="number"
@@ -1394,8 +1405,11 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                                     const value = e.target.value === "" ? null : Number(e.target.value)
                                     setNewProblemMaxAttempts(value)
                                   }}
-                                  placeholder="Unlimited if blank"
+                                  placeholder="Auto-set based on content type if blank"
                                 />
+                                <p className="text-xs text-muted-foreground">
+                                  Default: 5 attempts for most content, 1 for tests/quizzes
+                                </p>
                               </div>
 
                               <div className="space-y-2">
