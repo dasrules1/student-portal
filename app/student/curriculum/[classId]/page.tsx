@@ -17,6 +17,8 @@ import {
   Send,
   Video,
 } from "lucide-react"
+import 'katex/dist/katex.min.css'
+import { InlineMath, BlockMath } from 'react-katex'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
@@ -75,30 +77,43 @@ const contentTypes = [
   { id: "test", name: "Test" },
 ];
 
-// Function to render LaTeX in the UI
+// Function to render LaTeX in the UI using KaTeX
 const renderLatex = (text: string) => {
   if (!text) return ""
 
-  // Simple regex to identify LaTeX-like content between $$ delimiters
-  const parts = text.split(/(\$\$.*?\$\$)/g)
+  // Split text by LaTeX delimiters: $$ for block math, $ for inline math
+  const parts = text.split(/(\$\$.*?\$\$|\$.*?\$)/g)
 
   if (parts.length === 1) return text
 
   return (
     <>
-      {parts && Array.isArray(parts) && parts.map((part, index) => {
-        if (part && part.startsWith("$$") && part.endsWith("$$")) {
-          const latex = part.slice(2, -2)
-          return (
-            <span
-              key={index}
-              className="inline-block px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-sm"
-            >
-              {latex}
-            </span>
-          )
+      {parts.map((part, index) => {
+        if (!part) return null
+        
+        // Block math: $$...$$
+        if (part.startsWith("$$") && part.endsWith("$$")) {
+          const latex = part.slice(2, -2).trim()
+          try {
+            return <BlockMath key={index} math={latex} />
+          } catch (error) {
+            console.error('KaTeX rendering error:', error)
+            return <span key={index} className="text-red-500">{part}</span>
+          }
         }
-        return part
+        
+        // Inline math: $...$
+        if (part.startsWith("$") && part.endsWith("$") && part.length > 2) {
+          const latex = part.slice(1, -1).trim()
+          try {
+            return <InlineMath key={index} math={latex} />
+          } catch (error) {
+            console.error('KaTeX rendering error:', error)
+            return <span key={index} className="text-red-500">{part}</span>
+          }
+        }
+        
+        return <span key={index}>{part}</span>
       })}
     </>
   )
@@ -207,6 +222,7 @@ interface Problem {
   correctAnswers?: string[];
   tolerance?: number;
   explanation?: string;
+  maxAttempts?: number;
 }
 
 interface ProblemState {
@@ -214,6 +230,8 @@ interface ProblemState {
     answer: string | number;
     submitted: boolean;
     score: number;
+    attempts?: number;
+    isHalfCredit?: boolean;
   };
 }
 
@@ -652,10 +670,7 @@ export default function StudentCurriculum() {
       }
     }));
     
-    // Send real-time update to Firebase
-    if (currentUser) {
-      sendRealTimeUpdate(problemIndex, optionIndex.toString(), 'multiple-choice', problem);
-    }
+    // Don't send real-time update until submit button is clicked
   }
 
   // Handle math expression input
@@ -682,11 +697,7 @@ export default function StudentCurriculum() {
       }
     }));
     
-    // Send real-time update to Firebase every few keystrokes
-    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'math-expression', problem);
-      setLastUpdateTimestamp(Date.now().toString());
-    }
+    // Don't send real-time update until submit button is clicked
   }
 
   // Handle open ended answer input
@@ -713,11 +724,7 @@ export default function StudentCurriculum() {
       }
     }));
     
-    // Send real-time update to Firebase every few keystrokes
-    if (currentUser && (!lastUpdateTimestamp || Date.now() - Number(lastUpdateTimestamp) > 2000)) {
-      sendRealTimeUpdate(problemIndex, value, 'open-ended', problem);
-      setLastUpdateTimestamp(Date.now().toString());
-    }
+    // Don't send real-time update until submit button is clicked
   }
 
   // Auto-grade a math expression answer
@@ -805,10 +812,16 @@ export default function StudentCurriculum() {
     if (!activeContent?.problems || !currentUser) return;
 
     const problem = activeContent.problems[problemIndex];
-    let result: GradingResult = { correct: false, score: 0 };
+    const key = `${activeContent.id}-${problemIndex}`;
+    
+    // Check attempt limits
+    const currentAttempts = attemptCounts[key] || 0;
+    const maxAttempts = problem.maxAttempts || Infinity;
 
     // Get the answer based on problem type
     let answer: string | number = '';
+    let result: GradingResult = { correct: false, score: 0 };
+    
     if (problem.type === "multiple-choice") {
       const selectedOption = userAnswers[activeContent.id]?.[problemIndex];
       if (selectedOption === undefined || selectedOption === null) {
@@ -848,7 +861,20 @@ export default function StudentCurriculum() {
       result = gradeOpenEnded(problem, answer);
     }
 
-    const key = `${activeContent.id}-${problemIndex}`;
+    // Increment attempt count
+    const newAttemptCount = currentAttempts + 1;
+    setAttemptCounts(prev => ({
+      ...prev,
+      [key]: newAttemptCount
+    }));
+
+    // If at max attempts and correct, apply half credit (penalty for exceeding attempts)
+    let finalScore = result.score;
+    const isAtMaxAttempts = newAttemptCount >= maxAttempts;
+    if (isAtMaxAttempts && result.correct) {
+      finalScore = Math.floor((problem.points || 1) / 2);
+      result = { correct: true, score: finalScore };
+    }
 
     // Update problem state with submitted status and score
     setProblemState(prev => ({
@@ -856,26 +882,44 @@ export default function StudentCurriculum() {
       [key]: {
         answer: answer,
         submitted: true,
-        score: result.score || 0
+        score: finalScore,
+        attempts: newAttemptCount,
+        isHalfCredit: isAtMaxAttempts && result.correct
       }
     }));
 
     // Update problem scores
     setProblemScores(prev => ({
       ...prev,
-      [key]: result.score || 0
+      [key]: finalScore
     }));
 
     // Mark problem as submitted
     setSubmittedProblems(prev => ({
       ...prev,
-      [key]: { isSubmitted: true, score: result.score || 0 }
+      [key]: { isSubmitted: true, score: finalScore }
     }));
 
     // Show feedback toast
+    let toastMessage = "";
+    if (result.correct && isAtMaxAttempts) {
+      toastMessage = `Correct! However, you've exceeded the maximum attempts, so you receive half credit: ${finalScore}/${problem.points || 1} points.`;
+    } else if (result.correct) {
+      toastMessage = `Correct! You scored ${finalScore}/${problem.points || 1} points.`;
+    } else if (isAtMaxAttempts) {
+      toastMessage = `Incorrect. You've reached the maximum attempts. You can still solve this for half credit if you get it correct.`;
+    } else {
+      const remainingAttempts = maxAttempts - newAttemptCount;
+      if (remainingAttempts > 0 && maxAttempts !== Infinity) {
+        toastMessage = `Incorrect. You have ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`;
+      } else {
+        toastMessage = `Incorrect. You scored ${finalScore}/${problem.points || 1} points.`;
+      }
+    }
+
     toast({
       title: result.correct ? "Correct!" : "Incorrect",
-      description: `You scored ${result.score || 0}/${problem.points || 1} points for this problem.`,
+      description: toastMessage,
       variant: result.correct ? "default" : "destructive",
     });
 
@@ -1419,6 +1463,13 @@ export default function StudentCurriculum() {
                       {activeContent.problems.map((problem, problemIndex) => {
                         const isSubmitted = isProblemSubmitted(problemIndex);
                         const problemScore = getProblemScore(problemIndex);
+                        const key = `${activeContent.id}-${problemIndex}`;
+                        const currentAttempts = attemptCounts[key] || 0;
+                        const maxAttempts = problem.maxAttempts || Infinity;
+                        const remainingAttempts = maxAttempts - currentAttempts;
+                        const isAtMaxAttempts = currentAttempts >= maxAttempts;
+                        const problemStateData = problemState[key];
+                        const isHalfCredit = problemStateData?.isHalfCredit || false;
                         return (
                           <div key={problemIndex} className="p-4 border rounded-lg">
                               <div className="space-y-4">
@@ -1435,10 +1486,18 @@ export default function StudentCurriculum() {
                                     <p className="text-sm text-muted-foreground">
                                       {renderLatex(problem.question)}
                                     </p>
+                                    {maxAttempts !== Infinity && (
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        {isAtMaxAttempts 
+                                          ? `Maximum attempts reached. You can still solve for half credit if correct.`
+                                          : `Attempts remaining: ${remainingAttempts}`
+                                        }
+                                      </p>
+                                    )}
                                   </div>
                                   {isSubmitted && (
                                     <Badge
-                                      variant={problemScore === problem.points ? "default" : "destructive"}
+                                      variant={problemScore === problem.points ? "default" : isHalfCredit ? "secondary" : "destructive"}
                                     >
                                       {problemScore}/{problem.points} points
                                     </Badge>
@@ -1478,14 +1537,15 @@ export default function StudentCurriculum() {
                                         </div>
                                       ))}
                                     </RadioGroup>
-                                    {!isSubmitted && (
+                                    {(!isSubmitted || isAtMaxAttempts) && (
                                       <Button
                                         onClick={() => handleSubmitProblem(problemIndex)}
                                         className="w-full"
                                         disabled={userAnswers[activeContent.id]?.[problemIndex] === undefined}
+                                        variant={isAtMaxAttempts ? "secondary" : "default"}
                                       >
                                         <Send className="w-4 h-4 mr-2" />
-                                        Submit Answer
+                                        {isAtMaxAttempts ? "Submit for Half Credit" : "Submit Answer"}
                                       </Button>
                                     )}
                                     {isSubmitted && (
@@ -1517,18 +1577,19 @@ export default function StudentCurriculum() {
                                           value={mathExpressionInputs[activeContent.id]?.[problemIndex] || ""}
                                           onChange={(e) => handleMathExpressionInput(problemIndex, e.target.value)}
                                           placeholder="Enter your answer (e.g., 2x + 3 or 7)"
-                                          disabled={isSubmitted}
+                                          disabled={isSubmitted && !isAtMaxAttempts}
                                           className="flex-1"
                                         />
                                       </div>
-                                      {!isSubmitted && (
+                                      {(!isSubmitted || isAtMaxAttempts) && (
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!mathExpressionInputs[activeContent.id]?.[problemIndex]}
+                                          variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
-                                          Submit Answer
+                                          {isAtMaxAttempts ? "Submit for Half Credit" : "Submit Answer"}
                                         </Button>
                                       )}
                                       {isSubmitted && (
@@ -1537,27 +1598,18 @@ export default function StudentCurriculum() {
                                             className={`p-3 rounded-md ${
                                               problemScore === problem.points
                                                 ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-                                                : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                                : isHalfCredit
+                                                  ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300"
+                                                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
                                             }`}
                                           >
                                             <div className="font-medium mb-2">
                                               {problemScore === problem.points
                                                 ? "Correct!"
-                                                : "Incorrect. The correct answer is:"}
+                                                : isHalfCredit
+                                                  ? "Correct! However, you exceeded the maximum attempts, so you receive half credit."
+                                                  : "Incorrect."}
                                             </div>
-                                            {problemScore !== problem.points && (
-                                              <div className="font-medium mt-1">
-                                                {problem.correctAnswers && Array.isArray(problem.correctAnswers) && problem.correctAnswers.length > 0 ? (
-                                                  <div className="flex flex-col gap-1">
-                                                    {problem.correctAnswers.map((answer, i) => (
-                                                      <div key={i}>{renderLatex(String(answer))}</div>
-                                                    ))}
-                                                  </div>
-                                                ) : (
-                                                  <div>{renderLatex(String(problem.correctAnswer || ''))}</div>
-                                                )}
-                                              </div>
-                                            )}
                                           </div>
                                           <div className="p-3 bg-muted rounded-md space-y-2">
                                             <div className="flex items-center justify-between">
@@ -1587,18 +1639,19 @@ export default function StudentCurriculum() {
                                         value={openEndedAnswers[activeContent.id]?.[problemIndex] || ""}
                                         onChange={(e) => handleOpenEndedInput(problemIndex, e.target.value)}
                                           placeholder="Enter your answer"
-                                        disabled={isSubmitted}
+                                        disabled={isSubmitted && !isAtMaxAttempts}
                                           className="flex-1"
                                         />
                                             </div>
-                                      {!isSubmitted && (
+                                      {(!isSubmitted || isAtMaxAttempts) && (
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!openEndedAnswers[activeContent.id]?.[problemIndex]}
+                                          variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
-                                          Submit Answer
+                                          {isAtMaxAttempts ? "Submit for Half Credit" : "Submit Answer"}
                                         </Button>
                                       )}
                                       {isSubmitted && (
@@ -1607,19 +1660,18 @@ export default function StudentCurriculum() {
                                             className={`p-3 rounded-md ${
                                               problemScore === problem.points
                                                 ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
-                                                : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                                : isHalfCredit
+                                                  ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300"
+                                                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
                                             }`}
                                           >
                                             <div className="font-medium mb-2">
                                               {problemScore === problem.points
                                                 ? "Correct!"
-                                                : "Incorrect. The correct answer is:"}
+                                                : isHalfCredit
+                                                  ? "Correct! However, you exceeded the maximum attempts, so you receive half credit."
+                                                  : "Incorrect."}
                                             </div>
-                                            {problemScore !== problem.points && (
-                                              <div className="font-medium mt-1">
-                                                {renderLatex(String(problem.correctAnswer || ''))}
-                                              </div>
-                                            )}
                                           </div>
                                           <div className="p-3 bg-muted rounded-md space-y-2">
                                             <div className="flex items-center justify-between">
