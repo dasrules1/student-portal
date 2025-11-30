@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Book,
-  Calendar,
   CheckSquare,
   Cog,
   File,
@@ -18,7 +17,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { storage } from "@/lib/storage"
-import { Activity } from "@/components/activity"
 import { User, Class } from "@/lib/storage"
 import { sessionManager } from "@/lib/session"
 import { useAuth } from "@/contexts/auth-context"
@@ -136,55 +134,56 @@ export default function StudentDashboard() {
         
         setStudentClasses(enrolledClasses)
         
-        // Load assignments for each class
+        // Load assignments for each class using getCurriculum with student role
         const assignmentsTemp: Record<string, any[]> = {}
         const pendingTemp: any[] = []
         
         for (const cls of enrolledClasses) {
-          if (cls && cls.curriculum) {
-            try {
-              // Try to load full curriculum data
-              const curriculum = await storage.getCurriculum(cls.id)
-              const curriculumData = curriculum || cls.curriculum
+          try {
+            // Load curriculum with student role to get only published content
+            const curriculum = await storage.getCurriculum(cls.id, 'student')
+            
+            if (curriculum && curriculum.content && curriculum.content.lessons && Array.isArray(curriculum.content.lessons)) {
+              // Find all published assignments across lessons
+              const classAssignments = curriculum.content.lessons.flatMap(lesson => {
+                if (!lesson || !lesson.contents || !Array.isArray(lesson.contents)) return []
+                
+                return lesson.contents
+                  .filter(content => 
+                    content && content.isPublished === true && 
+                    (content.type === 'assignment' || content.type === 'quiz' || 
+                     content.type === 'homework' || content.type === 'classwork' ||
+                     content.type === 'test' || content.type === 'guided-practice' ||
+                     content.type === 'new-material')
+                  )
+                  .map(content => ({
+                    ...content,
+                    lessonTitle: lesson.title || 'Unnamed Lesson',
+                    lessonId: lesson.id,
+                    classId: cls.id,
+                    className: cls.name || 'Unnamed Class',
+                    teacher: cls.teacher || 'Unnamed Teacher'
+                  }))
+              })
               
-              if (curriculumData && curriculumData.lessons && Array.isArray(curriculumData.lessons)) {
-                // Find all published assignments across lessons
-                const classAssignments = curriculumData.lessons.flatMap(lesson => {
-                  if (!lesson || !lesson.contents || !Array.isArray(lesson.contents)) return []
-                  
-                  return lesson.contents
-                    .filter(content => 
-                      content && content.isPublished && 
-                      (content.type === 'assignment' || content.type === 'quiz')
-                    )
-                    .map(content => ({
-                      ...content,
-                      lessonTitle: lesson.title || 'Unnamed Lesson',
-                      lessonId: lesson.id,
-                      classId: cls.id,
-                      className: cls.name || 'Unnamed Class',
-                      teacher: cls.teacher || 'Unnamed Teacher'
-                    }))
-                })
-                
-                assignmentsTemp[cls.id] = classAssignments
-                
-                // Add assignments without completed status to pending list
-                const pending = classAssignments.filter(
-                  assignment => !assignment.completed && assignment.dueDate && new Date(assignment.dueDate) > new Date()
-                )
-                pendingTemp.push(...pending)
-              }
-            } catch (error) {
-              console.error(`Error loading curriculum for class ${cls.id}:`, error)
+              assignmentsTemp[cls.id] = classAssignments
+              
+              // Add all published assignments to pending (they're all available to complete)
+              pendingTemp.push(...classAssignments)
             }
+          } catch (error) {
+            console.error(`Error loading curriculum for class ${cls.id}:`, error)
           }
         }
         
         setAssignmentsByClass(assignmentsTemp)
-        setPendingAssignments(pendingTemp.sort((a, b) => 
-          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-        ))
+        // Sort by due date if available, otherwise by title
+        setPendingAssignments(pendingTemp.sort((a, b) => {
+          if (a.dueDate && b.dueDate) {
+            return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+          }
+          return (a.title || '').localeCompare(b.title || '')
+        }))
       } catch (error) {
         console.error("Error loading student data:", error)
         setAuthError("There was a problem loading your dashboard")
@@ -213,12 +212,6 @@ export default function StudentDashboard() {
       title: "Assignments",
       href: "/student/assignments",
       icon: CheckSquare,
-      current: false,
-    },
-    {
-      title: "Calendar",
-      href: "/student/calendar",
-      icon: Calendar,
       current: false,
     },
     {
@@ -425,13 +418,6 @@ export default function StudentDashboard() {
           </div>
         </section>
 
-        {/* Recent Activity */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Recent Activity</h2>
-          </div>
-          <Activity studentId={currentUser.id} />
-        </section>
       </div>
     </div>
   )

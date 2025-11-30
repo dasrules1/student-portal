@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Book,
-  Calendar,
   CheckSquare,
   Cog,
   File,
@@ -29,6 +28,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { collection, query, where, getDocs } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 
 export default function StudentGrades() {
   const router = useRouter()
@@ -135,74 +136,101 @@ export default function StudentGrades() {
         
         setStudentClasses(enrolledClasses)
 
-        // Load grades for each class
+        // Load grades from Firestore student-answers collection
         const gradesTemp: any[] = []
         
-        if (typeof window !== "undefined") {
+        if (db && userData.id) {
           for (const cls of enrolledClasses) {
             if (cls && cls.id) {
-              // Try to collect all graded content for this class and student
               try {
-                const classGrades = []
+                // Query all student answers for this class
+                const answersRef = collection(db, 'student-answers', cls.id, 'answers');
+                const q = query(answersRef, where('studentId', '==', userData.id));
+                const querySnapshot = await getDocs(q);
                 
-                // Look for all graded content in localStorage
-                for (let i = 0; i < localStorage.length; i++) {
-                  const key = localStorage.key(i)
-                  if (key && key.startsWith(`graded-content-${cls.id}`)) {
-                    try {
-                      const gradedData = JSON.parse(localStorage.getItem(key) || "[]")
-                      const userSubmissions = gradedData.filter((submission: any) => 
-                        submission.studentId === userData.id
-                      )
-                      
-                      if (userSubmissions.length > 0) {
-                        // Extract content ID from key
-                        const contentId = key.replace(`graded-content-${cls.id}-`, "")
-                        
-                        // Find content title if available
-                        let contentTitle = "Unknown Assignment"
-                        if (cls.curriculum && cls.curriculum.lessons) {
-                          for (const lesson of cls.curriculum.lessons) {
-                            if (lesson.contents) {
-                              const content = lesson.contents.find((c: any) => c.id === contentId)
-                              if (content) {
-                                contentTitle = content.title
-                                break
-                              }
-                            }
+                // Group answers by contentId
+                const answersByContent: Record<string, any[]> = {};
+                querySnapshot.forEach((doc) => {
+                  const data = doc.data();
+                  const contentId = data.contentId;
+                  if (contentId) {
+                    if (!answersByContent[contentId]) {
+                      answersByContent[contentId] = [];
+                    }
+                    answersByContent[contentId].push(data);
+                  }
+                });
+                
+                // Load curriculum to get content titles
+                const curriculum = await storage.getCurriculum(cls.id, 'student');
+                
+                // Process each content's answers
+                for (const [contentId, answers] of Object.entries(answersByContent)) {
+                  // Only include submitted/completed answers
+                  const submittedAnswers = answers.filter(a => 
+                    a.submitted === true || 
+                    a.status === 'submitted' || 
+                    a.status === 'completed'
+                  );
+                  
+                  if (submittedAnswers.length > 0) {
+                    // Calculate total score
+                    const totalScore = submittedAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
+                    const maxScore = submittedAnswers.reduce((sum, a) => sum + (a.problemPoints || 1), 0);
+                    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+                    
+                    // Find content title from curriculum
+                    let contentTitle = "Unknown Assignment";
+                    let contentType = "assignment";
+                    if (curriculum && curriculum.content && curriculum.content.lessons) {
+                      for (const lesson of curriculum.content.lessons) {
+                        if (lesson.contents) {
+                          const content = lesson.contents.find((c: any) => c.id === contentId);
+                          if (content) {
+                            contentTitle = content.title || contentTitle;
+                            contentType = content.type || contentType;
+                            break;
                           }
                         }
-                        
-                        // Add grade information
-                        userSubmissions.forEach((submission: any) => {
-                          classGrades.push({
-                            classId: cls.id,
-                            className: cls.name,
-                            contentId,
-                            title: contentTitle,
-                            score: submission.score,
-                            submittedAt: submission.submittedAt,
-                            type: submission.type || "assignment"
-                          })
-                        })
                       }
-                    } catch (error) {
-                      console.error(`Error parsing graded data for key ${key}:`, error)
                     }
+                    
+                    // Get the most recent submission date
+                    const latestAnswer = submittedAnswers.sort((a, b) => {
+                      const aTime = a.updatedAt?.toDate?.() || a.timestamp?.toDate?.() || new Date(0);
+                      const bTime = b.updatedAt?.toDate?.() || b.timestamp?.toDate?.() || new Date(0);
+                      return bTime.getTime() - aTime.getTime();
+                    })[0];
+                    
+                    const submittedAt = latestAnswer?.updatedAt?.toDate?.() || 
+                                      latestAnswer?.timestamp?.toDate?.() || 
+                                      latestAnswer?.submittedAt?.toDate?.() ||
+                                      new Date();
+                    
+                    gradesTemp.push({
+                      classId: cls.id,
+                      className: cls.name,
+                      contentId,
+                      title: contentTitle,
+                      score: percentage,
+                      submittedAt: submittedAt,
+                      type: contentType
+                    });
                   }
                 }
-                
-                gradesTemp.push(...classGrades)
-                
               } catch (error) {
-                console.error(`Error loading grades for class ${cls.id}:`, error)
+                console.error(`Error loading grades for class ${cls.id}:`, error);
               }
             }
           }
         }
         
         // Sort grades by submission date (newest first)
-        gradesTemp.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
+        gradesTemp.sort((a, b) => {
+          const aTime = a.submittedAt instanceof Date ? a.submittedAt : new Date(a.submittedAt);
+          const bTime = b.submittedAt instanceof Date ? b.submittedAt : new Date(b.submittedAt);
+          return bTime.getTime() - aTime.getTime();
+        });
         
         setGradeData(gradesTemp)
         
@@ -234,12 +262,6 @@ export default function StudentGrades() {
       title: "Assignments",
       href: "/student/assignments",
       icon: CheckSquare,
-      current: false,
-    },
-    {
-      title: "Calendar",
-      href: "/student/calendar",
-      icon: Calendar,
       current: false,
     },
     {

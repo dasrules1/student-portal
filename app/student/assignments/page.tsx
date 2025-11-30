@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Book,
-  Calendar,
   CheckSquare,
   Cog,
   File,
@@ -17,6 +16,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { storage } from "@/lib/storage"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { toast } from "@/components/ui/use-toast"
 import { sessionManager } from "@/lib/session"
 import { getDoc, doc, collection, query, where, getDocs } from "firebase/firestore"
@@ -241,7 +241,9 @@ export default function StudentAssignments() {
         setLoading(false);
         
         // Load assignments using the normalized user ID
-        loadAssignments(normalizedUser.id);
+        await loadAssignments(normalizedUser.id);
+        // Load scores for all assignments
+        await loadAssignmentScores(normalizedUser.id);
       } catch (error) {
         console.error('Authentication error:', error);
         setAuthError('Authentication error');
@@ -795,32 +797,32 @@ export default function StudentAssignments() {
         
         // 2. Fallback to localStorage only if Firestore didn't have data
         if (!foundPublishedContent) {
-          try {
-            if (typeof window !== 'undefined') {
-              const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
-              if (directPublishedContent) {
-                const parsedContent = JSON.parse(directPublishedContent);
+        try {
+          if (typeof window !== 'undefined') {
+            const directPublishedContent = localStorage.getItem(`published-contents-${classItem.id}`);
+            if (directPublishedContent) {
+              const parsedContent = JSON.parse(directPublishedContent);
                 console.log("Found direct published content in localStorage (fallback):", parsedContent);
-                
-                if (Array.isArray(parsedContent)) {
+              
+              if (Array.isArray(parsedContent)) {
                   // Group assignments by lesson - STRICT filtering for isPublished === true
-                  const lessonGroups = parsedContent.reduce((acc: Record<string, any[]>, content: any) => {
+                const lessonGroups = parsedContent.reduce((acc: Record<string, any[]>, content: any) => {
                     // Only include if explicitly published (strict check)
-                    if (content.isPublished === true && 
-                        (content.type === 'assignment' || content.type === 'quiz')) {
-                      const lessonId = content.lessonId || 'ungrouped';
-                      if (!acc[lessonId]) {
-                        acc[lessonId] = [];
-                      }
-                      acc[lessonId].push({
-                        ...content,
-                        classId: classItem.id,
-                        className: classItem.name,
-                        lessonTitle: content.lessonTitle || 'Unnamed Lesson'
-                      });
+                  if (content.isPublished === true && 
+                      (content.type === 'assignment' || content.type === 'quiz')) {
+                    const lessonId = content.lessonId || 'ungrouped';
+                    if (!acc[lessonId]) {
+                      acc[lessonId] = [];
                     }
-                    return acc;
-                  }, {});
+                    acc[lessonId].push({
+                      ...content,
+                      classId: classItem.id,
+                      className: classItem.name,
+                      lessonTitle: content.lessonTitle || 'Unnamed Lesson'
+                    });
+                  }
+                  return acc;
+                }, {});
 
                 console.log("Grouped assignments by lesson:", lessonGroups);
 
@@ -855,12 +857,12 @@ export default function StudentAssignments() {
                 });
                 dueAssignments.push(...pendingAssignments);
                   });
-                }
               }
             }
-            }
-          } catch (error) {
-            console.warn(`Error loading direct published content: ${error}`);
+          }
+          }
+        } catch (error) {
+          console.warn(`Error loading direct published content: ${error}`);
           }
         }
         
@@ -949,6 +951,71 @@ export default function StudentAssignments() {
     setLoading(false);
   };
 
+  // Load assignment scores from Firestore
+  const loadAssignmentScores = async (studentId: string) => {
+    if (!db || !studentId) return;
+    
+    try {
+      const scores: Record<string, { score: number; status: string }> = {};
+      
+      // Get all classes the student is enrolled in
+      const enrolledClasses = await getClassesForStudent(studentId);
+      
+      for (const cls of enrolledClasses) {
+        if (!cls.id) continue;
+        
+        try {
+          // Query all student answers for this class
+          const answersRef = collection(db, 'student-answers', cls.id, 'answers');
+          const q = query(answersRef, where('studentId', '==', studentId));
+          const querySnapshot = await getDocs(q);
+          
+          // Group answers by contentId
+          const answersByContent: Record<string, any[]> = {};
+          querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            const contentId = data.contentId;
+            if (contentId) {
+              if (!answersByContent[contentId]) {
+                answersByContent[contentId] = [];
+              }
+              answersByContent[contentId].push(data);
+            }
+          });
+          
+          // Calculate scores for each content
+          Object.entries(answersByContent).forEach(([contentId, answers]) => {
+            const submittedAnswers = answers.filter(a => a.submitted === true || a.status === 'submitted' || a.status === 'completed');
+            if (submittedAnswers.length > 0) {
+              const totalScore = submittedAnswers.reduce((sum, a) => sum + (a.score || 0), 0);
+              const maxScore = submittedAnswers.reduce((sum, a) => sum + (a.problemPoints || 1), 0);
+              const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+              
+              // Check if all problems are completed
+              const allCompleted = submittedAnswers.every(a => a.status === 'completed' || a.submitted === true);
+              
+              scores[contentId] = {
+                score: percentage,
+                status: allCompleted ? 'Completed' : 'In Progress'
+              };
+            } else {
+              scores[contentId] = {
+                score: 0,
+                status: 'Not Started'
+              };
+            }
+          });
+        } catch (error) {
+          console.error(`Error loading scores for class ${cls.id}:`, error);
+        }
+      }
+      
+      setAssignmentScores(scores);
+    } catch (error) {
+      console.error('Error loading assignment scores:', error);
+    }
+  };
+
   // Update progress when answering questions
   const handleAnswerSubmit = async (assignmentId: string, problemId: string, answer: string) => {
     try {
@@ -1034,12 +1101,6 @@ export default function StudentAssignments() {
       href: "/student/assignments",
       icon: CheckSquare,
       current: true,
-    },
-    {
-      title: "Calendar",
-      href: "/student/calendar",
-      icon: Calendar,
-      current: false,
     },
     {
       title: "Grades",
@@ -1211,68 +1272,169 @@ export default function StudentAssignments() {
               <img src="/logo.png" alt="Education More" className="h-8" />
               <h2 className="text-lg font-semibold">Education More</h2>
             </div>
-            <h1 className="text-3xl font-bold">Lessons</h1>
+            <h1 className="text-3xl font-bold">Assignments</h1>
             <p className="text-muted-foreground">
-              View your lessons with published assignments
+              View and complete your assignments
             </p>
           </div>
         </div>
 
-        {/* DEBUG SECTION */}
-        <div className="mb-6 p-4 border border-dashed border-gray-400 rounded bg-gray-50 text-xs text-gray-700">
-          <strong>DEBUG INFO</strong>
-          <div>User ID: {currentUser ? currentUser.id : 'N/A'}</div>
-                      <div>
-            Enrolled Class IDs: {typeof window !== 'undefined' && currentUser && currentUser.id ? (
-              <span>{JSON.stringify(localStorage.getItem(`student-enrollments-${currentUser.id}`))}</span>
-            ) : 'N/A'}
-                      </div>
-          <div>Assignments array: <pre style={{maxHeight: 200, overflow: 'auto'}}>{assignments ? JSON.stringify(assignments, null, 2) : 'N/A'}</pre></div>
-                    </div>
+        {/* Flatten all assignments from all lessons */}
+        {(() => {
+          const allAssignments: (EnrichedAssignment & { lessonTitle: string })[] = [];
+          assignments.forEach(lessonGroup => {
+            lessonGroup.assignments.forEach(assignment => {
+              allAssignments.push({
+                ...assignment,
+                lessonTitle: lessonGroup.lessonTitle
+              });
+            });
+          });
 
-        <div className="flex flex-col space-y-6">
-          {/* Lessons Section */}
-        <section>
-            <h2 className="text-xl font-semibold mb-4">All Lessons</h2>
-            <div className="space-y-6">
-            {assignments.length > 0 ? (
-                assignments.map((lessonGroup) => (
-                  <Card key={lessonGroup.lessonId}>
+          // Separate into classwork and homework
+          const classworkAssignments = allAssignments.filter(a => 
+            a.type === 'classwork' || 
+            a.type === 'guided-practice' || 
+            a.type === 'test' || 
+            a.type === 'quiz' || 
+            a.type === 'new-material'
+          );
+          
+          const homeworkAssignments = allAssignments.filter(a => 
+            a.type === 'homework'
+          );
+
+          return (
+            <Tabs defaultValue="classwork" className="w-full">
+              <TabsList className="grid w-full max-w-md grid-cols-2">
+                <TabsTrigger value="classwork">Classwork</TabsTrigger>
+                <TabsTrigger value="homework">Homework</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="classwork" className="mt-6">
+                <Card>
                     <CardHeader>
-                      <CardTitle>{lessonGroup.lessonTitle}</CardTitle>
+                    <CardTitle>Classwork Assignments</CardTitle>
                         <CardDescription>
-                        {lessonGroup.className} • {lessonGroup.assignments.length} published assignments
+                      All classwork, guided practice, tests, quizzes, and new material
                         </CardDescription>
                   </CardHeader>
                   <CardContent>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        This lesson contains {lessonGroup.assignments.length} published assignments. 
-                        Click below to view and complete them.
-                      </p>
-                    {lessonGroup.courseId && lessonGroup.lessonId ? (
-                      <Button asChild className="w-full">
-                        <Link href={`/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`}
-                          onClick={() => console.log('Navigating to:', `/student/curriculum/${lessonGroup.courseId}?lesson=${lessonGroup.lessonId}`)}>
-                          View Lesson
+                    {classworkAssignments.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Assignment Lesson</TableHead>
+                            <TableHead>Assignment Name</TableHead>
+                            <TableHead className="text-right">Score</TableHead>
+                            <TableHead className="text-right">Status</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {classworkAssignments.map((assignment) => {
+                            const scoreData = assignmentScores[assignment.id || ''] || { score: 0, status: 'Not Started' };
+                            return (
+                              <TableRow key={assignment.id}>
+                                <TableCell className="font-medium">{assignment.lessonTitle}</TableCell>
+                                <TableCell>{assignment.title}</TableCell>
+                                <TableCell className="text-right">
+                                  {scoreData.score > 0 ? `${scoreData.score}%` : '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant={
+                                    scoreData.status === 'Completed' ? 'default' :
+                                    scoreData.status === 'In Progress' ? 'secondary' :
+                                    'outline'
+                                  }>
+                                    {scoreData.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button asChild variant="outline" size="sm">
+                                    <Link href={`/student/assignments/${assignment.classId}/${assignment.id}`}>
+                                      View
                         </Link>
                       </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
                     ) : (
-                      <div className="text-red-500 text-xs mt-2">Lesson or class ID missing for this lesson. Cannot view lesson.</div>
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                        <p className="text-muted-foreground">No classwork assignments found</p>
+                      </div>
                     )}
                     </CardContent>
                 </Card>
-              ))
-            ) : (
+              </TabsContent>
+              
+              <TabsContent value="homework" className="mt-6">
               <Card>
-                <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                  <CardHeader>
+                    <CardTitle>Homework Assignments</CardTitle>
+                    <CardDescription>
+                      All homework assignments
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {homeworkAssignments.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Assignment Lesson</TableHead>
+                            <TableHead>Assignment Name</TableHead>
+                            <TableHead className="text-right">Score</TableHead>
+                            <TableHead className="text-right">Status</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {homeworkAssignments.map((assignment) => {
+                            const scoreData = assignmentScores[assignment.id || ''] || { score: 0, status: 'Not Started' };
+                            return (
+                              <TableRow key={assignment.id}>
+                                <TableCell className="font-medium">{assignment.lessonTitle}</TableCell>
+                                <TableCell>{assignment.title}</TableCell>
+                                <TableCell className="text-right">
+                                  {scoreData.score > 0 ? `${scoreData.score}%` : '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant={
+                                    scoreData.status === 'Completed' ? 'default' :
+                                    scoreData.status === 'In Progress' ? 'secondary' :
+                                    'outline'
+                                  }>
+                                    {scoreData.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button asChild variant="outline" size="sm">
+                                    <Link href={`/student/assignments/${assignment.classId}/${assignment.id}`}>
+                                      View
+                                    </Link>
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
                   <CheckSquare className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
-                    <p className="text-muted-foreground">No lessons with published assignments found</p>
+                        <p className="text-muted-foreground">No homework assignments found</p>
+                      </div>
+                    )}
                 </CardContent>
               </Card>
-            )}
-          </div>
-        </section>
-        </div>
+              </TabsContent>
+            </Tabs>
+          );
+        })()}
       </div>
     </div>
   )
