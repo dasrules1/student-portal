@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/components/ui/use-toast';
 import { storage } from '@/lib/storage';
+import { sessionManager } from '@/lib/session';
 import { Sidebar } from '@/components/sidebar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,8 +85,9 @@ interface GradingResult {
 const AssignmentDetailPage: React.FC = () => {
   const params = useParams<{ classId: string; contentId: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
   const { toast } = useToast();
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [content, setContent] = useState<Content | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
@@ -102,14 +104,34 @@ const AssignmentDetailPage: React.FC = () => {
   const classId = params.classId;
   const contentId = params.contentId;
 
+  // Load user from session manager (like curriculum page does)
+  useEffect(() => {
+    const loadUser = () => {
+      try {
+        const sessionUser = sessionManager.getCurrentUser();
+        if (sessionUser && sessionUser.user) {
+          setCurrentUser(sessionUser.user);
+        } else if (authUser) {
+          setCurrentUser(authUser);
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+        if (authUser) {
+          setCurrentUser(authUser);
+        }
+      }
+    };
+    loadUser();
+  }, [authUser]);
+
   useEffect(() => {
     if (classId && contentId) {
       loadAssignment();
-      if (user) {
+      if (currentUser) {
         loadScores();
       }
     }
-  }, [classId, contentId, user]);
+  }, [classId, contentId, currentUser]);
 
   const loadAssignment = async () => {
     try {
@@ -151,7 +173,7 @@ const AssignmentDetailPage: React.FC = () => {
       if (foundContent) {
         setContent(foundContent);
         // Load existing answers if user is available
-        if (user && db) {
+        if (currentUser && db) {
           try {
             await loadExistingAnswers(foundContent);
           } catch (error) {
@@ -180,10 +202,10 @@ const AssignmentDetailPage: React.FC = () => {
   };
 
   const loadExistingAnswers = async (content: Content) => {
-    if (!db || !user || !classId || !content.id) return;
+    if (!db || !currentUser || !classId || !content.id) return;
 
     try {
-      const userId = user.uid;
+      const userId = currentUser.uid || currentUser.id;
       const answersQuery = query(
         collection(db, 'student-answers', classId, 'answers'),
         where('contentId', '==', content.id),
@@ -253,13 +275,14 @@ const AssignmentDetailPage: React.FC = () => {
   };
 
   const loadScores = async () => {
-    if (!db || !user || !classId || !contentId) return;
+    if (!db || !currentUser || !classId || !contentId) return;
 
     try {
+      const userId = currentUser.uid || currentUser.id;
       const answersRef = collection(db, 'student-answers', classId, 'answers');
       const q = query(
         answersRef,
-        where('studentId', '==', user.uid),
+        where('studentId', '==', userId),
         where('contentId', '==', contentId)
       );
       const querySnapshot = await getDocs(q);
@@ -432,14 +455,53 @@ const AssignmentDetailPage: React.FC = () => {
     isCorrect: boolean,
     isHalfCredit: boolean
   ) => {
-    if (!user || !content?.id || !db) {
-      console.error('Missing required data for sendRealTimeUpdate:', { user, content, db });
+    console.log('sendRealTimeUpdate called:', {
+      problemIndex,
+      answer,
+      type,
+      isSubmitted,
+      finalScore,
+      isCorrect,
+      isHalfCredit,
+      hasUser: !!currentUser,
+      hasContent: !!content,
+      hasDb: !!db,
+      currentUser
+    });
+    
+    if (!currentUser) {
+      console.error('No user in sendRealTimeUpdate');
+      toast({
+        title: "Authentication Error",
+        description: "Please log in to submit answers.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!content?.id) {
+      console.error('No content ID in sendRealTimeUpdate');
+      toast({
+        title: "Error",
+        description: "Assignment content is not loaded.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!db) {
+      console.error('No database in sendRealTimeUpdate');
+      toast({
+        title: "Error",
+        description: "Database connection is not available.",
+        variant: "destructive",
+      });
       return;
     }
 
-    const userId = user.uid;
-    const userName = user.displayName || 'Student';
-    const userEmail = user.email || '';
+    const userId = currentUser.uid || currentUser.id;
+    const userName = currentUser.displayName || currentUser.name || 'Student';
+    const userEmail = currentUser.email || '';
     
     try {
       console.log('Sending real-time update:', {
@@ -487,17 +549,33 @@ const AssignmentDetailPage: React.FC = () => {
       // Document ID: ${contentId}_${studentId}_problem-${problemIndex}
       const docId = `${content.id}_${userId}_problem-${problemIndex}`;
       const answerRef = doc(db, 'student-answers', classId, 'answers', docId);
-      await setDoc(answerRef, answerData, { merge: true });
-
-      console.log('Answer saved to Firestore:', {
+      
+      console.log('Attempting to save to Firestore:', {
         docId,
         path: `student-answers/${classId}/answers/${docId}`,
+        classId,
+        contentId: content.id,
+        userId,
         answerData
       });
+      
+      try {
+        await setDoc(answerRef, answerData, { merge: true });
+        console.log('Successfully saved to student-answers collection');
+      } catch (saveError) {
+        console.error('Error saving to student-answers:', saveError);
+        throw saveError;
+      }
 
       // Also save to student-progress collection
-      const progressRef = doc(db, 'student-progress', `${classId}_${content.id}_${userId}_problem-${problemIndex}`);
-      await setDoc(progressRef, answerData, { merge: true });
+      try {
+        const progressRef = doc(db, 'student-progress', `${classId}_${content.id}_${userId}_problem-${problemIndex}`);
+        await setDoc(progressRef, answerData, { merge: true });
+        console.log('Successfully saved to student-progress collection');
+      } catch (progressError) {
+        console.error('Error saving to student-progress (non-fatal):', progressError);
+        // Don't throw - this is optional
+      }
 
       // Update local state
       const newKey = `${content.id}-${problemIndex}`;
@@ -522,7 +600,44 @@ const AssignmentDetailPage: React.FC = () => {
   };
 
   const handleSubmitProblem = async (problemIndex: number) => {
-    if (!content?.problems || !user) return;
+    console.log('handleSubmitProblem called:', { 
+      problemIndex, 
+      hasContent: !!content, 
+      hasProblems: !!content?.problems, 
+      hasUser: !!currentUser, 
+      currentUser,
+      hasDb: !!db
+    });
+    
+    if (!content?.problems) {
+      console.error('No content or problems available');
+      toast({
+        title: "Error",
+        description: "Assignment content is not loaded. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!currentUser) {
+      console.error('No user available');
+      toast({
+        title: "Authentication Error",
+        description: "Please log in to submit answers.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!db) {
+      console.error('Database not available');
+      toast({
+        title: "Error",
+        description: "Database connection is not available. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const problem = content.problems[problemIndex];
     const key = `${content.id}-${problemIndex}`;
@@ -693,7 +808,7 @@ const AssignmentDetailPage: React.FC = () => {
   if (loading) {
     return (
       <div className="flex min-h-screen">
-        <Sidebar navigation={navigation} user={user ? { id: user.uid, name: user.displayName || 'Student', email: user.email || '', role: 'student' } : undefined} />
+        <Sidebar navigation={navigation} user={currentUser ? { id: currentUser.uid || currentUser.id, name: currentUser.displayName || currentUser.name || 'Student', email: currentUser.email || '', role: 'student' } : undefined} />
         <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
           <p>Loading assignment...</p>
         </div>
@@ -704,7 +819,7 @@ const AssignmentDetailPage: React.FC = () => {
   if (!content) {
     return (
       <div className="flex min-h-screen">
-        <Sidebar navigation={navigation} user={user ? { id: user.uid, name: user.displayName || 'Student', email: user.email || '', role: 'student' } : undefined} />
+        <Sidebar navigation={navigation} user={currentUser ? { id: currentUser.uid || currentUser.id, name: currentUser.displayName || currentUser.name || 'Student', email: currentUser.email || '', role: 'student' } : undefined} />
         <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
           <Card>
             <CardHeader>
@@ -729,7 +844,7 @@ const AssignmentDetailPage: React.FC = () => {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar navigation={navigation} user={user ? { id: user.uid, name: user.displayName || 'Student', email: user.email || '', role: 'student' } : undefined} />
+      <Sidebar navigation={navigation} user={currentUser ? { id: currentUser.uid || currentUser.id, name: currentUser.displayName || currentUser.name || 'Student', email: currentUser.email || '', role: 'student' } : undefined} />
       <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
         <div className="mb-6">
           <Button variant="ghost" asChild className="mb-4">
@@ -864,7 +979,16 @@ const AssignmentDetailPage: React.FC = () => {
                     </RadioGroup>
                     {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
                       <Button
-                        onClick={() => handleSubmitProblem(currentProblemIndex)}
+                        onClick={async () => {
+                          console.log('Submit button clicked for multiple-choice problem', currentProblemIndex);
+                          console.log('Current state:', {
+                            hasUser: !!currentUser,
+                            hasContent: !!content,
+                            hasDb: !!db,
+                            answer: userAnswers[content.id]?.[currentProblemIndex]
+                          });
+                          await handleSubmitProblem(currentProblemIndex);
+                        }}
                         className="w-full"
                         disabled={userAnswers[content.id]?.[currentProblemIndex] === undefined}
                         variant={(() => {
@@ -901,7 +1025,16 @@ const AssignmentDetailPage: React.FC = () => {
                     </div>
                     {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
                       <Button
-                        onClick={() => handleSubmitProblem(currentProblemIndex)}
+                        onClick={async () => {
+                          console.log('Submit button clicked for math-expression problem', currentProblemIndex);
+                          console.log('Current state:', {
+                            hasUser: !!currentUser,
+                            hasContent: !!content,
+                            hasDb: !!db,
+                            answer: mathExpressionInputs[content.id]?.[currentProblemIndex]
+                          });
+                          await handleSubmitProblem(currentProblemIndex);
+                        }}
                         className="w-full"
                         disabled={!mathExpressionInputs[content.id]?.[currentProblemIndex]}
                         variant={(() => {
@@ -952,7 +1085,16 @@ const AssignmentDetailPage: React.FC = () => {
                     </div>
                     {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
                       <Button
-                        onClick={() => handleSubmitProblem(currentProblemIndex)}
+                        onClick={async () => {
+                          console.log('Submit button clicked for open-ended problem', currentProblemIndex);
+                          console.log('Current state:', {
+                            hasUser: !!currentUser,
+                            hasContent: !!content,
+                            hasDb: !!db,
+                            answer: openEndedAnswers[content.id]?.[currentProblemIndex]
+                          });
+                          await handleSubmitProblem(currentProblemIndex);
+                        }}
                         className="w-full"
                         disabled={!openEndedAnswers[content.id]?.[currentProblemIndex]}
                         variant={(() => {
