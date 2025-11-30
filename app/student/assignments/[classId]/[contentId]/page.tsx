@@ -422,51 +422,54 @@ const AssignmentDetailPage: React.FC = () => {
     }));
   };
 
-  const sendRealTimeUpdate = async (problemIndex: number, answer: string | number, type: string, problem: Problem, isSubmitted: boolean) => {
-    if (!user || !content?.id) return;
+  const sendRealTimeUpdate = async (
+    problemIndex: number, 
+    answer: string | number, 
+    type: string, 
+    problem: Problem, 
+    isSubmitted: boolean,
+    finalScore: number,
+    isCorrect: boolean,
+    isHalfCredit: boolean
+  ) => {
+    if (!user || !content?.id || !db) {
+      console.error('Missing required data for sendRealTimeUpdate:', { user, content, db });
+      return;
+    }
 
     const userId = user.uid;
     const userName = user.displayName || 'Student';
     const userEmail = user.email || '';
     
     try {
-      let isCorrect = false;
-      let score = 0;
-      
-      if (type === 'multiple-choice') {
-        isCorrect = Number(answer) === problem.correctAnswer;
-        score = isCorrect ? (problem.points || 1) : 0;
-      } else if (type === 'math-expression') {
-        const result = gradeMathExpression(problem, answer.toString());
-        isCorrect = result.correct;
-        score = result.score;
-      } else if (type === 'open-ended') {
-        const result = gradeOpenEnded(problem, answer.toString());
-        isCorrect = result.correct;
-        score = result.score;
-      }
-
-      const key = `${content.id}-${problemIndex}`;
-      const currentAttempts = attemptCounts[key] || 0;
-      const maxAttempts = problem.maxAttempts || Infinity;
-      const hasExceededMaxAttempts = currentAttempts > maxAttempts;
-      
-      // Apply half credit if exceeded max attempts and answer is correct
-      if (hasExceededMaxAttempts && isCorrect) {
-        score = Math.floor((problem.points || 1) / 2);
-      }
+      console.log('Sending real-time update:', {
+        problemIndex,
+        answer,
+        type,
+        finalScore,
+        isCorrect,
+        isSubmitted,
+        isHalfCredit
+      });
 
       const answerData = {
+        // Required fields for real-time matching
         studentId: userId,
         classId: classId,
         contentId: content.id,
         problemIndex: problemIndex,
+        
+        // Answer data
         answer: answer?.toString() || '',
         answerType: type,
         correct: isCorrect,
-        score: score,
+        score: finalScore,
+        
+        // Metadata
         updatedAt: serverTimestamp(),
         timestamp: serverTimestamp(),
+        
+        // Additional fields (optional but useful)
         studentName: userName,
         studentEmail: userEmail,
         questionId: problem.id || `problem-${problemIndex}`,
@@ -477,21 +480,37 @@ const AssignmentDetailPage: React.FC = () => {
         status: isSubmitted ? "submitted" : "in-progress",
         submitted: isSubmitted,
         submittedAt: isSubmitted ? serverTimestamp() : null,
-        isHalfCredit: hasExceededMaxAttempts && isCorrect
+        isHalfCredit: isHalfCredit
       };
 
+      // Save to Firestore using standardized schema and document ID
+      // Document ID: ${contentId}_${studentId}_problem-${problemIndex}
       const docId = `${content.id}_${userId}_problem-${problemIndex}`;
       const answerRef = doc(db, 'student-answers', classId, 'answers', docId);
       await setDoc(answerRef, answerData, { merge: true });
 
+      console.log('Answer saved to Firestore:', {
+        docId,
+        path: `student-answers/${classId}/answers/${docId}`,
+        answerData
+      });
+
+      // Also save to student-progress collection
+      const progressRef = doc(db, 'student-progress', `${classId}_${content.id}_${userId}_problem-${problemIndex}`);
+      await setDoc(progressRef, answerData, { merge: true });
+
       // Update local state
       const newKey = `${content.id}-${problemIndex}`;
-      setProblemScores(prev => ({ ...prev, [newKey]: score }));
+      setProblemScores(prev => ({ ...prev, [newKey]: finalScore }));
       setProblemStatuses(prev => ({ ...prev, [problemIndex]: isCorrect ? 'correct' : 'incorrect' }));
+      
+      // Update total score
       setTotalScore(prev => {
-        const oldScore = prev - (problemScores[newKey] || 0);
-        return oldScore + score;
+        const oldScore = problemScores[newKey] || 0;
+        return prev - oldScore + finalScore;
       });
+      
+      console.log('Local state updated with score:', finalScore);
     } catch (error) {
       console.error('Error saving answer:', error);
       toast({
@@ -568,6 +587,19 @@ const AssignmentDetailPage: React.FC = () => {
 
     const isHalfCredit = hasExceededMaxAttempts && result.correct;
 
+    console.log('Submitting problem:', {
+      problemIndex,
+      answer,
+      result,
+      finalScore,
+      isCorrect: result.correct,
+      isHalfCredit,
+      hasExceededMaxAttempts,
+      newAttemptCount,
+      maxAttempts
+    });
+
+    // Update local state first
     setSubmittedProblems(prev => ({
       ...prev,
       [key]: { isSubmitted: true, score: finalScore }
@@ -583,7 +615,17 @@ const AssignmentDetailPage: React.FC = () => {
       }
     }));
 
-    await sendRealTimeUpdate(problemIndex, answer, problem.type, problem, true);
+    // Send to Firestore with the calculated values
+    await sendRealTimeUpdate(
+      problemIndex, 
+      answer, 
+      problem.type, 
+      problem, 
+      true,
+      finalScore,
+      result.correct,
+      isHalfCredit
+    );
 
     toast({
       title: result.correct ? "Correct!" : "Incorrect",
