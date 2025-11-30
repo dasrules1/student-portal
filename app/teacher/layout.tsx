@@ -76,9 +76,9 @@ export default function TeacherLayout({
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start w-full" asChild>
-            <Link href="/teacher/calendar">
+            <Link href="/teacher/dashboard?tab=content">
               <Calendar className="w-5 h-5 mr-2" />
-              Calendar
+              Content
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start w-full" asChild>

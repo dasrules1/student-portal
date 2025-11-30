@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { storage } from "@/lib/storage"
-import { User, Class } from "@/lib/storage"
+import { User, Class } from "@/lib/types"
 import { sessionManager } from "@/lib/session"
 import { useAuth } from "@/contexts/auth-context"
 
@@ -153,12 +153,6 @@ export default function StudentClasses() {
       current: false,
     },
     {
-      title: "Calendar",
-      href: "/student/calendar",
-      icon: Calendar,
-      current: false,
-    },
-    {
       title: "Grades",
       href: "/student/grades",
       icon: File,
@@ -236,8 +230,7 @@ export default function StudentClasses() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <img src="/logo.png" alt="Education More" className="h-8" />
-              <h2 className="text-lg font-semibold">Education More</h2>
+              <h2 className="text-lg font-semibold text-primary">Education More</h2>
             </div>
             <h1 className="text-3xl font-bold">My Classes</h1>
             <p className="text-muted-foreground">

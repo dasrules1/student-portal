@@ -1,8 +1,9 @@
 import Link from "next/link"
-import { User } from "@/lib/storage"
+import { User } from "@/lib/types"
 import { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { sessionManager } from "@/lib/session"
@@ -54,10 +55,9 @@ export function Sidebar({ navigation, user }: SidebarProps) {
     <div className="flex flex-col w-64 h-screen border-r bg-background">
       <div className="p-4 border-b">
         <div className="flex items-center gap-2 mb-2">
-          <img src="/school-icon.svg" alt="Logo" className="h-6 w-6 text-primary" />
-          <h2 className="text-lg font-bold">Education More</h2>
+          <h2 className="text-lg font-bold text-primary">Education More</h2>
         </div>
-        <p className="text-xs text-muted-foreground pl-8">Student Portal</p>
+        <p className="text-xs text-primary pl-0">Student Portal</p>
       </div>
       <div className="flex-1 overflow-auto py-2">
         <nav className="px-4 py-3 space-y-1">
@@ -79,18 +79,35 @@ export function Sidebar({ navigation, user }: SidebarProps) {
         </nav>
       </div>
       <div className="p-4 border-t">
-        <div className="flex items-center">
+        <div className="flex items-center mb-3">
           <Avatar className="w-8 h-8 mr-3">
-            <AvatarImage src={user?.profileImageUrl || undefined} />
+            <AvatarImage src={undefined} />
             <AvatarFallback>
               {userName ? userName.substring(0, 2).toUpperCase() : "ST"}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-medium">{userName || "Student"}</p>
+            <p className="text-sm font-medium">{userName || user?.name || "Student"}</p>
             <p className="text-xs text-muted-foreground">{user?.email || ""}</p>
           </div>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={async () => {
+            try {
+              await sessionManager.logout();
+            } catch (e) {
+              console.error('Error logging out:', e);
+            }
+            if (typeof window !== 'undefined') {
+              window.location.href = '/';
+            }
+          }}
+        >
+          Log Out
+        </Button>
       </div>
     </div>
   )
