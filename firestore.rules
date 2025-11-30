@@ -136,5 +136,24 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isTeacher() || isAdmin();
     }
+
+    // Attendance collection
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated() && (
+        // Students can read their own attendance
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        // Teachers can read attendance for their classes
+        isTeacher() ||
+        // Admins can read all attendance
+        isAdmin()
+      );
+      
+      allow create, update: if isAuthenticated() && (
+        // Teachers can create/update attendance for their classes
+        isTeacher() ||
+        // Admins can create/update any attendance
+        isAdmin()
+      );
+    }
   }
 } 

@@ -351,6 +351,22 @@ export default function TeacherDashboard() {
                               </a>
                             </>
                           )}
+                          {cls.teacherJoinLink && (
+                            <>
+                              <span className="text-muted-foreground">Teacher Join Link:</span>
+                              <a href={cls.teacherJoinLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all">
+                                {cls.teacherJoinLink}
+                              </a>
+                            </>
+                          )}
+                          {cls.studentJoinLink && (
+                            <>
+                              <span className="text-muted-foreground">Student Join Link:</span>
+                              <a href={cls.studentJoinLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all">
+                                {cls.studentJoinLink}
+                              </a>
+                            </>
+                          )}
                           
                           <span className="text-muted-foreground">Students:</span>
                           <span>{countEnrolledStudents(cls.id)}</span>

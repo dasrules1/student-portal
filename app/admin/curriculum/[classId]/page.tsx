@@ -14,6 +14,7 @@ import {
   BookMarked,
   FileQuestion,
   X,
+  Copy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -34,6 +35,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
 import { sessionManager } from "@/lib/session"
@@ -53,6 +62,7 @@ const problemTypes = [
   { id: "multiple-choice", name: "Multiple Choice" },
   { id: "open-ended", name: "Open Ended" },
   { id: "math-expression", name: "Math Expression" },
+  { id: "geometric", name: "Geometric/Graphing" },
 ]
 
 export default function CurriculumEditor({ params }: { params: { classId: string } }) {
@@ -89,12 +99,16 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [newProblemAllowPartialCredit, setNewProblemAllowPartialCredit] = useState(false)
   const [newProblemTolerance, setNewProblemTolerance] = useState(0.01)
   const [newProblemMaxAttempts, setNewProblemMaxAttempts] = useState<number | null>(null)
+  const [newProblemGraphData, setNewProblemGraphData] = useState<string>("") // JSON string for graph data
   const [deleteLessonDialogOpen, setDeleteLessonDialogOpen] = useState(false)
   const [deleteContentDialogOpen, setDeleteContentDialogOpen] = useState(false)
   const [deleteProblemDialogOpen, setDeleteProblemDialogOpen] = useState(false)
   const [lessonToDelete, setLessonToDelete] = useState<string | null>(null)
   const [contentToDelete, setContentToDelete] = useState<string | null>(null)
   const [problemToDelete, setProblemToDelete] = useState<string | null>(null)
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
+  const [availableClasses, setAvailableClasses] = useState<any[]>([])
+  const [selectedSourceClassId, setSelectedSourceClassId] = useState<string>("")
 
   useEffect(() => {
     // Check if user is an admin
@@ -185,6 +199,19 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     }
 
     loadCurriculum()
+
+    // Load available classes for duplication
+    const loadAvailableClasses = async () => {
+      try {
+        const allClasses = await storage.getClasses()
+        // Filter out the current class
+        const otherClasses = allClasses.filter((cls: any) => cls.id !== classId)
+        setAvailableClasses(otherClasses)
+      } catch (error) {
+        console.error("Error loading classes:", error)
+      }
+    }
+    loadAvailableClasses()
   }, [classId, router, toast])
 
   // Save curriculum
@@ -489,6 +516,26 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         })
         return
       }
+    } else if (newProblemType === "geometric") {
+      if (!newProblemGraphData) {
+        toast({
+          title: "Missing graph data",
+          description: "Please provide graph data for the correct answer (points, lines, equations)",
+          variant: "destructive",
+        })
+        return
+      }
+      // Validate JSON
+      try {
+        JSON.parse(newProblemGraphData)
+      } catch (e) {
+        toast({
+          title: "Invalid graph data",
+          description: "Graph data must be valid JSON",
+          variant: "destructive",
+        })
+        return
+      }
     }
 
     const newProblemId = generateId("problem_")
@@ -510,6 +557,9 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     } else if (newProblemType === "open-ended") {
       newProblem.keywords = newProblemKeywords
       newProblem.allowPartialCredit = newProblemAllowPartialCredit
+    } else if (newProblemType === "geometric") {
+      newProblem.graphData = JSON.parse(newProblemGraphData)
+      // Graph data structure: { points: [{x, y}], lines: [{start: {x, y}, end: {x, y}}], equations: ["y = x + 1"] }
     }
 
     // Add max attempts - use default if not specified
@@ -574,6 +624,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setNewKeyword("")
     setNewProblemAllowPartialCredit(false)
     setNewProblemTolerance(0.01)
+    setNewProblemGraphData("")
     // Set default attempts based on content type
     const currentContent = curriculum.lessons
       .find((l: any) => l.id === activeLesson)
@@ -807,6 +858,89 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     return contentType ? contentType.icon : <FileText className="w-4 h-4 mr-2" />
   }
 
+  // Handle duplicate curriculum
+  const handleDuplicateCurriculum = async () => {
+    if (!selectedSourceClassId) {
+      toast({
+        title: "No class selected",
+        description: "Please select a class to duplicate from",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Load source curriculum
+      const sourceCurriculum = await storage.getCurriculum(selectedSourceClassId)
+      if (!sourceCurriculum) {
+        toast({
+          title: "No curriculum found",
+          description: "The selected class does not have a curriculum to duplicate",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Deep clone the curriculum and regenerate all IDs
+      const duplicateCurriculum = (curriculum: any): any => {
+        if (!curriculum) return null
+        
+        const cloned: any = { ...curriculum }
+        
+        if (cloned.lessons && Array.isArray(cloned.lessons)) {
+          cloned.lessons = cloned.lessons.map((lesson: any) => {
+            const newLesson = {
+              ...lesson,
+              id: generateId("lesson_"),
+              contents: lesson.contents && Array.isArray(lesson.contents)
+                ? lesson.contents.map((content: any) => {
+                    const newContent = {
+                      ...content,
+                      id: generateId("content_"),
+                      problems: content.problems && Array.isArray(content.problems)
+                        ? content.problems.map((problem: any) => ({
+                            ...problem,
+                            id: generateId("problem_"),
+                          }))
+                        : [],
+                    }
+                    return newContent
+                  })
+                : [],
+            }
+            return newLesson
+          })
+        }
+        
+        return cloned
+      }
+
+      const formattedSource = sourceCurriculum.content || sourceCurriculum
+      const duplicated = duplicateCurriculum(formattedSource)
+      
+      // Set the duplicated curriculum
+      setCurriculum(duplicated)
+      
+      // Save it
+      await saveCurriculum()
+      
+      setDuplicateDialogOpen(false)
+      setSelectedSourceClassId("")
+      
+      toast({
+        title: "Curriculum duplicated",
+        description: "The curriculum has been successfully duplicated from the selected class",
+      })
+    } catch (error: any) {
+      console.error("Error duplicating curriculum:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to duplicate curriculum",
+        variant: "destructive",
+      })
+    }
+  }
+
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">Loading curriculum...</div>
   }
@@ -834,6 +968,10 @@ export default function CurriculumEditor({ params }: { params: { classId: string
               <Button onClick={saveCurriculum}>
                 <Save className="w-4 h-4 mr-2" />
                 Save Curriculum
+              </Button>
+              <Button variant="outline" onClick={() => setDuplicateDialogOpen(true)}>
+                <Copy className="w-4 h-4 mr-2" />
+                Duplicate from Another Class
               </Button>
               <Button variant="outline" onClick={() => router.push("/admin/dashboard?tab=classes")}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -1369,6 +1507,31 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                                 </div>
                               )}
 
+                              {/* Geometric/Graphing options */}
+                              {newProblemType === "geometric" && (
+                                <div className="space-y-4">
+                                  <div className="space-y-2">
+                                    <Label>Correct Graph Data (JSON)</Label>
+                                    <Textarea
+                                      value={newProblemGraphData}
+                                      onChange={(e) => setNewProblemGraphData(e.target.value)}
+                                      placeholder={`{
+  "points": [{"x": 0, "y": 0}, {"x": 1, "y": 1}],
+  "lines": [{"start": {"x": 0, "y": 0}, "end": {"x": 5, "y": 5}}],
+  "equations": ["y = x"]
+}`}
+                                      rows={8}
+                                      className="font-mono text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Enter graph data as JSON. Include points, lines, and/or equations that represent the correct answer.
+                                      <br />
+                                      Format: {"{"} "points": [{"{"} "x": number, "y": number {"}"}], "lines": [{"{"} "start": {"{"} "x": number, "y": number {"}"}, "end": {"{"} "x": number, "y": number {"}"} {"}"}], "equations": ["string"] {"}"}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="space-y-2">
                                 <Label htmlFor="problem-points">Points (Default: 3)</Label>
                                 <Input
@@ -1772,6 +1935,52 @@ export default function CurriculumEditor({ params }: { params: { classId: string
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Duplicate Curriculum Dialog */}
+      <Dialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Duplicate Curriculum from Another Class</DialogTitle>
+            <DialogDescription>
+              Select a class to copy its curriculum. All lessons, content, and problems will be duplicated with new IDs.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="source-class">Source Class</Label>
+              <Select value={selectedSourceClassId} onValueChange={setSelectedSourceClassId}>
+                <SelectTrigger id="source-class">
+                  <SelectValue placeholder="Select a class to duplicate from" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableClasses.map((cls) => (
+                    <SelectItem key={cls.id} value={cls.id}>
+                      {cls.name} - {cls.teacher}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {availableClasses.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No other classes available to duplicate from.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setDuplicateDialogOpen(false)
+              setSelectedSourceClassId("")
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleDuplicateCurriculum} disabled={!selectedSourceClassId || availableClasses.length === 0}>
+              <Copy className="w-4 h-4 mr-2" />
+              Duplicate Curriculum
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

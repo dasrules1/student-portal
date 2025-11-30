@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { CheckSquare, LayoutDashboard, Book, File, Cog, ArrowLeft, Send, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { GraphEditor } from '@/components/graph-editor';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
@@ -31,6 +32,11 @@ interface Problem {
   tolerance?: number;
   points?: number;
   maxAttempts?: number;
+  graphData?: {
+    points?: Array<{ x: number; y: number }>;
+    lines?: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>;
+    equations?: string[];
+  };
 }
 
 interface Content {
@@ -57,6 +63,13 @@ interface MathExpressionInputs {
 interface OpenEndedAnswers {
   [contentId: string]: {
     [problemIndex: number]: string;
+  };
+}
+
+interface GraphAnswers {
+  [key: string]: {
+    points: Array<{ x: number; y: number }>;
+    lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>;
   };
 }
 
@@ -97,6 +110,7 @@ const AssignmentDetailPage: React.FC = () => {
   const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
   const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({});
   const [openEndedAnswers, setOpenEndedAnswers] = useState<OpenEndedAnswers>({});
+  const [graphAnswers, setGraphAnswers] = useState<GraphAnswers>({});
   const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({});
   const [problemState, setProblemState] = useState<ProblemState>({});
   const [attemptCounts, setAttemptCounts] = useState<Record<string, number>>({});
@@ -691,6 +705,19 @@ const AssignmentDetailPage: React.FC = () => {
         return;
       }
       result = gradeOpenEnded(problem, answer);
+    } else if (problem.type === "geometric") {
+      const key = `${content.id}-${problemIndex}`;
+      const graphData = graphAnswers[key];
+      if (!graphData || (!graphData.points?.length && !graphData.lines?.length)) {
+        toast({
+          title: "No graph provided",
+          description: "Please create a graph before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      result = gradeGeometric(problem, graphData);
+      answer = JSON.stringify(graphData);
     }
 
     const hasExceededMaxAttempts = newAttemptCount > maxAttempts;
@@ -1125,6 +1152,69 @@ const AssignmentDetailPage: React.FC = () => {
                             {getProblemScore(currentProblemIndex)} / {currentProblem.points || 1} points
                           </span>
                         </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {currentProblem.type === "geometric" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col space-y-2">
+                      <Label>Create Your Graph:</Label>
+                      <GraphEditor
+                        value={graphAnswers[`${content.id}-${currentProblemIndex}`]}
+                        onChange={(data) => {
+                          setGraphAnswers(prev => ({
+                            ...prev,
+                            [`${content.id}-${currentProblemIndex}`]: data
+                          }))
+                        }}
+                        readonly={getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit}
+                      />
+                    </div>
+                    {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
+                      <Button
+                        onClick={async () => {
+                          await handleSubmitProblem(currentProblemIndex);
+                        }}
+                        className="w-full"
+                        disabled={!graphAnswers[`${content.id}-${currentProblemIndex}`] || (!graphAnswers[`${content.id}-${currentProblemIndex}`]?.points?.length && !graphAnswers[`${content.id}-${currentProblemIndex}`]?.lines?.length)}
+                        variant={(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "secondary" : "default";
+                        })()}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "Submit for Half Credit" : "Submit Answer";
+                        })()}
+                      </Button>
+                    )}
+                    {isProblemSubmitted(currentProblemIndex) && (
+                      <div className="p-3 bg-muted rounded-md space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Score:</span>
+                          <span className="text-sm font-semibold">
+                            {getProblemScore(currentProblemIndex)} / {currentProblem.points || 1} points
+                          </span>
+                        </div>
+                        {currentProblem.graphData && (
+                          <div className="mt-4">
+                            <Label className="text-sm font-medium mb-2 block">Correct Answer:</Label>
+                            <GraphEditor
+                              value={{
+                                points: currentProblem.graphData.points || [],
+                                lines: currentProblem.graphData.lines || []
+                              }}
+                              readonly={true}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

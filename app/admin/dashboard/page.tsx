@@ -58,6 +58,8 @@ export default function AdminDashboard() {
     startTime: "",
     endTime: "",
     virtualLink: "",
+    teacherJoinLink: "",
+    studentJoinLink: "",
   })
   const [searchQuery, setSearchQuery] = useState("")
   const [deleteUserDialogOpen, setDeleteUserDialogOpen] = useState(false)
@@ -221,6 +223,8 @@ export default function AdminDashboard() {
         startTime: "",
         endTime: "",
         virtualLink: "",
+        teacherJoinLink: "",
+        studentJoinLink: "",
       })
 
       // Close dialog
@@ -1009,6 +1013,30 @@ export default function AdminDashboard() {
                 placeholder="Optional: URL for virtual meetings"
               />
             </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="teacher-join-link" className="text-right">
+                Teacher Join Link
+              </Label>
+              <Input
+                id="teacher-join-link"
+                value={newClass.teacherJoinLink}
+                onChange={(e) => setNewClass({ ...newClass, teacherJoinLink: e.target.value })}
+                className="col-span-3"
+                placeholder="e.g., https://example.com/join/teacher123"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="student-join-link" className="text-right">
+                Student Join Link
+              </Label>
+              <Input
+                id="student-join-link"
+                value={newClass.studentJoinLink}
+                onChange={(e) => setNewClass({ ...newClass, studentJoinLink: e.target.value })}
+                className="col-span-3"
+                placeholder="e.g., https://example.com/join/student123"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddingClass(false)}>
@@ -1138,6 +1166,42 @@ export default function AdminDashboard() {
                   value={classToEdit.location}
                   onChange={(e) => setClassToEdit({ ...classToEdit, location: e.target.value })}
                   className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-virtual-link" className="text-right">
+                  Virtual Link
+                </Label>
+                <Input
+                  id="edit-virtual-link"
+                  value={classToEdit.virtualLink || ""}
+                  onChange={(e) => setClassToEdit({ ...classToEdit, virtualLink: e.target.value })}
+                  className="col-span-3"
+                  placeholder="Optional: URL for virtual meetings"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-teacher-join-link" className="text-right">
+                  Teacher Join Link
+                </Label>
+                <Input
+                  id="edit-teacher-join-link"
+                  value={classToEdit.teacherJoinLink || ""}
+                  onChange={(e) => setClassToEdit({ ...classToEdit, teacherJoinLink: e.target.value })}
+                  className="col-span-3"
+                  placeholder="e.g., https://example.com/join/teacher123"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-student-join-link" className="text-right">
+                  Student Join Link
+                </Label>
+                <Input
+                  id="edit-student-join-link"
+                  value={classToEdit.studentJoinLink || ""}
+                  onChange={(e) => setClassToEdit({ ...classToEdit, studentJoinLink: e.target.value })}
+                  className="col-span-3"
+                  placeholder="e.g., https://example.com/join/student123"
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">

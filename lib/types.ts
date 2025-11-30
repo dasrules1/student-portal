@@ -22,6 +22,8 @@ export interface Class {
   startTime?: string
   endTime?: string
   virtualLink?: string
+  teacherJoinLink?: string
+  studentJoinLink?: string
   status?: string
   students: number
   enrolledStudents?: string[]

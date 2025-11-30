@@ -28,6 +28,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { GraphEditor } from "@/components/graph-editor"
 import { sessionManager } from "@/lib/session"
 import { storage } from "@/lib/storage"
 import { realtimeDb } from "@/lib/firebase"
@@ -223,6 +224,12 @@ interface Problem {
   tolerance?: number;
   explanation?: string;
   maxAttempts?: number;
+  allowPartialCredit?: boolean;
+  graphData?: {
+    points?: Array<{ x: number; y: number }>;
+    lines?: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>;
+    equations?: string[];
+  };
 }
 
 interface ProblemState {
@@ -341,6 +348,7 @@ export default function StudentCurriculum() {
   const [showResults, setShowResults] = useState(false)
   const [mathExpressionInputs, setMathExpressionInputs] = useState<MathExpressionInputs>({})
   const [openEndedAnswers, setOpenEndedAnswers] = useState<OpenEndedAnswers>({})
+  const [graphAnswers, setGraphAnswers] = useState<Record<string, { points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }>>({})
   const [attemptCounts, setAttemptCounts] = useState<AttemptCounts>({})
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState<string | null>(null)
@@ -786,6 +794,73 @@ export default function StudentCurriculum() {
     return result;
   };
 
+  // Auto-grade a geometric/graphing answer
+  const gradeGeometric = (problem: Problem, studentGraphData: { points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentGraphData || !problem.graphData) {
+      return result;
+    }
+
+    const correctData = problem.graphData;
+    const tolerance = 0.5; // Allow 0.5 unit tolerance for points and lines
+    let matches = 0;
+    let total = 0;
+
+    // Compare points
+    if (correctData.points && Array.isArray(correctData.points)) {
+      total += correctData.points.length;
+      correctData.points.forEach((correctPoint) => {
+        const found = studentGraphData.points.some((studentPoint) => {
+          const dx = Math.abs(correctPoint.x - studentPoint.x);
+          const dy = Math.abs(correctPoint.y - studentPoint.y);
+          return dx <= tolerance && dy <= tolerance;
+        });
+        if (found) matches++;
+      });
+    }
+
+    // Compare lines
+    if (correctData.lines && Array.isArray(correctData.lines)) {
+      total += correctData.lines.length;
+      correctData.lines.forEach((correctLine) => {
+        const found = studentGraphData.lines.some((studentLine) => {
+          const startMatch = 
+            Math.abs(correctLine.start.x - studentLine.start.x) <= tolerance &&
+            Math.abs(correctLine.start.y - studentLine.start.y) <= tolerance;
+          const endMatch = 
+            Math.abs(correctLine.end.x - studentLine.end.x) <= tolerance &&
+            Math.abs(correctLine.end.y - studentLine.end.y) <= tolerance;
+          // Also check reverse direction
+          const reverseStartMatch = 
+            Math.abs(correctLine.start.x - studentLine.end.x) <= tolerance &&
+            Math.abs(correctLine.start.y - studentLine.end.y) <= tolerance;
+          const reverseEndMatch = 
+            Math.abs(correctLine.end.x - studentLine.start.x) <= tolerance &&
+            Math.abs(correctLine.end.y - studentLine.start.y) <= tolerance;
+          return (startMatch && endMatch) || (reverseStartMatch && reverseEndMatch);
+        });
+        if (found) matches++;
+      });
+    }
+
+    // If no elements to compare, return incorrect
+    if (total === 0) {
+      return result;
+    }
+
+    // Require at least 80% match for correctness
+    const matchPercentage = matches / total;
+    if (matchPercentage >= 0.8) {
+      result = { correct: true, score: problem.points || 0 };
+    } else if (problem.allowPartialCredit && matchPercentage >= 0.5) {
+      // Partial credit if enabled
+      result = { correct: false, score: Math.floor((problem.points || 0) * matchPercentage) };
+    }
+
+    return result;
+  };
+
   // Auto-grade an open ended answer
   const gradeOpenEnded = (problem: Problem, studentAnswer: string): GradingResult => {
     let result: GradingResult = { correct: false, score: 0 };
@@ -859,6 +934,18 @@ export default function StudentCurriculum() {
         return;
       }
       result = gradeOpenEnded(problem, answer);
+    } else if (problem.type === "geometric") {
+      const graphData = graphAnswers[key];
+      if (!graphData || (!graphData.points?.length && !graphData.lines?.length)) {
+        toast({
+          title: "No graph provided",
+          description: "Please create a graph before submitting.",
+          variant: "destructive",
+        });
+        return;
+      }
+      result = gradeGeometric(problem, graphData);
+      answer = JSON.stringify(graphData);
     }
 
     // Increment attempt count FIRST
@@ -1688,6 +1775,76 @@ export default function StudentCurriculum() {
                                                 {getProblemScore(problemIndex)} / {problem.points || 1} points
                                               </span>
                                             </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {problem.type === "geometric" && (
+                                  <div className="space-y-3">
+                                    <div className="flex flex-col space-y-2">
+                                      <Label>Create Your Graph:</Label>
+                                      <GraphEditor
+                                        value={graphAnswers[`${activeContent.id}-${problemIndex}`]}
+                                        onChange={(data) => {
+                                          setGraphAnswers(prev => ({
+                                            ...prev,
+                                            [`${activeContent.id}-${problemIndex}`]: data
+                                          }))
+                                        }}
+                                        readonly={problemScore === problem.points || isHalfCredit}
+                                      />
+                                      {!(problemScore === problem.points || isHalfCredit) && (
+                                        <Button
+                                          onClick={() => handleSubmitProblem(problemIndex)}
+                                          className="w-full"
+                                          disabled={!graphAnswers[`${activeContent.id}-${problemIndex}`] || (!graphAnswers[`${activeContent.id}-${problemIndex}`]?.points?.length && !graphAnswers[`${activeContent.id}-${problemIndex}`]?.lines?.length)}
+                                          variant={isAtMaxAttempts ? "secondary" : "default"}
+                                        >
+                                          <Send className="w-4 h-4 mr-2" />
+                                          {isAtMaxAttempts ? "Submit for Half Credit" : "Submit Answer"}
+                                        </Button>
+                                      )}
+                                      {isSubmitted && (
+                                        <div className="space-y-3">
+                                          <div
+                                            className={`p-3 rounded-md ${
+                                              problemScore === problem.points
+                                                ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                                                : isHalfCredit
+                                                  ? "bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300"
+                                                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300"
+                                            }`}
+                                          >
+                                            <div className="font-medium mb-2">
+                                              {problemScore === problem.points
+                                                ? "Correct!"
+                                                : isHalfCredit
+                                                  ? "Correct! However, you exceeded the maximum attempts, so you receive half credit."
+                                                  : "Incorrect."}
+                                            </div>
+                                          </div>
+                                          <div className="p-3 bg-muted rounded-md space-y-2">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-sm font-medium">Score:</span>
+                                              <span className="text-sm font-semibold">
+                                                {getProblemScore(problemIndex)} / {problem.points || 1} points
+                                              </span>
+                                            </div>
+                                            {problem.graphData && (
+                                              <div className="mt-4">
+                                                <Label className="text-sm font-medium mb-2 block">Correct Answer:</Label>
+                                                <GraphEditor
+                                                  value={{
+                                                    points: problem.graphData.points || [],
+                                                    lines: problem.graphData.lines || []
+                                                  }}
+                                                  readonly={true}
+                                                />
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                       )}

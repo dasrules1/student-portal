@@ -66,7 +66,8 @@ import { ref, onValue, set } from 'firebase/database';
 import { realtimeDb } from '@/lib/firebase';
 import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
-import { InlineMath, BlockMath } from 'react-katex';
+import { InlineMath, BlockMath } from 'react-katex'
+import { GraphEditor } from '@/components/graph-editor';
 
 // Add interface definitions for types
 interface Class {
@@ -1107,7 +1108,8 @@ export default function TeacherCurriculum() {
             {problemType === 'multiple-choice' ? 'Multiple Choice' : 
              problemType === 'short-answer' ? 'Short Answer' : 
              problemType === 'open-ended' ? 'Open Ended' :
-             problemType === 'math-expression' ? 'Math Expression' : 'Essay'}
+             problemType === 'math-expression' ? 'Math Expression' :
+             problemType === 'geometric' ? 'Geometric/Graphing' : 'Essay'}
           </Badge>
         </div>
         <p className="mb-2">{problem.question}</p>
@@ -1149,6 +1151,21 @@ export default function TeacherCurriculum() {
               ) : (
                 'No answer provided'
               )}
+            </div>
+          </div>
+        )}
+
+        {problemType === 'geometric' && problem.graphData && (
+          <div className="mb-2">
+            <div className="font-medium text-sm text-gray-500 mb-1">Correct Graph:</div>
+            <div className="p-2 bg-gray-50 rounded">
+              <GraphEditor
+                value={{
+                  points: problem.graphData.points || [],
+                  lines: problem.graphData.lines || []
+                }}
+                readonly={true}
+              />
             </div>
           </div>
         )}
@@ -1202,18 +1219,54 @@ export default function TeacherCurriculum() {
                             <div className="text-sm">
                               {answer ? (
                                 <>
-                                  <div className="flex items-center justify-between">
-                                  <span className={answer.correct ? "text-green-600" : "text-red-600"}>
-                                    {answer.answer || 'No answer'}
-                                  </span>
-                                  <span className="ml-2">
-                                      {answer.score}/{maxPoints}
-                                  </span>
-                                  </div>
-                                  {answer.override && (
-                                    <div className="text-xs text-muted-foreground mt-1">
-                                      Override: {answer.overrideScore}/{maxPoints}
+                                  {problem.type === 'geometric' && answer.answer ? (
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className={answer.correct ? "text-green-600" : "text-red-600"}>
+                                          Graph Submitted
+                                        </span>
+                                        <span className="ml-2">
+                                          {answer.score}/{maxPoints}
+                                        </span>
+                                      </div>
+                                      {(() => {
+                                        try {
+                                          const graphData = typeof answer.answer === 'string' ? JSON.parse(answer.answer) : answer.answer;
+                                          return (
+                                            <GraphEditor
+                                              value={{
+                                                points: graphData.points || [],
+                                                lines: graphData.lines || []
+                                              }}
+                                              readonly={true}
+                                            />
+                                          );
+                                        } catch (e) {
+                                          return <span className="text-xs text-muted-foreground">Invalid graph data</span>;
+                                        }
+                                      })()}
+                                      {answer.override && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          Override: {answer.overrideScore}/{maxPoints}
+                                        </div>
+                                      )}
                                     </div>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center justify-between">
+                                        <span className={answer.correct ? "text-green-600" : "text-red-600"}>
+                                          {answer.answer || 'No answer'}
+                                        </span>
+                                        <span className="ml-2">
+                                          {answer.score}/{maxPoints}
+                                        </span>
+                                      </div>
+                                      {answer.override && (
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          Override: {answer.overrideScore}/{maxPoints}
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                 </>
                               ) : (

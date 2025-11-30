@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Search, Mail, Download, BookOpen, Users, CalendarDays, Map } from "lucide-react"
+import { ArrowLeft, Search, Mail, Download, BookOpen, Users, CalendarDays, Map, ClipboardCheck } from "lucide-react"
 import { storage } from "@/lib/storage"
 import { sessionManager } from "@/lib/session"
 import { User, Class } from "@/lib/types"
@@ -171,6 +171,12 @@ export default function ClassPage() {
             <Download className="w-4 h-4 mr-2" />
             Export Roster
           </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/teacher/class/${classId}/attendance`}>
+              <ClipboardCheck className="w-4 h-4 mr-2" />
+              Attendance
+            </Link>
+          </Button>
           <Button size="sm" onClick={handleViewCurriculum}>
             <BookOpen className="w-4 h-4 mr-2" />
             Curriculum
@@ -237,6 +243,34 @@ export default function ClassPage() {
                     >
                       <Map className="w-4 h-4 mr-2" />
                       {classData.virtualLink}
+                    </a>
+                  </div>
+                )}
+                {classData?.teacherJoinLink && (
+                  <div className="col-span-1 md:col-span-2 lg:col-span-3">
+                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Teacher Join Link</h3>
+                    <a 
+                      href={classData.teacherJoinLink} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-blue-500 hover:underline flex items-center break-all"
+                    >
+                      <Map className="w-4 h-4 mr-2" />
+                      {classData.teacherJoinLink}
+                    </a>
+                  </div>
+                )}
+                {classData?.studentJoinLink && (
+                  <div className="col-span-1 md:col-span-2 lg:col-span-3">
+                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Student Join Link</h3>
+                    <a 
+                      href={classData.studentJoinLink} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-blue-500 hover:underline flex items-center break-all"
+                    >
+                      <Map className="w-4 h-4 mr-2" />
+                      {classData.studentJoinLink}
                     </a>
                   </div>
                 )}
