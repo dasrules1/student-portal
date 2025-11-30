@@ -103,28 +103,69 @@ const AssignmentDetailPage: React.FC = () => {
   const contentId = params.contentId;
 
   useEffect(() => {
-    if (classId && contentId && user) {
+    if (classId && contentId) {
       loadAssignment();
-      loadScores();
+      if (user) {
+        loadScores();
+      }
     }
   }, [classId, contentId, user]);
 
   const loadAssignment = async () => {
     try {
+      setLoading(true);
+      console.log('Loading assignment for classId:', classId, 'contentId:', contentId);
+      
       const curriculum = await storage.getCurriculum(classId, 'student');
-      if (curriculum && curriculum.content && curriculum.content.lessons) {
-        for (const lesson of curriculum.content.lessons) {
-          const lessonAny = lesson as any;
-          if (lessonAny.contents && Array.isArray(lessonAny.contents)) {
-            const foundContent = lessonAny.contents.find((c: any) => c.id === contentId);
-            if (foundContent) {
-              setContent(foundContent);
-              // Load existing answers
-              await loadExistingAnswers(foundContent);
-              break;
-            }
+      console.log('Curriculum loaded:', curriculum);
+      
+      if (!curriculum) {
+        console.log('No curriculum found');
+        setLoading(false);
+        return;
+      }
+      
+      if (!curriculum.content) {
+        console.log('Curriculum has no content property');
+        setLoading(false);
+        return;
+      }
+      
+      const lessons = curriculum.content.lessons || [];
+      console.log('Found lessons:', lessons.length);
+      
+      let foundContent = null;
+      
+      for (const lesson of lessons) {
+        const lessonAny = lesson as any;
+        if (lessonAny.contents && Array.isArray(lessonAny.contents)) {
+          console.log('Checking lesson:', lessonAny.title, 'with', lessonAny.contents.length, 'contents');
+          foundContent = lessonAny.contents.find((c: any) => c && c.id === contentId);
+          if (foundContent) {
+            console.log('Found content:', foundContent.title);
+            break;
           }
         }
+      }
+      
+      if (foundContent) {
+        setContent(foundContent);
+        // Load existing answers if user is available
+        if (user && db) {
+          try {
+            await loadExistingAnswers(foundContent);
+          } catch (error) {
+            console.error('Error loading existing answers:', error);
+            // Don't block the UI if loading answers fails
+          }
+        }
+      } else {
+        console.log('Content not found in any lesson');
+        toast({
+          title: "Assignment Not Found",
+          description: "The assignment you're looking for could not be found.",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Error loading assignment:', error);
