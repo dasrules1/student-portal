@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { Trash2, Minus } from "lucide-react"
+import { Trash2 } from "lucide-react"
 
 interface Point {
   x: number
@@ -32,25 +32,42 @@ export function GraphEditor({ value, onChange, readonly = false }: GraphEditorPr
   const [isDrawing, setIsDrawing] = useState(false)
   const [startPoint, setStartPoint] = useState<Point | null>(null)
   const [mode, setMode] = useState<"point" | "line">("point")
+  // Track if we've initialized from external value to prevent loops
+  const initializedRef = useRef(false)
+  // Track if changes are from internal user interactions
+  const isInternalChangeRef = useRef(false)
 
   const CANVAS_SIZE = 400
   const GRID_SIZE = 20
   const ORIGIN_X = CANVAS_SIZE / 2
   const ORIGIN_Y = CANVAS_SIZE / 2
-  const SCALE = 1
 
-  useEffect(() => {
-    if (value) {
-      setPoints(value.points || [])
-      setLines(value.lines || [])
-    }
-  }, [value])
+  // Memoize a stable reference for comparing arrays
+  const valuePointsStr = useMemo(() => JSON.stringify(value?.points || []), [value?.points])
+  const valueLinesStr = useMemo(() => JSON.stringify(value?.lines || []), [value?.lines])
 
+  // Only sync from external value on mount or when external value genuinely changes
   useEffect(() => {
-    if (onChange) {
-      onChange({ points, lines })
+    // Skip if this was triggered by our own onChange callback
+    if (isInternalChangeRef.current) {
+      isInternalChangeRef.current = false
+      return
     }
-  }, [points, lines, onChange])
+    
+    const newPoints = value?.points || []
+    const newLines = value?.lines || []
+    
+    // Only update if the external value is different from current internal state
+    const currentPointsStr = JSON.stringify(points)
+    const currentLinesStr = JSON.stringify(lines)
+    
+    if (valuePointsStr !== currentPointsStr || valueLinesStr !== currentLinesStr) {
+      setPoints(newPoints)
+      setLines(newLines)
+    }
+    
+    initializedRef.current = true
+  }, [valuePointsStr, valueLinesStr])
 
   const draw = () => {
     const canvas = canvasRef.current
@@ -139,6 +156,14 @@ export function GraphEditor({ value, onChange, readonly = false }: GraphEditorPr
     return { x: Math.round(x * 2) / 2, y: Math.round(y * 2) / 2 } // Round to nearest 0.5
   }
 
+  // Notify parent of changes - only for user-initiated changes
+  const notifyChange = useCallback((newPoints: Point[], newLines: Line[]) => {
+    if (onChange) {
+      isInternalChangeRef.current = true
+      onChange({ points: newPoints, lines: newLines })
+    }
+  }, [onChange])
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (readonly) return
 
@@ -152,16 +177,20 @@ export function GraphEditor({ value, onChange, readonly = false }: GraphEditorPr
     const graphPoint = canvasToGraph(x, y)
 
     if (mode === "point") {
-      setPoints([...points, graphPoint])
+      const newPoints = [...points, graphPoint]
+      setPoints(newPoints)
+      notifyChange(newPoints, lines)
     } else if (mode === "line") {
       if (!isDrawing) {
         setStartPoint(graphPoint)
         setIsDrawing(true)
       } else {
         if (startPoint) {
-          setLines([...lines, { start: startPoint, end: graphPoint }])
+          const newLines = [...lines, { start: startPoint, end: graphPoint }]
+          setLines(newLines)
           setIsDrawing(false)
           setStartPoint(null)
+          notifyChange(points, newLines)
         }
       }
     }
@@ -172,48 +201,67 @@ export function GraphEditor({ value, onChange, readonly = false }: GraphEditorPr
     setLines([])
     setIsDrawing(false)
     setStartPoint(null)
+    notifyChange([], [])
   }
+
+  // Handle button clicks with better responsiveness
+  const handleModeChange = useCallback((newMode: "point" | "line") => {
+    setMode(newMode)
+    setIsDrawing(false)
+    setStartPoint(null)
+  }, [])
 
   return (
     <div className="space-y-4">
       {!readonly && (
         <div className="flex space-x-2">
           <Button
+            type="button"
             variant={mode === "point" ? "default" : "outline"}
             size="sm"
-            onClick={() => {
-              setMode("point")
-              setIsDrawing(false)
-              setStartPoint(null)
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleModeChange("point")
             }}
           >
             Add Point
           </Button>
           <Button
+            type="button"
             variant={mode === "line" ? "default" : "outline"}
             size="sm"
-            onClick={() => {
-              setMode("line")
-              setIsDrawing(false)
-              setStartPoint(null)
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              handleModeChange("line")
             }}
           >
             Draw Line
           </Button>
-          <Button variant="outline" size="sm" onClick={clearAll}>
+          <Button 
+            type="button" 
+            variant="outline" 
+            size="sm" 
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              clearAll()
+            }}
+          >
             <Trash2 className="w-4 h-4 mr-2" />
             Clear All
           </Button>
         </div>
       )}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="border rounded-lg overflow-hidden" style={{ touchAction: 'none' }}>
         <canvas
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
           onClick={handleCanvasClick}
-          className="cursor-crosshair"
-          style={{ display: "block" }}
+          className="cursor-crosshair bg-white"
+          style={{ display: "block", touchAction: 'none' }}
         />
       </div>
       {!readonly && (
