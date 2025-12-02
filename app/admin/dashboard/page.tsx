@@ -766,7 +766,7 @@ export default function AdminDashboard() {
                                 <Button
                                   variant="default"
                                   className="flex-1"
-                                  onClick={() => window.location.href = `/admin/curriculum/${cls.id}`}
+                                  onClick={() => router.push(`/admin/curriculum/${cls.id}`)}
                                 >
                                   <BookOpen className="w-4 h-4 mr-2" />
                                   Curriculum
@@ -774,7 +774,7 @@ export default function AdminDashboard() {
                                 <Button
                                   variant="outline"
                                   className="flex-1"
-                                  onClick={() => window.location.href = `/admin/class/${cls.id}/progress`}
+                                  onClick={() => router.push(`/admin/class/${cls.id}/progress`)}
                                 >
                                   <Eye className="w-4 h-4 mr-2" />
                                   Progress
@@ -783,7 +783,7 @@ export default function AdminDashboard() {
                               <Button
                                 variant="outline"
                                 className="w-full"
-                                onClick={() => window.location.href = `/admin/class/${cls.id}/enrollment`}
+                                onClick={() => router.push(`/admin/class/${cls.id}/enrollment`)}
                               >
                                 <Users className="w-4 h-4 mr-2" />
                                 Manage Enrollment
