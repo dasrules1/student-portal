@@ -46,6 +46,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
 import { sessionManager } from "@/lib/session"
+import { GraphEditor } from "@/components/graph-editor"
 
 // Content types for curriculum
 const contentTypes = [
@@ -99,7 +100,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [newProblemAllowPartialCredit, setNewProblemAllowPartialCredit] = useState(false)
   const [newProblemTolerance, setNewProblemTolerance] = useState(0.01)
   const [newProblemMaxAttempts, setNewProblemMaxAttempts] = useState<number | null>(null)
-  const [newProblemGraphData, setNewProblemGraphData] = useState<string>("") // JSON string for graph data
+  const [newProblemGraphData, setNewProblemGraphData] = useState<{ points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }>({ points: [], lines: [] })
   const [deleteLessonDialogOpen, setDeleteLessonDialogOpen] = useState(false)
   const [deleteContentDialogOpen, setDeleteContentDialogOpen] = useState(false)
   const [deleteProblemDialogOpen, setDeleteProblemDialogOpen] = useState(false)
@@ -517,21 +518,10 @@ export default function CurriculumEditor({ params }: { params: { classId: string
         return
       }
     } else if (newProblemType === "geometric") {
-      if (!newProblemGraphData) {
+      if (!newProblemGraphData || (!newProblemGraphData.points?.length && !newProblemGraphData.lines?.length)) {
         toast({
           title: "Missing graph data",
-          description: "Please provide graph data for the correct answer (points, lines, equations)",
-          variant: "destructive",
-        })
-        return
-      }
-      // Validate JSON
-      try {
-        JSON.parse(newProblemGraphData)
-      } catch (e) {
-        toast({
-          title: "Invalid graph data",
-          description: "Graph data must be valid JSON",
+          description: "Please add at least one point or line to the graph for the correct answer",
           variant: "destructive",
         })
         return
@@ -558,8 +548,8 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       newProblem.keywords = newProblemKeywords
       newProblem.allowPartialCredit = newProblemAllowPartialCredit
     } else if (newProblemType === "geometric") {
-      newProblem.graphData = JSON.parse(newProblemGraphData)
-      // Graph data structure: { points: [{x, y}], lines: [{start: {x, y}, end: {x, y}}], equations: ["y = x + 1"] }
+      newProblem.graphData = newProblemGraphData
+      // Graph data structure: { points: [{x, y}], lines: [{start: {x, y}, end: {x, y}}] }
     }
 
     // Add max attempts - use default if not specified
@@ -624,7 +614,7 @@ export default function CurriculumEditor({ params }: { params: { classId: string
     setNewKeyword("")
     setNewProblemAllowPartialCredit(false)
     setNewProblemTolerance(0.01)
-    setNewProblemGraphData("")
+    setNewProblemGraphData({ points: [], lines: [] })
     // Set default attempts based on content type
     const currentContent = curriculum.lessons
       .find((l: any) => l.id === activeLesson)
@@ -1511,23 +1501,14 @@ export default function CurriculumEditor({ params }: { params: { classId: string
                               {newProblemType === "geometric" && (
                                 <div className="space-y-4">
                                   <div className="space-y-2">
-                                    <Label>Correct Graph Data (JSON)</Label>
-                                    <Textarea
-                                      value={newProblemGraphData}
-                                      onChange={(e) => setNewProblemGraphData(e.target.value)}
-                                      placeholder={`{
-  "points": [{"x": 0, "y": 0}, {"x": 1, "y": 1}],
-  "lines": [{"start": {"x": 0, "y": 0}, "end": {"x": 5, "y": 5}}],
-  "equations": ["y = x"]
-}`}
-                                      rows={8}
-                                      className="font-mono text-sm"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                      Enter graph data as JSON. Include points, lines, and/or equations that represent the correct answer.
-                                      <br />
-                                      Format: {"{"} "points": [{"{"} "x": number, "y": number {"}"}], "lines": [{"{"} "start": {"{"} "x": number, "y": number {"}"}, "end": {"{"} "x": number, "y": number {"}"} {"}"}], "equations": ["string"] {"}"}
+                                    <Label>Draw Correct Answer on Graph</Label>
+                                    <p className="text-xs text-muted-foreground mb-2">
+                                      Use the buttons below to add points or draw lines. Click on the graph to place elements.
                                     </p>
+                                    <GraphEditor
+                                      value={newProblemGraphData}
+                                      onChange={(data) => setNewProblemGraphData(data)}
+                                    />
                                   </div>
                                 </div>
                               )}

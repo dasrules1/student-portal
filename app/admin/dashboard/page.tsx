@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Settings, UserPlus, School, Plus, Edit, Trash2, Search, CheckCircle, User, LogOut } from "lucide-react"
+import { Settings, UserPlus, School, Plus, Edit, Trash2, Search, CheckCircle, User, LogOut, BookOpen, Users, Upload, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -456,10 +456,11 @@ export default function AdminDashboard() {
 
           <div className="mb-6">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="users">Users</TabsTrigger>
                 <TabsTrigger value="classes">Classes</TabsTrigger>
+                <TabsTrigger value="all-classes">All Classes</TabsTrigger>
                 <TabsTrigger value="reports">Reports</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
@@ -702,6 +703,108 @@ export default function AdminDashboard() {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="all-classes" className="mt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold">All Classes Curriculum & Progress</h2>
+                      <p className="text-muted-foreground text-sm">
+                        View curriculum, publish content, and monitor student progress across all classes
+                      </p>
+                    </div>
+                  </div>
+
+                  {isLoading ? (
+                    <div className="text-center py-10">Loading classes...</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredClasses.length > 0 ? (
+                        filteredClasses.map((cls) => (
+                          <Card key={cls.id} className="flex flex-col">
+                            <CardHeader>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center mr-3">
+                                    <School className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <CardTitle className="text-lg">{cls.name}</CardTitle>
+                                    <CardDescription>Teacher: {cls.teacher}</CardDescription>
+                                  </div>
+                                </div>
+                                <Badge variant={cls.status === "active" ? "default" : "secondary"}>
+                                  {cls.status || "active"}
+                                </Badge>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="flex-1">
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Students Enrolled:</span>
+                                  <span className="font-medium">
+                                    {cls.enrolledStudents && Array.isArray(cls.enrolledStudents) 
+                                      ? cls.enrolledStudents.length 
+                                      : (cls.students || 0)}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Location:</span>
+                                  <span className="font-medium">{cls.location || "Online"}</span>
+                                </div>
+                                {cls.meetingDates && (
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Meeting Days:</span>
+                                    <span className="font-medium">{cls.meetingDates}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                            <CardFooter className="flex flex-col gap-2">
+                              <div className="flex gap-2 w-full">
+                                <Button
+                                  variant="default"
+                                  className="flex-1"
+                                  onClick={() => window.location.href = `/admin/curriculum/${cls.id}`}
+                                >
+                                  <BookOpen className="w-4 h-4 mr-2" />
+                                  Curriculum
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  className="flex-1"
+                                  onClick={() => window.location.href = `/admin/class/${cls.id}/progress`}
+                                >
+                                  <Eye className="w-4 h-4 mr-2" />
+                                  Progress
+                                </Button>
+                              </div>
+                              <Button
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => window.location.href = `/admin/class/${cls.id}/enrollment`}
+                              >
+                                <Users className="w-4 h-4 mr-2" />
+                                Manage Enrollment
+                              </Button>
+                            </CardFooter>
+                          </Card>
+                        ))
+                      ) : (
+                        <div className="col-span-full p-8 text-center border rounded-lg">
+                          <School className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                          <h3 className="text-lg font-medium mb-2">No classes found</h3>
+                          <p className="text-muted-foreground">
+                            {searchQuery 
+                              ? "No classes match your search criteria" 
+                              : "Create a class to get started"}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent value="reports" className="mt-6">
