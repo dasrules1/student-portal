@@ -1164,8 +1164,8 @@ export default function StudentCurriculum() {
           const result = gradeGeometric(problem, graphData);
           isCorrect = result.correct;
           score = result.score;
-        } catch (e) {
-          console.error('Error parsing geometric answer:', e);
+        } catch (parseError) {
+          console.error('Error parsing geometric answer:', parseError, 'Answer value:', answer);
           isCorrect = false;
           score = 0;
         }
