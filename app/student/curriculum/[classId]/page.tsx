@@ -795,7 +795,7 @@ export default function StudentCurriculum() {
   };
 
   // Auto-grade a geometric/graphing answer
-  const gradeGeometric = (problem: Problem, studentGraphData: { points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }): GradingResult => {
+  const gradeGeometric = (problem: Problem, studentGraphData: { points?: Array<{ x: number; y: number }>; lines?: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }): GradingResult => {
     let result: GradingResult = { correct: false, score: 0 };
     
     if (!studentGraphData || !problem.graphData) {
@@ -806,12 +806,16 @@ export default function StudentCurriculum() {
     const tolerance = 0.5; // Allow 0.5 unit tolerance for points and lines
     let matches = 0;
     let total = 0;
+    
+    // Ensure student data has arrays (defensive check)
+    const studentPoints = studentGraphData.points || [];
+    const studentLines = studentGraphData.lines || [];
 
     // Compare points
     if (correctData.points && Array.isArray(correctData.points)) {
       total += correctData.points.length;
       correctData.points.forEach((correctPoint) => {
-        const found = studentGraphData.points.some((studentPoint) => {
+        const found = studentPoints.some((studentPoint) => {
           const dx = Math.abs(correctPoint.x - studentPoint.x);
           const dy = Math.abs(correctPoint.y - studentPoint.y);
           return dx <= tolerance && dy <= tolerance;
@@ -824,7 +828,7 @@ export default function StudentCurriculum() {
     if (correctData.lines && Array.isArray(correctData.lines)) {
       total += correctData.lines.length;
       correctData.lines.forEach((correctLine) => {
-        const found = studentGraphData.lines.some((studentLine) => {
+        const found = studentLines.some((studentLine) => {
           const startMatch = 
             Math.abs(correctLine.start.x - studentLine.start.x) <= tolerance &&
             Math.abs(correctLine.start.y - studentLine.start.y) <= tolerance;
@@ -1153,6 +1157,18 @@ export default function StudentCurriculum() {
         const result = gradeOpenEnded(problem, answer.toString());
         isCorrect = result.correct;
         score = result.score;
+      } else if (type === 'geometric') {
+        // Parse the JSON string back to graph data for grading
+        try {
+          const graphData = typeof answer === 'string' ? JSON.parse(answer) : answer;
+          const result = gradeGeometric(problem, graphData);
+          isCorrect = result.correct;
+          score = result.score;
+        } catch (parseError) {
+          console.error('Error parsing geometric answer:', parseError, 'Answer value:', answer);
+          isCorrect = false;
+          score = 0;
+        }
       }
 
       // Check if this is a submission (problem is marked as submitted)
