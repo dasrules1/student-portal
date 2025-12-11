@@ -32,6 +32,7 @@ interface Problem {
   tolerance?: number;
   points?: number;
   maxAttempts?: number;
+  allowPartialCredit?: boolean;
   graphData?: {
     points?: Array<{ x: number; y: number }>;
     lines?: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>;
@@ -390,6 +391,77 @@ const AssignmentDetailPage: React.FC = () => {
       result = { correct: keywordScore >= (problem.points || 1) * 0.5, score: Math.round(keywordScore) };
     }
     
+    return result;
+  };
+
+  // Auto-grade a geometric/graphing answer
+  const gradeGeometric = (problem: Problem, studentGraphData: { points?: Array<{ x: number; y: number }>; lines?: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }): GradingResult => {
+    let result: GradingResult = { correct: false, score: 0 };
+    
+    if (!studentGraphData || !problem.graphData) {
+      return result;
+    }
+
+    const correctData = problem.graphData;
+    const tolerance = 0.5; // Allow 0.5 unit tolerance for points and lines
+    let matches = 0;
+    let total = 0;
+    
+    // Ensure student data has arrays (defensive check)
+    const studentPoints = studentGraphData.points || [];
+    const studentLines = studentGraphData.lines || [];
+
+    // Compare points
+    if (correctData.points && Array.isArray(correctData.points)) {
+      total += correctData.points.length;
+      correctData.points.forEach((correctPoint) => {
+        const found = studentPoints.some((studentPoint) => {
+          const dx = Math.abs(correctPoint.x - studentPoint.x);
+          const dy = Math.abs(correctPoint.y - studentPoint.y);
+          return dx <= tolerance && dy <= tolerance;
+        });
+        if (found) matches++;
+      });
+    }
+
+    // Compare lines
+    if (correctData.lines && Array.isArray(correctData.lines)) {
+      total += correctData.lines.length;
+      correctData.lines.forEach((correctLine) => {
+        const found = studentLines.some((studentLine) => {
+          const startMatch = 
+            Math.abs(correctLine.start.x - studentLine.start.x) <= tolerance &&
+            Math.abs(correctLine.start.y - studentLine.start.y) <= tolerance;
+          const endMatch = 
+            Math.abs(correctLine.end.x - studentLine.end.x) <= tolerance &&
+            Math.abs(correctLine.end.y - studentLine.end.y) <= tolerance;
+          // Also check reverse direction
+          const reverseStartMatch = 
+            Math.abs(correctLine.start.x - studentLine.end.x) <= tolerance &&
+            Math.abs(correctLine.start.y - studentLine.end.y) <= tolerance;
+          const reverseEndMatch = 
+            Math.abs(correctLine.end.x - studentLine.start.x) <= tolerance &&
+            Math.abs(correctLine.end.y - studentLine.start.y) <= tolerance;
+          return (startMatch && endMatch) || (reverseStartMatch && reverseEndMatch);
+        });
+        if (found) matches++;
+      });
+    }
+
+    // If no elements to compare, return incorrect
+    if (total === 0) {
+      return result;
+    }
+
+    // Require at least 80% match for correctness
+    const matchPercentage = matches / total;
+    if (matchPercentage >= 0.8) {
+      result = { correct: true, score: problem.points || 0 };
+    } else if (problem.allowPartialCredit && matchPercentage >= 0.5) {
+      // Partial credit if enabled
+      result = { correct: false, score: Math.floor((problem.points || 0) * matchPercentage) };
+    }
+
     return result;
   };
 
