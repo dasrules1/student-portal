@@ -261,17 +261,57 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       // 2. Save with dedicated curriculum API 
       let result = false;
       try {
+        // Check authentication before saving
+        const { getAuth } = await import('firebase/auth');
+        const auth = getAuth();
+        const currentUser = auth.currentUser;
+        
+        if (!currentUser) {
+          console.error("❌ CRITICAL: Admin user not authenticated with Firebase Auth!");
+          toast({
+            title: "Save Failed",
+            description: "You must be authenticated with Firebase to save curriculum. Please log out and log back in.",
+            variant: "destructive",
+          });
+          return; // Don't continue if not authenticated
+        }
+        
+        console.log("✅ Admin authenticated:", {
+          uid: currentUser.uid,
+          email: currentUser.email
+        });
         console.log("Attempting to save curriculum with dedicated API...");
         result = await storage.saveCurriculum(classId, curriculumData);
         console.log("Save curriculum result:", result);
+        
+        if (!result) {
+          console.error("❌ Curriculum save returned false - Firestore write likely failed");
+          toast({
+            title: "Save Failed",
+            description: "Failed to save curriculum to Firestore. Check console for details. The curriculum was saved to cache but won't be visible to teachers/students.",
+            variant: "destructive",
+          });
+        } else {
+          console.log("✅ Curriculum successfully saved to Firestore");
+        }
         
         if (!result) {
           console.log("Trying updateCurriculum instead...");
           result = await storage.updateCurriculum(classId, curriculumData);
           console.log("Update curriculum result:", result);
         }
-      } catch (apiError) {
-        console.error("Error with curriculum API methods:", apiError);
+      } catch (apiError: any) {
+        console.error("❌ Error with curriculum API methods:", apiError);
+        console.error("Error details:", {
+          code: apiError?.code,
+          message: apiError?.message,
+          stack: apiError?.stack
+        });
+        toast({
+          title: "Save Error",
+          description: `Failed to save curriculum: ${apiError?.message || 'Unknown error'}. Check console for details.`,
+          variant: "destructive",
+        });
       }
       
       // 3. ALWAYS update the class object with curriculum as well

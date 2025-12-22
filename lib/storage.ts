@@ -76,8 +76,8 @@ class StorageService {
         try {
           if (PersistentStorage && typeof PersistentStorage.getInstance === 'function') {
             const localUsers = PersistentStorage.getInstance().getAllUsers();
-            this.users = Array.isArray(localUsers) ? localUsers : [];
-            return this.users;
+        this.users = Array.isArray(localUsers) ? localUsers : [];
+        return this.users;
           } else {
             console.error("PersistentStorage not available, using empty array");
             this.users = [];
@@ -1847,44 +1847,78 @@ class StorageService {
       return false;
     }
     
-    let success = false;
+    let firestoreSuccess = false;
+    let classUpdateSuccess = false;
     
     // Priority 1: Save to canonical Firestore curricula collection
     try {
-      const auth = getAuth();
-      if (auth.currentUser) {
-        const db = getFirestore();
-        const curriculumRef = doc(db, 'curricula', classId);
+      // Use the imported auth instance from firebase.ts
+      const currentAuth = auth || getAuth();
+      const currentUser = currentAuth?.currentUser;
+      
+      if (!currentUser) {
+        console.error("❌ Cannot save curriculum: User not authenticated with Firebase Auth");
+        console.error("Current auth state:", {
+          authExists: !!auth,
+          currentUser: currentUser?.uid || 'null',
+          email: currentUser?.email || 'null'
+        });
+        // Don't return false here - continue to try other methods
+      } else {
+        console.log("✅ User authenticated:", {
+          uid: currentUser.uid,
+          email: currentUser.email
+        });
         
+        const dbInstance = db || getFirestore();
+        const curriculumRef = doc(dbInstance, 'curricula', classId);
+        
+        console.log(`💾 Saving curriculum to Firestore: curricula/${classId}`);
         await setDoc(curriculumRef, {
           content: curriculumData.content,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: new Date().toISOString(),
+          classId: classId
         }, { merge: true });
         
-        console.log("Curriculum saved to canonical Firestore curricula collection");
-        success = true;
+        console.log("✅ Curriculum saved to canonical Firestore curricula collection");
+        firestoreSuccess = true;
       }
-    } catch (firestoreError) {
-      console.error("Error saving curriculum to Firestore:", firestoreError);
+    } catch (firestoreError: any) {
+      console.error("❌ Error saving curriculum to Firestore:", firestoreError);
+      console.error("Error details:", {
+        code: firestoreError?.code,
+        message: firestoreError?.message,
+        stack: firestoreError?.stack
+      });
       // Continue to save to other storage mechanisms
     }
     
     // Also update the class document for backwards compatibility
     try {
-      const auth = getAuth();
-      if (auth.currentUser) {
-        const db = getFirestore();
-        const classRef = doc(db, 'classes', classId);
+      const currentAuth = auth || getAuth();
+      const currentUser = currentAuth?.currentUser;
+      
+      if (currentUser) {
+        const dbInstance = db || getFirestore();
+        const classRef = doc(dbInstance, 'classes', classId);
         
+        console.log(`💾 Updating class document: classes/${classId}`);
         await updateDoc(classRef, {
           curriculum: curriculumData.content,
           curriculumLastUpdated: new Date().toISOString()
         });
         
-        console.log("Curriculum also saved to classes document for backwards compatibility");
+        console.log("✅ Curriculum also saved to classes document for backwards compatibility");
+        classUpdateSuccess = true;
+      } else {
+        console.warn("⚠️ Skipping class document update: User not authenticated");
       }
-    } catch (classUpdateError) {
-      console.error("Error updating class document:", classUpdateError);
+    } catch (classUpdateError: any) {
+      console.error("❌ Error updating class document:", classUpdateError);
+      console.error("Error details:", {
+        code: classUpdateError?.code,
+        message: classUpdateError?.message
+      });
       // Non-critical, continue
     }
     
@@ -1893,7 +1927,6 @@ class StorageService {
       const persistentStorage = PersistentStorage.getInstance();
       await persistentStorage.saveCurriculum(classId, curriculumData);
       console.log("Curriculum saved to persistent storage (cache)");
-      success = true;
     } catch (persistentStorageError) {
       console.error("Error saving curriculum to persistent storage:", persistentStorageError);
       // Non-critical, continue
@@ -1905,14 +1938,19 @@ class StorageService {
       const localStorageKey = `curriculum_${classId}`;
       localStorage.setItem(localStorageKey, JSON.stringify(curriculumData));
         console.log("Curriculum saved to localStorage (cache)");
-      success = true;
     } catch (localStorageError) {
       console.error("Error saving curriculum to localStorage:", localStorageError);
         // Non-critical, continue
       }
     }
     
-    return success;
+    // Return true only if Firestore write succeeded (source of truth)
+    // If Firestore failed, return false even if cache saves succeeded
+    if (!firestoreSuccess) {
+      console.error("❌ CRITICAL: Curriculum NOT saved to Firestore (source of truth). Cache saves succeeded but curriculum will not be visible to teachers/students.");
+    }
+    
+    return firestoreSuccess || classUpdateSuccess; // Return true if at least one Firestore write succeeded
   }
   
   // Method for students to get published curriculum
