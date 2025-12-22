@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import {
   ArrowLeft,
   Plus,
@@ -66,8 +66,9 @@ const problemTypes = [
   { id: "geometric", name: "Geometric/Graphing" },
 ]
 
-export default function CurriculumEditor({ params }: { params: { classId: string } }) {
-  const { classId } = params
+export default function CurriculumEditor() {
+  const params = useParams()
+  const classId = params?.classId as string
   const router = useRouter()
   const { toast } = useToast()
   const [classData, setClassData] = useState<any>(null)
@@ -112,6 +113,17 @@ export default function CurriculumEditor({ params }: { params: { classId: string
   const [selectedSourceClassId, setSelectedSourceClassId] = useState<string>("")
 
   useEffect(() => {
+    // Check if classId is available
+    if (!classId) {
+      console.error("classId is undefined");
+      toast({
+        title: "Error",
+        description: "Class ID is missing. Please reload the page.",
+        variant: "destructive",
+      })
+      return
+    }
+
     // Check if user is an admin
     const user = sessionManager.getCurrentUser()
     if (!user || user.role !== "admin") {
@@ -124,82 +136,92 @@ export default function CurriculumEditor({ params }: { params: { classId: string
       return
     }
 
-    // Load class data
-    const loadedClass = storage.getClassById(classId)
-    if (!loadedClass) {
-      toast({
-        title: "Class not found",
-        description: "The requested class could not be found",
-        variant: "destructive",
-      })
-      router.push("/admin/dashboard")
-      return
-    }
-    setClassData(loadedClass)
-
-    // Load curriculum data
-    const loadCurriculum = async () => {
+    // Load class data and curriculum
+    const loadData = async () => {
       try {
-        // First, try to load curriculum directly using dedicated API
-        console.log("Attempting to load curriculum for class:", classId)
-        const curriculumData = await storage.getCurriculum(classId)
-        if (curriculumData) {
-          console.log("Loaded curriculum data:", curriculumData)
-          // Handle both formats - content field or direct structure
-          const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
-          setCurriculum(formattedCurriculum)
+        const loadedClass = await storage.getClassById(classId)
+        if (!loadedClass) {
+          toast({
+            title: "Class not found",
+            description: "The requested class could not be found",
+            variant: "destructive",
+          })
+          router.push("/admin/dashboard")
+          return
+        }
+        setClassData(loadedClass)
+
+        // Load curriculum data
+        try {
+          // First, try to load curriculum directly using dedicated API
+          console.log("Attempting to load curriculum for class:", classId)
+          const curriculumData = await storage.getCurriculum(classId)
+          if (curriculumData) {
+            console.log("Loaded curriculum data:", curriculumData)
+            // Handle both formats - content field or direct structure
+            const formattedCurriculum = curriculumData.content ? curriculumData.content : curriculumData
+            setCurriculum(formattedCurriculum)
+            
+            if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
+              setActiveLesson(formattedCurriculum.lessons[0].id)
+    
+              if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
+                setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
+    
+                if (
+                  formattedCurriculum.lessons[0].contents[0].problems &&
+                  formattedCurriculum.lessons[0].contents[0].problems.length > 0
+                ) {
+                  setActiveProblem(formattedCurriculum.lessons[0].contents[0].problems[0].id)
+                }
+              }
+            }
+            setIsLoading(false)
+            return
+          }
+        } catch (curriculumError) {
+          console.error("Error loading curriculum directly:", curriculumError)
+        }
+        
+        // Fall back to curriculum on class object
+        if (loadedClass.curriculum) {
+          console.log("Using curriculum from class object")
+          setCurriculum(loadedClass.curriculum)
           
-          if (formattedCurriculum.lessons && formattedCurriculum.lessons.length > 0) {
-            setActiveLesson(formattedCurriculum.lessons[0].id)
-  
-            if (formattedCurriculum.lessons[0].contents && formattedCurriculum.lessons[0].contents.length > 0) {
-              setActiveContent(formattedCurriculum.lessons[0].contents[0].id)
-  
+          if (loadedClass.curriculum.lessons && loadedClass.curriculum.lessons.length > 0) {
+            setActiveLesson(loadedClass.curriculum.lessons[0].id)
+
+            if (loadedClass.curriculum.lessons[0].contents && loadedClass.curriculum.lessons[0].contents.length > 0) {
+              setActiveContent(loadedClass.curriculum.lessons[0].contents[0].id)
+
               if (
-                formattedCurriculum.lessons[0].contents[0].problems &&
-                formattedCurriculum.lessons[0].contents[0].problems.length > 0
+                loadedClass.curriculum.lessons[0].contents[0].problems &&
+                loadedClass.curriculum.lessons[0].contents[0].problems.length > 0
               ) {
-                setActiveProblem(formattedCurriculum.lessons[0].contents[0].problems[0].id)
+                setActiveProblem(loadedClass.curriculum.lessons[0].contents[0].problems[0].id)
               }
             }
           }
           setIsLoading(false)
           return
         }
-      } catch (curriculumError) {
-        console.error("Error loading curriculum directly:", curriculumError)
-      }
-      
-      // Fall back to curriculum on class object
-      if (loadedClass.curriculum) {
-        console.log("Using curriculum from class object")
-        setCurriculum(loadedClass.curriculum)
-        
-        if (loadedClass.curriculum.lessons && loadedClass.curriculum.lessons.length > 0) {
-          setActiveLesson(loadedClass.curriculum.lessons[0].id)
 
-          if (loadedClass.curriculum.lessons[0].contents && loadedClass.curriculum.lessons[0].contents.length > 0) {
-            setActiveContent(loadedClass.curriculum.lessons[0].contents[0].id)
-
-            if (
-              loadedClass.curriculum.lessons[0].contents[0].problems &&
-              loadedClass.curriculum.lessons[0].contents[0].problems.length > 0
-            ) {
-              setActiveProblem(loadedClass.curriculum.lessons[0].contents[0].problems[0].id)
-            }
-          }
-        }
+        // If no curriculum exists, create empty one
+        console.log("No curriculum found, creating empty structure")
+        setCurriculum({ lessons: [] })
         setIsLoading(false)
-        return
+      } catch (error) {
+        console.error("Error loading class:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load class data",
+          variant: "destructive",
+        })
+        setIsLoading(false)
       }
-
-      // If no curriculum exists, create empty one
-      console.log("No curriculum found, creating empty structure")
-      setCurriculum({ lessons: [] })
-      setIsLoading(false)
     }
-
-    loadCurriculum()
+    
+    loadData()
 
     // Load available classes for duplication
     const loadAvailableClasses = async () => {
@@ -217,6 +239,16 @@ export default function CurriculumEditor({ params }: { params: { classId: string
 
   // Save curriculum
   const saveCurriculum = async () => {
+    if (!classId) {
+      console.error("Cannot save curriculum: classId is undefined");
+      toast({
+        title: "Save failed",
+        description: "Missing class ID. Please reload the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!classData) {
       console.error("Cannot save curriculum: classData is null or undefined");
       toast({
