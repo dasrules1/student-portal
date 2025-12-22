@@ -129,12 +129,28 @@ service cloud.firestore {
       allow write: if isTeacher() || isAdmin();
     }
 
-    // Curricula collection (canonical source)
-    // Allow any authenticated user to read - app will filter by role and isPublished flag
-    // This is safe because the app verifies teacher/student access before showing curriculum
+    // Curriculum collection (canonical source)
+    // NOTE: The actual Firestore collection name used in the app is "curriculum" (singular),
+    // not "curricula". We keep both rules for backward compatibility, but the app primarily
+    // talks to "curriculum".
+    match /curriculum/{curriculumId} {
+      // Any authenticated user can read; app enforces role-based visibility
+      allow read: if isAuthenticated();
+      // Only teachers and admins can create/update canonical curriculum
+      allow write: if isTeacher() || isAdmin();
+    }
+
+    // Legacy curricula collection (kept in case any old data exists)
     match /curricula/{classId} {
       allow read: if isAuthenticated();
       allow write: if isTeacher() || isAdmin();
+    }
+
+    // Top-level student-answers collection (legacy/aggregated docs)
+    // Used by some teacher views that query `collection(db, "student-answers")`
+    match /student-answers/{docId} {
+      allow read: if isAuthenticated() && (isTeacher() || isAdmin());
+      allow write: if isAuthenticated() && (isTeacher() || isAdmin());
     }
 
     // Attendance collection

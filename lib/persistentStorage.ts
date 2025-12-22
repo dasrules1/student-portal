@@ -900,7 +900,24 @@ export class PersistentStorage {
         return null;
       }
       
-      // 1. First try to get from Firebase
+      // 1. Try canonical Firestore collection: curricula/{classId}
+      try {
+        const canonicalRef = doc(db, "curricula", classId);
+        const canonicalSnap = await getDoc(canonicalRef);
+        
+        if (canonicalSnap.exists()) {
+          const data = canonicalSnap.data();
+          const content = (data as any).content || (data as any).curriculum;
+          if (content) {
+            console.log(`PersistentStorage: Found curriculum in canonical collection curricula/${classId}`);
+            return content;
+          }
+        }
+      } catch (firestoreError) {
+        console.warn("PersistentStorage: Error fetching curriculum from canonical curricula collection:", firestoreError);
+      }
+      
+      // 2. Fallback: legacy Firebase collection "curriculum" (singular) with classId field
       try {
         const curriculumRef = collection(db, "curriculum");
         const q = query(curriculumRef, where("classId", "==", classId));
@@ -908,16 +925,17 @@ export class PersistentStorage {
         
         if (querySnapshot && querySnapshot.docs && Array.isArray(querySnapshot.docs) && querySnapshot.docs.length > 0) {
           const data = querySnapshot.docs[0].data();
-          if (data && data.content) {
-            console.log(`PersistentStorage: Found curriculum in Firebase for class ${classId}`);
-            return data.content;
+          const content = (data as any).content || (data as any).curriculum;
+          if (content) {
+            console.log(`PersistentStorage: Found curriculum in legacy Firebase collection for class ${classId}`);
+            return content;
           }
         }
       } catch (firestoreError) {
-        console.warn("PersistentStorage: Error fetching curriculum from Firebase:", firestoreError);
+        console.warn("PersistentStorage: Error fetching curriculum from legacy Firebase collection:", firestoreError);
       }
       
-      // 2. Try localStorage
+      // 3. Try localStorage
       try {
         const storageKey = `${STORAGE_PREFIX}curriculum_${classId}`;
         const curriculumJson = localStorage.getItem(storageKey);
@@ -931,7 +949,7 @@ export class PersistentStorage {
         console.warn("PersistentStorage: Error fetching curriculum from localStorage:", localError);
       }
       
-      // 3. Try alternate storage key pattern as last resort
+      // 4. Try alternate storage key pattern as last resort
       try {
         const altKey = `curriculum_${classId}`;
         const altData = localStorage.getItem(altKey);
