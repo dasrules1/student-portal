@@ -68,7 +68,6 @@ import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
-import { AITeachingAssistant } from "@/components/ai/ai-teaching-assistant";
 
 // Add interface definitions for types
 interface Class {
@@ -1537,7 +1536,6 @@ export default function TeacherCurriculum() {
                         <TabsList>
                           <TabsTrigger value="content">Content</TabsTrigger>
                           <TabsTrigger value="teachers-instructions">Teacher's Instructions</TabsTrigger>
-                          <TabsTrigger value="ai-assistant">AI Assistant</TabsTrigger>
                           <TabsTrigger value="progress">Student Progress</TabsTrigger>
                         </TabsList>
                         <TabsContent value="content">
@@ -1565,13 +1563,6 @@ export default function TeacherCurriculum() {
                               <p className="text-muted-foreground">No teacher instructions provided for this content.</p>
                             )}
                           </div>
-                        </TabsContent>
-                        <TabsContent value="ai-assistant">
-                          <AITeachingAssistant
-                            contentTitle={activeContent.title}
-                            contentDescription={activeContent.description}
-                            lessonTitle={currentLesson?.title}
-                          />
                         </TabsContent>
                         <TabsContent value="progress">
                           <StudentProgressTable />
