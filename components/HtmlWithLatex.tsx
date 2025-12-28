@@ -8,6 +8,46 @@ interface HtmlWithLatexProps {
   className?: string
 }
 
+// Regular expressions as constants for better performance
+const BLOCK_LATEX_PATTERN = /\$\$([\s\S]*?)\$\$/g
+const INLINE_LATEX_PATTERN = /\$([^$\n]+?)\$/g
+
+// Helper function to process inline LaTeX in text segments
+function processInlineLatex(
+  text: string,
+  parts: Array<{ type: 'text' | 'inline-latex' | 'block-latex'; content: string }>
+) {
+  let lastIdx = 0
+  let inlineMatch: RegExpExecArray | null
+  const inlinePattern = new RegExp(INLINE_LATEX_PATTERN)
+  
+  while ((inlineMatch = inlinePattern.exec(text)) !== null) {
+    // Add text before inline match
+    if (inlineMatch.index > lastIdx) {
+      parts.push({
+        type: 'text',
+        content: text.substring(lastIdx, inlineMatch.index),
+      })
+    }
+    
+    // Add inline LaTeX
+    parts.push({
+      type: 'inline-latex',
+      content: inlineMatch[1],
+    })
+    
+    lastIdx = inlineMatch.index + inlineMatch[0].length
+  }
+  
+  // Add remaining text
+  if (lastIdx < text.length) {
+    parts.push({
+      type: 'text',
+      content: text.substring(lastIdx),
+    })
+  }
+}
+
 /**
  * Client component that renders HTML content with LaTeX math expressions.
  * 
@@ -41,15 +81,13 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
 
   // Client-side: Parse and render HTML with LaTeX
   try {
-    // Split content by block LaTeX ($$...$$) first, then inline LaTeX ($...$)
+    // Declare variables at the top
     const parts: Array<{ type: 'text' | 'inline-latex' | 'block-latex'; content: string }> = []
-    
-    // Regex patterns
-    const blockLatexPattern = /\$\$([\s\S]*?)\$\$/g
-    const inlineLatexPattern = /\$([^$\n]+?)\$/g
-    
     let lastIndex = 0
     let match: RegExpExecArray | null
+    
+    // Split content by block LaTeX ($$...$$) first, then inline LaTeX ($...$)
+    const blockLatexPattern = new RegExp(BLOCK_LATEX_PATTERN)
     
     // First pass: Find all block LaTeX
     const blockMatches: Array<{ start: number; end: number; content: string }> = []
@@ -89,42 +127,6 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     // If no block matches, process entire string for inline LaTeX
     if (blockMatches.length === 0) {
       processInlineLatex(html, parts)
-    }
-    
-    // Helper function to process inline LaTeX in text segments
-    function processInlineLatex(
-      text: string,
-      parts: Array<{ type: 'text' | 'inline-latex' | 'block-latex'; content: string }>
-    ) {
-      let lastIdx = 0
-      const inlinePattern = /\$([^$\n]+?)\$/g
-      let inlineMatch: RegExpExecArray | null
-      
-      while ((inlineMatch = inlinePattern.exec(text)) !== null) {
-        // Add text before inline match
-        if (inlineMatch.index > lastIdx) {
-          parts.push({
-            type: 'text',
-            content: text.substring(lastIdx, inlineMatch.index),
-          })
-        }
-        
-        // Add inline LaTeX
-        parts.push({
-          type: 'inline-latex',
-          content: inlineMatch[1],
-        })
-        
-        lastIdx = inlineMatch.index + inlineMatch[0].length
-      }
-      
-      // Add remaining text
-      if (lastIdx < text.length) {
-        parts.push({
-          type: 'text',
-          content: text.substring(lastIdx),
-        })
-      }
     }
     
     // Render the parts
