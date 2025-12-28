@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
+import dynamic from "next/dynamic"
+import "react-quill/dist/quill.snow.css"
 import {
   ArrowLeft,
   Plus,
@@ -47,6 +49,12 @@ import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
 import { sessionManager } from "@/lib/session"
 import { GraphEditor } from "@/components/graph-editor"
+
+// Dynamically import ReactQuill for client-side only rendering
+const ReactQuill = dynamic(() => import("react-quill"), { 
+  ssr: false,
+  loading: () => <p>Loading editor...</p>
+})
 
 // Content types for curriculum
 const contentTypes = [
@@ -1287,16 +1295,24 @@ export default function CurriculumEditor() {
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor="content-teachers-instructions">Teacher's Instructions (Visible to Teachers Only)</Label>
-                              <Textarea
-                                id="content-teachers-instructions"
+                              <ReactQuill
+                                theme="snow"
                                 value={newContentTeachersInstructions}
-                                onChange={(e) => setNewContentTeachersInstructions(e.target.value)}
-                                placeholder="Enter instructions for teachers (supports basic formatting)"
-                                rows={8}
-                                className="font-mono text-sm"
+                                onChange={setNewContentTeachersInstructions}
+                                placeholder="Enter instructions for teachers (supports rich text formatting and LaTeX)"
+                                className="bg-white dark:bg-slate-950"
+                                modules={{
+                                  toolbar: [
+                                    [{ 'header': [1, 2, 3, false] }],
+                                    ['bold', 'italic', 'underline', 'strike'],
+                                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                    ['link'],
+                                    ['clean']
+                                  ]
+                                }}
                               />
                               <p className="text-xs text-muted-foreground">
-                                Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                                Tip: Use the toolbar for formatting. For LaTeX math, type $...$ for inline or $$...$$ for block equations.
                               </p>
                             </div>
                           </CardContent>
@@ -1347,16 +1363,24 @@ export default function CurriculumEditor() {
                           </p>
                           <div className="mt-4 space-y-2">
                             <Label htmlFor="content-teachers-instructions-edit">Teacher's Instructions (Visible to Teachers Only)</Label>
-                            <Textarea
-                              id="content-teachers-instructions-edit"
+                            <ReactQuill
+                              theme="snow"
                               value={currentContent.teachersInstructions || ""}
-                              onChange={(e) => updateContent(activeLesson, activeContent, "teachersInstructions", e.target.value)}
-                              placeholder="Enter instructions for teachers (supports basic formatting)"
-                              className="font-mono text-sm"
-                              rows={8}
+                              onChange={(value) => updateContent(activeLesson, activeContent, "teachersInstructions", value)}
+                              placeholder="Enter instructions for teachers (supports rich text formatting and LaTeX)"
+                              className="bg-white dark:bg-slate-950"
+                              modules={{
+                                toolbar: [
+                                  [{ 'header': [1, 2, 3, false] }],
+                                  ['bold', 'italic', 'underline', 'strike'],
+                                  [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                  ['link'],
+                                  ['clean']
+                                ]
+                              }}
                             />
                             <p className="text-xs text-muted-foreground">
-                              Tip: Use **bold**, *italic*, - bullets, $$LaTeX$$ for math
+                              Tip: Use the toolbar for formatting. For LaTeX math, type $...$ for inline or $$...$$ for block equations.
                             </p>
                           </div>
                         </div>
