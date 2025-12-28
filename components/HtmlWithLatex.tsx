@@ -2,6 +2,7 @@
 
 import { InlineMath, BlockMath } from 'react-katex'
 import 'katex/dist/katex.min.css'
+import DOMPurify from 'dompurify'
 
 interface HtmlWithLatexProps {
   html?: string | null
@@ -51,6 +52,7 @@ function processInlineLatex(
 /**
  * Client component that renders HTML content with LaTeX math expressions.
  * 
+ * - Sanitizes HTML using DOMPurify to prevent XSS attacks
  * - Parses inline LaTeX: $...$
  * - Parses block LaTeX: $$...$$
  * - Renders HTML using dangerouslySetInnerHTML for formatted content
@@ -79,6 +81,20 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     )
   }
 
+  // Sanitize HTML content to prevent XSS attacks
+  // Allow safe tags and attributes while preserving formatting
+  const sanitizedHtml = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'em', 'u', 's', 'strike', 'del',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li',
+      'a', 'blockquote', 'code', 'pre',
+      'span', 'div'
+    ],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style'],
+    ALLOW_DATA_ATTR: false,
+  })
+
   // Client-side: Parse and render HTML with LaTeX
   try {
     // Declare variables at the top
@@ -91,7 +107,7 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     
     // First pass: Find all block LaTeX
     const blockMatches: Array<{ start: number; end: number; content: string }> = []
-    while ((match = blockLatexPattern.exec(html)) !== null) {
+    while ((match = blockLatexPattern.exec(sanitizedHtml)) !== null) {
       blockMatches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -105,7 +121,7 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
       
       // Process text before this block match
       if (blockMatch.start > lastIndex) {
-        const textBefore = html.substring(lastIndex, blockMatch.start)
+        const textBefore = sanitizedHtml.substring(lastIndex, blockMatch.start)
         processInlineLatex(textBefore, parts)
       }
       
@@ -119,14 +135,14 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     }
     
     // Process remaining text after last block match
-    if (lastIndex < html.length) {
-      const remainingText = html.substring(lastIndex)
+    if (lastIndex < sanitizedHtml.length) {
+      const remainingText = sanitizedHtml.substring(lastIndex)
       processInlineLatex(remainingText, parts)
     }
     
     // If no block matches, process entire string for inline LaTeX
     if (blockMatches.length === 0) {
-      processInlineLatex(html, parts)
+      processInlineLatex(sanitizedHtml, parts)
     }
     
     // Render the parts
@@ -173,11 +189,11 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     )
   } catch (error) {
     console.error('Error parsing HTML with LaTeX:', error)
-    // Fallback: render as plain HTML
+    // Fallback: render sanitized HTML
     return (
       <div
         className={className}
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
       />
     )
   }
