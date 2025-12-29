@@ -1556,15 +1556,16 @@ export default function TeacherCurriculum() {
                         </TabsContent>
                         <TabsContent value="teachers-instructions">
                           <div className="p-4 border rounded-lg">
-                            {activeContent.teachersInstructions ? (
-                              <HtmlWithLatex 
-                                html={activeContent.teachersInstructions} 
-                                className="prose max-w-none"
-                              />
-                            ) : (
-                              <p className="text-muted-foreground">No teacher instructions provided for this content.</p>
-                            )}
-                          </div>
+                             {activeContent.teachersInstructions ? (
+                               <HtmlWithLatex
+                                 html={activeContent.teachersInstructions}
+                                 className="prose max-w-none"
+                                 maxHeight="max-h-96"
+                               />
+                             ) : (
+                               <p className="text-muted-foreground">No teacher instructions provided for this content.</p>
+                             )}
+                           </div>
                         </TabsContent>
                         <TabsContent value="progress">
                           <StudentProgressTable />

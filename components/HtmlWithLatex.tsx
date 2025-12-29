@@ -4,9 +4,13 @@ import { InlineMath, BlockMath } from 'react-katex'
 import 'katex/dist/katex.min.css'
 import DOMPurify from 'dompurify'
 
+const BASE_CONTAINER_CLASSES = 'prose max-w-none whitespace-normal break-words overflow-auto'
+const WRAP_STYLES = { overflowWrap: 'anywhere', wordBreak: 'break-word' } as const
+
 interface HtmlWithLatexProps {
   html?: string | null
   className?: string
+  maxHeight?: string
 }
 
 // Regular expressions as constants for better performance
@@ -60,22 +64,32 @@ function processInlineLatex(
  * 
  * @param html - The HTML string to render (can contain LaTeX)
  * @param className - Optional CSS class name for styling
- */
-export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
+ * @param maxHeight - Tailwind max-height utility class for overflow control
+  */
+export function HtmlWithLatex({ html, className = '', maxHeight = 'max-h-72' }: HtmlWithLatexProps) {
+  const containerClassName = [
+    BASE_CONTAINER_CLASSES,
+    maxHeight,
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   // Handle empty/null content
   if (!html) {
     return (
-      <div className={`text-muted-foreground ${className}`}>
+      <div className={`${containerClassName} text-muted-foreground`}>
         No instructions provided.
       </div>
     )
   }
 
-  // SSR fallback - render plain HTML without LaTeX processing on server
+  // SSR fallback without LaTeX processing to reduce hydration mismatches
   if (typeof window === 'undefined') {
     return (
       <div
-        className={className}
+        className={containerClassName}
+        style={WRAP_STYLES}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     )
@@ -147,7 +161,10 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     
     // Render the parts
     return (
-      <div className={className}>
+      <div
+        className={containerClassName}
+        style={WRAP_STYLES}
+      >
         {parts.map((part, index) => {
           if (part.type === 'block-latex') {
             try {
@@ -192,7 +209,8 @@ export function HtmlWithLatex({ html, className = '' }: HtmlWithLatexProps) {
     // Fallback: render sanitized HTML
     return (
       <div
-        className={className}
+        className={containerClassName}
+        style={WRAP_STYLES}
         dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
       />
     )
