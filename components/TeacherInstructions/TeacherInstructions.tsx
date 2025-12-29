@@ -3,7 +3,13 @@
 import { useMemo } from 'react'
 import DOMPurify from 'dompurify'
 import { cn } from '@/lib/utils'
-import { SANITIZE_CONFIG, isTrustedHtmlSource } from '@/lib/sanitize-config'
+import { SANITIZE_CONFIG } from '@/lib/sanitize-config'
+
+// Inline styles for defense-in-depth text wrapping
+const WRAP_STYLES = {
+  overflowWrap: 'anywhere',
+  wordBreak: 'break-word'
+} as const
 
 interface TeacherInstructionsProps {
   html: string
@@ -19,7 +25,7 @@ interface TeacherInstructionsProps {
  * 3. Handles text wrapping/overflow properly with CSS
  * 
  * SECURITY NOTE: HTML must come from trusted sources (Admin portal).
- * The component sanitizes on client-side and validates on server-side.
+ * The component sanitizes on client-side and uses safe loading state on server-side.
  * 
  * @param html - The HTML string containing teacher instructions from Admin
  * @param className - Optional CSS classes to apply to the container
@@ -30,13 +36,14 @@ export default function TeacherInstructions({
 }: TeacherInstructionsProps) {
   // Memoize sanitized HTML to avoid re-sanitizing on every render
   const sanitizedHtml = useMemo(() => {
-    // SSR context: perform basic validation before rendering
+    // SSR context: Show safe loading state
     // Full sanitization happens on client-side with DOMPurify
     if (typeof window === 'undefined') {
       // SECURITY: During SSR, we don't render HTML content to avoid potential vulnerabilities
       // Instead, we show a safe loading state that will be hydrated client-side
       // This ensures all HTML goes through DOMPurify sanitization
-      return '<div class="text-muted-foreground">Loading instructions...</div>'
+      // Using JSX-style className for consistency
+      return '<div className="text-muted-foreground">Loading instructions...</div>'
     }
 
     // Client-side: Full DOMPurify sanitization
@@ -52,10 +59,7 @@ export default function TeacherInstructions({
         'teacher-instructions',
         className
       )}
-      style={{
-        overflowWrap: 'anywhere',
-        wordBreak: 'break-word'
-      }}
+      style={WRAP_STYLES}
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
     />
   )

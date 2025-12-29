@@ -19,9 +19,12 @@ export const SANITIZE_CONFIG = {
   /**
    * HTML attributes that are allowed on elements
    * Only safe attributes that don't allow script execution
+   * 
+   * Note: 'style' attribute is allowed for basic formatting but DOMPurify
+   * sanitizes CSS to prevent expression() and other injection attacks
    */
   ALLOWED_ATTR: [
-    'href', 'target', 'rel', 'class', 'style', 'src', 'alt', 'title'
+    'href', 'target', 'rel', 'class', 'src', 'alt', 'title'
   ],
   
   /**
@@ -36,6 +39,10 @@ export const SANITIZE_CONFIG = {
  * 
  * IMPORTANT: This is a basic check, not comprehensive sanitization.
  * It only catches obvious attack patterns. Full sanitization happens client-side with DOMPurify.
+ * 
+ * NOTE: This function is provided for optional use cases where you want to validate
+ * HTML before rendering. The TeacherInstructions component uses a different approach
+ * (safe loading state during SSR) but this function is available for other use cases.
  */
 export function isTrustedHtmlSource(html: string): boolean {
   // Check for dangerous patterns that indicate potential XSS

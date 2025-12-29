@@ -68,7 +68,6 @@ import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
-import { HtmlWithLatex } from '@/components/HtmlWithLatex';
 import TeacherInstructions from '@/components/TeacherInstructions/TeacherInstructions';
 
 // Add interface definitions for types
