@@ -33,15 +33,32 @@ export const SANITIZE_CONFIG = {
 /**
  * Helper to ensure HTML is from a trusted source
  * Use this to validate HTML before rendering in SSR context
+ * 
+ * IMPORTANT: This is a basic check, not comprehensive sanitization.
+ * It only catches obvious attack patterns. Full sanitization happens client-side with DOMPurify.
  */
 export function isTrustedHtmlSource(html: string): boolean {
-  // Basic check - you may want to add more validation
-  // This is a simple example that checks for obvious script tags
+  // Check for dangerous patterns that indicate potential XSS
+  // More comprehensive than basic checks, but still not a replacement for DOMPurify
   const dangerousPatterns = [
-    /<script/i,
-    /javascript:/i,
-    /on\w+=/i, // Event handlers like onclick=
-    /data:text\/html/i,
+    /<script[\s>]/i,                    // Script tags (with space or >)
+    /<script\s+/i,                      // Script tags with attributes
+    /javascript\s*:/i,                  // javascript: protocol
+    /on\w+\s*=/i,                       // Event handlers (onclick=, onload=, etc.)
+    /data:text\/html/i,                 // Data URIs with HTML
+    /<iframe[\s>]/i,                    // Iframe tags
+    /<object[\s>]/i,                    // Object tags
+    /<embed[\s>]/i,                     // Embed tags
+    /<frame[\s>]/i,                     // Frame tags
+    /<base[\s>]/i,                      // Base tags (can be used for attacks)
+    /<link[\s>]/i,                      // Link tags (can load external resources)
+    /<meta[\s>]/i,                      // Meta tags (can refresh/redirect)
+    /vbscript\s*:/i,                    // VBScript protocol
+    /<form[\s>]/i,                      // Form tags (phishing risk)
+    /expression\s*\(/i,                 // CSS expression() (IE)
+    /import\s+['"].*['"]/i,             // ES6 imports
+    /eval\s*\(/i,                       // eval() calls
+    /Function\s*\(/i,                   // Function constructor
   ]
   
   return !dangerousPatterns.some(pattern => pattern.test(html))

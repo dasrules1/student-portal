@@ -31,19 +31,16 @@ export default function TeacherInstructions({
   // Memoize sanitized HTML to avoid re-sanitizing on every render
   const sanitizedHtml = useMemo(() => {
     // SSR context: perform basic validation before rendering
-    // Full sanitization happens on client-side
+    // Full sanitization happens on client-side with DOMPurify
     if (typeof window === 'undefined') {
-      // Only render if HTML passes basic trust validation
-      // This prevents obvious XSS during SSR
-      if (!isTrustedHtmlSource(html)) {
-        console.warn('Potentially unsafe HTML detected during SSR, skipping render')
-        return '<p>Content validation failed. Please contact support.</p>'
-      }
-      return html
+      // SECURITY: During SSR, we don't render HTML content to avoid potential vulnerabilities
+      // Instead, we show a safe loading state that will be hydrated client-side
+      // This ensures all HTML goes through DOMPurify sanitization
+      return '<div class="text-muted-foreground">Loading instructions...</div>'
     }
 
     // Client-side: Full DOMPurify sanitization
-    // This is the primary security layer
+    // This is the primary security layer that comprehensively prevents XSS
     return DOMPurify.sanitize(html, SANITIZE_CONFIG)
   }, [html])
 
