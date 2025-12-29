@@ -63,3 +63,9 @@
   max-width: 100%;
   height: auto;
 }
+
+/* Helper class for sanitized HTML content with forced word wrapping */
+.sanitized-html {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
