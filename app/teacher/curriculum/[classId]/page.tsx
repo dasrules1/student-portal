@@ -68,7 +68,7 @@ import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
-import SanitizedHtml from '@/components/teacher/sanitized-html';
+import { HtmlWithLatex } from '@/components/HtmlWithLatex';
 
 // Add interface definitions for types
 interface Class {
@@ -1557,9 +1557,10 @@ export default function TeacherCurriculum() {
                         <TabsContent value="teachers-instructions">
                           <div className="p-4 border rounded-lg">
                              {activeContent.teachersInstructions ? (
-                               <SanitizedHtml
+                               <HtmlWithLatex
                                  html={activeContent.teachersInstructions}
                                  className="prose max-w-none"
+                                 maxHeight="max-h-96"
                                />
                              ) : (
                                <p className="text-muted-foreground">No teacher instructions provided for this content.</p>
