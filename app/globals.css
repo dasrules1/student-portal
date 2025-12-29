@@ -64,7 +64,7 @@
   height: auto;
 }
 
-/* Helper class for sanitized HTML content with forced word wrapping */
+/* Helper class for sanitized HTML content - handles extremely long tokens like URLs without natural breakpoints */
 .sanitized-html {
   overflow-wrap: anywhere;
   word-break: break-word;

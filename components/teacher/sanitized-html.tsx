@@ -66,6 +66,8 @@ export default function SanitizedHtml({
         maxHeight,
         className
       )}
+      // Inline styles provide defense-in-depth for word wrapping
+      // in case CSS class doesn't load or gets overridden
       style={{
         overflowWrap: 'anywhere',
         wordBreak: 'break-word'
