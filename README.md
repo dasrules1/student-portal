@@ -19,6 +19,36 @@ Admins can now use a WYSIWYG rich text editor to create formatted teacher instru
 - `components/teacher/sanitized-html.tsx` - Safe HTML renderer for teachers
 - `components/HtmlWithLatex.tsx` - Enhanced with DOMPurify sanitization
 
+**Overflow Fix (Latest Update):**
+The `SanitizedHtml` component has been improved to prevent teacher instructions from overflowing their containers. The component now includes:
+- Automatic word wrapping and text breaking to prevent horizontal overflow
+- Configurable maximum height with vertical scrolling when content exceeds the limit
+- Responsive image sizing to ensure images fit within their containers
+- Default max-height of 64 units (approximately 16rem), customizable via the `maxHeight` prop
+
+**Usage Example:**
+```tsx
+import SanitizedHtml from '@/components/teacher/sanitized-html'
+
+// Basic usage with default max-height (max-h-64)
+<SanitizedHtml html={teacherInstructions} />
+
+// Custom max-height and additional styling
+<SanitizedHtml 
+  html={teacherInstructions}
+  maxHeight="max-h-96"
+  className="border rounded-lg p-4"
+/>
+
+// No height restriction (allows full content display)
+<SanitizedHtml 
+  html={teacherInstructions}
+  maxHeight=""
+/>
+```
+
+When implementing in teacher pages, replace any existing HTML renderers with the `SanitizedHtml` component to ensure consistent overflow handling and security.
+
 **Migration:**
 ```bash
 # Preview changes (dry run)
