@@ -42,8 +42,8 @@ export default function TeacherInstructions({
       // SECURITY: During SSR, we don't render HTML content to avoid potential vulnerabilities
       // Instead, we show a safe loading state that will be hydrated client-side
       // This ensures all HTML goes through DOMPurify sanitization
-      // Using JSX-style className for consistency
-      return '<div className="text-muted-foreground">Loading instructions...</div>'
+      // Note: Using 'class' not 'className' since this is HTML string, not JSX
+      return '<div class="text-muted-foreground">Loading instructions...</div>'
     }
 
     // Client-side: Full DOMPurify sanitization
