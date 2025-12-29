@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import DOMPurify from 'dompurify'
 import { cn } from '@/lib/utils'
+import { SANITIZE_CONFIG, isTrustedHtmlSource } from '@/lib/sanitize-config'
 
 interface TeacherInstructionsProps {
   html: string
@@ -17,6 +18,9 @@ interface TeacherInstructionsProps {
  * 2. Renders content only once (prevents duplication)
  * 3. Handles text wrapping/overflow properly with CSS
  * 
+ * SECURITY NOTE: HTML must come from trusted sources (Admin portal).
+ * The component sanitizes on client-side and validates on server-side.
+ * 
  * @param html - The HTML string containing teacher instructions from Admin
  * @param className - Optional CSS classes to apply to the container
  */
@@ -26,23 +30,21 @@ export default function TeacherInstructions({
 }: TeacherInstructionsProps) {
   // Memoize sanitized HTML to avoid re-sanitizing on every render
   const sanitizedHtml = useMemo(() => {
-    // SSR fallback - skip sanitization on server
+    // SSR context: perform basic validation before rendering
+    // Full sanitization happens on client-side
     if (typeof window === 'undefined') {
+      // Only render if HTML passes basic trust validation
+      // This prevents obvious XSS during SSR
+      if (!isTrustedHtmlSource(html)) {
+        console.warn('Potentially unsafe HTML detected during SSR, skipping render')
+        return '<p>Content validation failed. Please contact support.</p>'
+      }
       return html
     }
 
-    // Sanitize HTML content to prevent XSS attacks while preserving formatting
-    return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: [
-        'p', 'br', 'strong', 'em', 'u', 's', 'strike', 'del',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'ul', 'ol', 'li',
-        'a', 'blockquote', 'code', 'pre',
-        'span', 'div', 'img'
-      ],
-      ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', 'title'],
-      ALLOW_DATA_ATTR: false,
-    })
+    // Client-side: Full DOMPurify sanitization
+    // This is the primary security layer
+    return DOMPurify.sanitize(html, SANITIZE_CONFIG)
   }, [html])
 
   // Render sanitized HTML once with proper wrapping and overflow handling

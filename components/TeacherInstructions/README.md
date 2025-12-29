@@ -60,11 +60,22 @@ The component uses `useMemo` to cache the sanitized HTML, ensuring DOMPurify onl
 
 ## Server-Side Rendering
 
-The component includes SSR fallback logic:
-- On the server (SSR): Returns unsanitized HTML (since DOMPurify requires browser APIs)
-- On the client: Fully sanitizes HTML before rendering
+The component includes enhanced SSR safety:
 
-This prevents hydration mismatches while maintaining security on the client side.
+**Server (SSR):**
+- Performs basic validation using `isTrustedHtmlSource()` 
+- Checks for obvious dangerous patterns (script tags, javascript:, event handlers)
+- Returns error message if validation fails
+- Only renders HTML from trusted sources (Admin portal)
+
+**Client:**
+- Fully sanitizes HTML using DOMPurify
+- This is the primary security layer
+- Prevents XSS attacks comprehensively
+
+**Important:** HTML content MUST originate from the Admin portal (trusted source). Never render user-submitted HTML directly through this component without admin approval.
+
+This dual-layer approach prevents both SSR vulnerabilities and client-side XSS while maintaining proper React hydration.
 
 ## Example
 
