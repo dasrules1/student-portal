@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import dynamic from "next/dynamic"
-import "react-quill/dist/quill.snow.css"
+import "react-quill-new/dist/quill.snow.css"
 import {
   ArrowLeft,
   Plus,
@@ -51,7 +51,7 @@ import { sessionManager } from "@/lib/session"
 import { GraphEditor } from "@/components/graph-editor"
 
 // Dynamically import ReactQuill for client-side only rendering
-const ReactQuill = dynamic(() => import("react-quill"), { 
+const ReactQuill = dynamic(() => import("react-quill-new"), { 
   ssr: false,
   loading: () => <p>Loading editor...</p>
 })
