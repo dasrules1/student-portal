@@ -69,6 +69,7 @@ import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
 import { HtmlWithLatex } from '@/components/HtmlWithLatex';
+import TeacherInstructions from '@/components/TeacherInstructions/TeacherInstructions';
 
 // Add interface definitions for types
 interface Class {
@@ -1557,10 +1558,9 @@ export default function TeacherCurriculum() {
                         <TabsContent value="teachers-instructions">
                           <div className="p-4 border rounded-lg">
                              {activeContent.teachersInstructions ? (
-                               <HtmlWithLatex
+                               <TeacherInstructions
                                  html={activeContent.teachersInstructions}
-                                 className="prose max-w-none"
-                                 maxHeight="max-h-96"
+                                 className="max-h-96"
                                />
                              ) : (
                                <p className="text-muted-foreground">No teacher instructions provided for this content.</p>
