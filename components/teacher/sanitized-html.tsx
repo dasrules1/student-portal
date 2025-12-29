@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import DOMPurify from 'dompurify'
+import { cn } from '@/lib/utils'
 
 interface SanitizedHtmlProps {
   html?: string | null
@@ -60,7 +61,11 @@ export default function SanitizedHtml({
 
   return (
     <div
-      className={`prose max-w-none whitespace-normal break-words overflow-auto ${maxHeight} ${className}`}
+      className={cn(
+        'prose max-w-none whitespace-normal break-words overflow-auto',
+        maxHeight,
+        className
+      )}
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
     />
   )
