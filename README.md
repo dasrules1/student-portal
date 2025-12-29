@@ -24,13 +24,14 @@ The `SanitizedHtml` component has been improved to prevent teacher instructions 
 - Automatic word wrapping and text breaking to prevent horizontal overflow
 - Configurable maximum height with vertical scrolling when content exceeds the limit
 - Responsive image sizing to ensure images fit within their containers
-- Default max-height of 64 units (approximately 16rem), customizable via the `maxHeight` prop
+- Default max-height of 72 units (approximately 18rem), customizable via the `maxHeight` prop
+- Inline CSS styles (`overflow-wrap: anywhere` and `word-break: break-word`) to handle extremely long tokens like URLs
 
 **Usage Example:**
 ```tsx
 import SanitizedHtml from '@/components/teacher/sanitized-html'
 
-// Basic usage with default max-height (max-h-64)
+// Basic usage with default max-height (max-h-72)
 <SanitizedHtml html={teacherInstructions} />
 
 // Custom max-height and additional styling
@@ -46,6 +47,8 @@ import SanitizedHtml from '@/components/teacher/sanitized-html'
   maxHeight=""
 />
 ```
+
+The `maxHeight` prop accepts any Tailwind max-height utility class (e.g., `max-h-48`, `max-h-64`, `max-h-96`, `max-h-screen`). When content exceeds this height, a vertical scrollbar appears automatically. To tune the height for your use case, adjust the `maxHeight` prop accordingly.
 
 When implementing in teacher pages, replace any existing HTML renderers with the `SanitizedHtml` component to ensure consistent overflow handling and security.
 

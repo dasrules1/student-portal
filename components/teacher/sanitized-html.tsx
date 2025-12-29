@@ -21,12 +21,12 @@ interface SanitizedHtmlProps {
  * 
  * @param html - The HTML string to sanitize and render
  * @param className - Optional additional CSS classes for styling
- * @param maxHeight - Tailwind max-height utility class (default: "max-h-64")
+ * @param maxHeight - Tailwind max-height utility class (default: "max-h-72")
  */
 export default function SanitizedHtml({ 
   html, 
   className = '', 
-  maxHeight = 'max-h-64' 
+  maxHeight = 'max-h-72' 
 }: SanitizedHtmlProps) {
   // Handle empty/null content
   if (!html) {
@@ -62,10 +62,16 @@ export default function SanitizedHtml({
   return (
     <div
       className={cn(
-        'prose max-w-none whitespace-normal break-words overflow-auto',
+        'prose max-w-none whitespace-normal break-words overflow-auto sanitized-html',
         maxHeight,
         className
       )}
+      // Inline styles provide defense-in-depth for word wrapping
+      // in case CSS class doesn't load or gets overridden
+      style={{
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word'
+      }}
       dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
     />
   )
