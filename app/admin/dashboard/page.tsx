@@ -709,7 +709,7 @@ export default function AdminDashboard() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold">All Classes Curriculum & Progress</h2>
+                      <h2 className="text-xl font-semibold">Content</h2>
                       <p className="text-muted-foreground text-sm">
                         View curriculum, publish content, and monitor student progress across all classes
                       </p>

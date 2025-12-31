@@ -1,6 +1,6 @@
 "use client"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, School, Database, GraduationCap } from "lucide-react"
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, School, Database, GraduationCap, Bell } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -61,10 +61,16 @@ export function AdminSidebar() {
       tab: "classes",
     },
     {
-      title: "All Classes Curriculum",
+      title: "Content",
       icon: GraduationCap,
       href: "/admin/dashboard",
       tab: "all-classes",
+    },
+    {
+      title: "Announcements",
+      icon: Bell,
+      href: "/admin/announcements",
+      tab: null,
     },
     {
       title: "Reports",

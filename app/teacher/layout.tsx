@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { School, FileText, Users, Calendar, User, Settings, LogOut, GraduationCap } from "lucide-react"
+import { School, FileText, Users, Calendar, User, Settings, LogOut, GraduationCap, Bell } from "lucide-react"
 import { sessionManager } from "@/lib/session"
 import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
@@ -85,6 +85,12 @@ export default function TeacherLayout({
             <Link href="/teacher/grades">
               <GraduationCap className="w-5 h-5 mr-2" />
               Grades
+            </Link>
+          </Button>
+          <Button variant="ghost" className="justify-start w-full" asChild>
+            <Link href="/teacher/announcements">
+              <Bell className="w-5 h-5 mr-2" />
+              Announcements
             </Link>
           </Button>
           <Button variant="ghost" className="justify-start w-full" asChild>

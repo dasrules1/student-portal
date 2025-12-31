@@ -171,5 +171,33 @@ service cloud.firestore {
         isAdmin()
       );
     }
+
+    // Announcements collection
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated() && (
+        // Students can read announcements for their enrolled classes
+        (isStudent() && (
+          // Check if student is enrolled in the class
+          isEnrolledInClass(resource.data.classId) ||
+          // Or if it's an admin announcement (all classes)
+          resource.data.authorRole == 'admin'
+        )) ||
+        // Teachers can read announcements for their classes
+        (isTeacher() && (
+          hasAccessToClass(resource.data.classId) ||
+          resource.data.authorId == request.auth.uid
+        )) ||
+        // Admins can read all announcements
+        isAdmin()
+      );
+      
+      allow create: if isAuthenticated() && (isTeacher() || isAdmin());
+      allow update, delete: if isAuthenticated() && (
+        // Authors can update/delete their own announcements
+        resource.data.authorId == request.auth.uid ||
+        // Admins can update/delete any announcement
+        isAdmin()
+      );
+    }
   }
 } 

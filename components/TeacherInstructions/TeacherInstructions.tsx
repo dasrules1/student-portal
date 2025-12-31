@@ -48,7 +48,13 @@ export default function TeacherInstructions({
 
     // Client-side: Full DOMPurify sanitization
     // This is the primary security layer that comprehensively prevents XSS
-    return DOMPurify.sanitize(html, SANITIZE_CONFIG)
+    // FORBID_STYLE: false allows style attributes but DOMPurify will sanitize CSS to prevent injection
+    return DOMPurify.sanitize(html, {
+      ...SANITIZE_CONFIG,
+      FORBID_STYLE: false, // Allow style attributes but sanitize CSS values
+      FORBID_TAGS: [], // Use ALLOWED_TAGS instead
+      FORBID_ATTR: [], // Use ALLOWED_ATTR instead
+    })
   }, [html])
 
   // Render sanitized HTML once with proper wrapping and overflow handling

@@ -68,6 +68,7 @@ import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
+import { HtmlWithLatex } from '@/components/HtmlWithLatex';
 import TeacherInstructions from '@/components/TeacherInstructions/TeacherInstructions';
 
 // Add interface definitions for types
@@ -1547,7 +1548,7 @@ export default function TeacherCurriculum() {
                             </div>
                           ) : (
                             <div className="p-4 border rounded-lg">
-                              <p>{renderLatex(activeContent.description || '')}</p>
+                              <HtmlWithLatex html={activeContent.description || ''} />
                               <p className="mt-4 text-sm text-muted-foreground">
                                 This content doesn't have any problems to solve.
                               </p>
@@ -1636,7 +1637,9 @@ export default function TeacherCurriculum() {
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                     <h3 className="font-medium">Problem {index + 1}</h3>
-                      <p className="text-sm text-muted-foreground mt-1">{renderLatex(problem.question)}</p>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        <HtmlWithLatex html={problem.question} />
+                      </div>
                   </div>
                   <Badge variant="outline">
                       {maxPoints} {maxPoints === 1 ? 'point' : 'points'}

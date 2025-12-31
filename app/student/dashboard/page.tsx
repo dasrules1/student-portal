@@ -16,10 +16,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
 import { storage } from "@/lib/storage"
 import { User, Class } from "@/lib/types"
 import { sessionManager } from "@/lib/session"
 import { useAuth } from "@/contexts/auth-context"
+import { db } from "@/lib/firebase"
+import { collection, getDocs, query, where, orderBy } from "firebase/firestore"
+import { format } from "date-fns"
 
 export default function StudentDashboard() {
   const router = useRouter()
@@ -28,6 +32,7 @@ export default function StudentDashboard() {
   const [studentClasses, setStudentClasses] = useState<Class[]>([])
   const [assignmentsByClass, setAssignmentsByClass] = useState<Record<string, any[]>>({})
   const [pendingAssignments, setPendingAssignments] = useState<any[]>([])
+  const [announcements, setAnnouncements] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
 
@@ -177,6 +182,28 @@ export default function StudentDashboard() {
         }
         
         setAssignmentsByClass(assignmentsTemp)
+        
+        // Load announcements for enrolled classes
+        try {
+          const classIds = enrolledClasses.map((cls: Class) => cls.id)
+          if (classIds.length > 0) {
+            const announcementsRef = collection(db, "announcements")
+            const announcementsQuery = query(
+              announcementsRef,
+              where("classId", "in", classIds),
+              orderBy("createdAt", "desc")
+            )
+            const announcementsSnapshot = await getDocs(announcementsQuery)
+            const announcementsData = announcementsSnapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            }))
+            setAnnouncements(announcementsData)
+          }
+        } catch (announcementsError) {
+          console.error("Error loading announcements:", announcementsError)
+        }
+        
         // Sort by due date if available, otherwise by title
         setPendingAssignments(pendingTemp.sort((a, b) => {
           if (a.dueDate && b.dueDate) {
@@ -305,6 +332,45 @@ export default function StudentDashboard() {
             </Button>
           </div>
         </div>
+
+        {/* Announcements */}
+        {announcements && announcements.length > 0 && (
+          <section className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Bell className="w-5 h-5" />
+                Announcements
+              </h2>
+            </div>
+            <div className="space-y-3">
+              {announcements.slice(0, 5).map((announcement: any) => (
+                <Card key={announcement.id}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg">{announcement.title}</CardTitle>
+                        <CardDescription className="mt-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline">{announcement.className || "Unknown Class"}</Badge>
+                            <span className="text-sm">
+                              By {announcement.authorName} ({announcement.authorRole}) •{" "}
+                              {announcement.createdAt
+                                ? format(announcement.createdAt.toDate(), "MMM d, yyyy 'at' h:mm a")
+                                : "Recently"}
+                            </span>
+                          </div>
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="whitespace-pre-wrap text-sm">{announcement.message}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Pending Assignments */}
         <section className="mb-8">

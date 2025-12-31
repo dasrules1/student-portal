@@ -20,10 +20,11 @@ export const SANITIZE_CONFIG = {
    * HTML attributes that are allowed on elements
    * Only safe attributes that don't allow script execution
    * 
-   * Note: 'style' attribute is NOT allowed to prevent CSS injection attacks
+   * Note: 'style' attribute is allowed but will be sanitized by DOMPurify
+   * to prevent CSS injection attacks while preserving formatting from rich text editors
    */
   ALLOWED_ATTR: [
-    'href', 'target', 'rel', 'class', 'src', 'alt', 'title'
+    'href', 'target', 'rel', 'class', 'src', 'alt', 'title', 'style'
   ],
   
   /**
