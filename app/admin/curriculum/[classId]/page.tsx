@@ -1306,10 +1306,18 @@ export default function CurriculumEditor() {
                                     [{ 'header': [1, 2, 3, false] }],
                                     ['bold', 'italic', 'underline', 'strike'],
                                     [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                    [{ 'indent': '-1' }, { 'indent': '+1' }], // Indent/outdent for nested lists
                                     ['link'],
                                     ['clean']
                                   ]
                                 }}
+                                formats={[
+                                  'header',
+                                  'bold', 'italic', 'underline', 'strike',
+                                  'list', 'bullet',
+                                  'indent',
+                                  'link'
+                                ]}
                               />
                               <p className="text-xs text-muted-foreground">
                                 Tip: Use the toolbar for formatting. For LaTeX math, type $...$ for inline or $$...$$ for block equations.
@@ -1374,10 +1382,18 @@ export default function CurriculumEditor() {
                                   [{ 'header': [1, 2, 3, false] }],
                                   ['bold', 'italic', 'underline', 'strike'],
                                   [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                  [{ 'indent': '-1' }, { 'indent': '+1' }], // Indent/outdent for nested lists
                                   ['link'],
                                   ['clean']
                                 ]
                               }}
+                              formats={[
+                                'header',
+                                'bold', 'italic', 'underline', 'strike',
+                                'list', 'bullet',
+                                'indent',
+                                'link'
+                              ]}
                             />
                             <p className="text-xs text-muted-foreground">
                               Tip: Use the toolbar for formatting. For LaTeX math, type $...$ for inline or $$...$$ for block equations.

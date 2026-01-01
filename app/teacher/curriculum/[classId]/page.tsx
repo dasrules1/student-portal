@@ -1410,7 +1410,7 @@ export default function TeacherCurriculum() {
                   </CardTitle>
                   <CardDescription>
                     {currentLesson.description
-                      ? renderLatex(currentLesson.description)
+                      ? <HtmlWithLatex html={currentLesson.description} />
                       : "No description provided"}
                   </CardDescription>
                 </CardHeader>
@@ -1437,7 +1437,9 @@ export default function TeacherCurriculum() {
                                   {renderContentTypeIcon(content.type)}
                                   <div>
                                     <CardTitle className="text-base">{content.title || 'Untitled Content'}</CardTitle>
-                                    <p className="text-sm text-muted-foreground">{renderLatex(content.description || '')}</p>
+                                    <div className="text-sm text-muted-foreground">
+                                      <HtmlWithLatex html={content.description || ''} />
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="flex items-center space-x-2">

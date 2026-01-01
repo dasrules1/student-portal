@@ -39,12 +39,13 @@ export default function RichTextEditor({
   placeholder = 'Enter text...',
   className = ''
 }: RichTextEditorProps) {
-  // Quill toolbar configuration
+  // Quill toolbar configuration with indent/outdent for nested lists
   const modules = {
     toolbar: [
       [{ 'header': [1, 2, 3, false] }],
       ['bold', 'italic', 'underline', 'strike'],
       [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      [{ 'indent': '-1' }, { 'indent': '+1' }], // Indent/outdent for nested lists
       ['blockquote', 'code-block'],
       ['link'],
       ['clean']
@@ -56,6 +57,7 @@ export default function RichTextEditor({
     'header',
     'bold', 'italic', 'underline', 'strike',
     'list', 'bullet',
+    'indent', // Support for nested lists
     'blockquote', 'code-block',
     'link'
   ]

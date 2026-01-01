@@ -334,14 +334,14 @@ export default function StudentDashboard() {
         </div>
 
         {/* Announcements */}
-        {announcements && announcements.length > 0 && (
-          <section className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <Bell className="w-5 h-5" />
-                Announcements
-              </h2>
-            </div>
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Bell className="w-5 h-5" />
+              Announcements
+            </h2>
+          </div>
+          {announcements && announcements.length > 0 ? (
             <div className="space-y-3">
               {announcements.slice(0, 5).map((announcement: any) => (
                 <Card key={announcement.id}>
@@ -369,8 +369,15 @@ export default function StudentDashboard() {
                 </Card>
               ))}
             </div>
-          </section>
-        )}
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                <Bell className="w-12 h-12 mb-2 text-muted-foreground opacity-50" />
+                <p className="text-muted-foreground">No announcements at this time</p>
+              </CardContent>
+            </Card>
+          )}
+        </section>
 
         {/* Pending Assignments */}
         <section className="mb-8">
