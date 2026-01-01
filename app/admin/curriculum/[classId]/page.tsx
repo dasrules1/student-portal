@@ -639,6 +639,14 @@ export default function CurriculumEditor() {
         })
         return
       }
+      if (newProblemCorrectAnswers.length === 0) {
+        toast({
+          title: "Missing correct answer",
+          description: "Please add at least one correct mathematical answer",
+          variant: "destructive",
+        })
+        return
+      }
     }
 
     const newProblemId = generateId("problem_")
@@ -669,6 +677,8 @@ export default function CurriculumEditor() {
       newProblem.tolerance = newProblemTolerance
     } else if (newProblemType === "external-tool") {
       newProblem.embedCode = newProblemEmbedCode
+      newProblem.correctAnswers = newProblemCorrectAnswers
+      newProblem.tolerance = newProblemTolerance
     }
 
     // Add max attempts - use default if not specified
@@ -1780,6 +1790,67 @@ export default function CurriculumEditor() {
                                       </div>
                                     </div>
                                   )}
+                                  <div className="space-y-2">
+                                    <Label>Correct Mathematical Answer(s)</Label>
+                                    <div className="flex space-x-2">
+                                      <Input
+                                        value={newKeyword}
+                                        onChange={(e) => setNewKeyword(e.target.value)}
+                                        placeholder="Enter a correct answer (e.g., 42 or x^2)"
+                                        className="flex-1"
+                                        onKeyPress={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault()
+                                            if (newKeyword.trim()) {
+                                              setNewProblemCorrectAnswers([...newProblemCorrectAnswers, newKeyword.trim()])
+                                              setNewKeyword("")
+                                            }
+                                          }
+                                        }}
+                                      />
+                                      <Button
+                                        type="button"
+                                        onClick={() => {
+                                          if (newKeyword.trim()) {
+                                            setNewProblemCorrectAnswers([...newProblemCorrectAnswers, newKeyword.trim()])
+                                            setNewKeyword("")
+                                          }
+                                        }}
+                                      >
+                                        Add
+                                      </Button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                      {newProblemCorrectAnswers.map((answer, index) => (
+                                        <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                          {answer}
+                                          <X
+                                            className="w-3 h-3 cursor-pointer"
+                                            onClick={() => {
+                                              setNewProblemCorrectAnswers(newProblemCorrectAnswers.filter((_, i) => i !== index))
+                                            }}
+                                          />
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      Add mathematical answers that students should provide
+                                    </p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="tolerance">Numerical Tolerance</Label>
+                                    <Input
+                                      id="tolerance"
+                                      type="number"
+                                      step="0.001"
+                                      min="0"
+                                      value={newProblemTolerance}
+                                      onChange={(e) => setNewProblemTolerance(Number(e.target.value))}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Acceptable margin of error for numerical answers
+                                    </p>
+                                  </div>
                                 </div>
                               )}
 
@@ -2214,6 +2285,83 @@ export default function CurriculumEditor() {
                                 </div>
                               </div>
                             )}
+                            <div className="space-y-2">
+                              <Label>Correct Mathematical Answer(s)</Label>
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {currentProblem.correctAnswers && Array.isArray(currentProblem.correctAnswers) 
+                                  ? currentProblem.correctAnswers.map((answer, index) => (
+                                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                        {answer}
+                                        <X
+                                          className="w-3 h-3 cursor-pointer"
+                                          onClick={() => {
+                                            if (currentProblem.correctAnswers) {
+                                              const newAnswers = [...currentProblem.correctAnswers];
+                                              newAnswers.splice(index, 1);
+                                              updateProblem(
+                                                activeLesson,
+                                                activeContent,
+                                                activeProblem,
+                                                "correctAnswers",
+                                                newAnswers,
+                                              );
+                                            }
+                                          }}
+                                        />
+                                      </Badge>
+                                    ))
+                                  : null}
+                              </div>
+                              <div className="flex space-x-2 mt-2">
+                                <Input
+                                  value={newKeyword}
+                                  onChange={(e) => setNewKeyword(e.target.value)}
+                                  placeholder="Add another correct answer"
+                                  className="flex-1"
+                                />
+                                <Button
+                                  type="button"
+                                  onClick={() => {
+                                    if (newKeyword) {
+                                      const newAnswers = [...(currentProblem.correctAnswers || [])]
+                                      newAnswers.push(newKeyword)
+                                      updateProblem(
+                                        activeLesson,
+                                        activeContent,
+                                        activeProblem,
+                                        "correctAnswers",
+                                        newAnswers,
+                                      )
+                                      setNewKeyword("")
+                                    }
+                                  }}
+                                >
+                                  Add
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="edit-tolerance">Numerical Tolerance</Label>
+                              <Input
+                                id="edit-tolerance"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={currentProblem.tolerance || 0.01}
+                                onChange={(e) =>
+                                  updateProblem(
+                                    activeLesson,
+                                    activeContent,
+                                    activeProblem,
+                                    "tolerance",
+                                    Number(e.target.value),
+                                  )
+                                }
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Acceptable margin of error for numerical answers
+                              </p>
+                            </div>
                           </div>
                         )}
 

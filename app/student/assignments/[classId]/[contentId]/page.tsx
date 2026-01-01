@@ -755,7 +755,7 @@ const AssignmentDetailPage: React.FC = () => {
         correct: selectedOption === problem.correctAnswer,
         score: selectedOption === problem.correctAnswer ? (problem.points || 1) : 0
       };
-    } else if (problem.type === "math-expression" || problem.type === "model-diagram") {
+    } else if (problem.type === "math-expression" || problem.type === "model-diagram" || problem.type === "external-tool") {
       answer = mathExpressionInputs[content.id]?.[problemIndex] || "";
       if (!answer) {
         toast({
@@ -1206,6 +1206,60 @@ const AssignmentDetailPage: React.FC = () => {
                       <Button
                         onClick={async () => {
                           console.log('Submit button clicked for model-diagram problem', currentProblemIndex);
+                          await handleSubmitProblem(currentProblemIndex);
+                        }}
+                        className="w-full"
+                        disabled={!mathExpressionInputs[content.id]?.[currentProblemIndex]}
+                        variant={(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "secondary" : "default";
+                        })()}
+                      >
+                        <Send className="w-4 h-4 mr-2" />
+                        {(() => {
+                          const key = `${content.id}-${currentProblemIndex}`;
+                          const currentAttempts = attemptCounts[key] || 0;
+                          const maxAttempts = currentProblem.maxAttempts || Infinity;
+                          return currentAttempts >= maxAttempts ? "Submit for Half Credit" : "Submit Answer";
+                        })()}
+                      </Button>
+                    )}
+                    {isProblemSubmitted(currentProblemIndex) && (
+                      <div className="p-3 bg-muted rounded-md space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Your Answer:</span>
+                          <span className="text-sm">{mathExpressionInputs[content.id]?.[currentProblemIndex] || 'No answer'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Score:</span>
+                          <span className="text-sm font-semibold">
+                            {getProblemScore(currentProblemIndex)} / {currentProblem.points || 1} points
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {currentProblem.type === "external-tool" && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col space-y-2">
+                      <Label htmlFor={`external-tool-answer-${currentProblemIndex}`}>Your Answer:</Label>
+                      <Input
+                        id={`external-tool-answer-${currentProblemIndex}`}
+                        value={mathExpressionInputs[content.id]?.[currentProblemIndex] || ""}
+                        onChange={(e) => handleMathExpressionInput(currentProblemIndex, e.target.value)}
+                        placeholder="Enter your mathematical answer (e.g., 42 or x^2)"
+                        disabled={getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit}
+                        className="flex-1"
+                      />
+                    </div>
+                    {!(getProblemScore(currentProblemIndex) === (currentProblem.points || 1) || problemState[`${content.id}-${currentProblemIndex}`]?.isHalfCredit) && (
+                      <Button
+                        onClick={async () => {
+                          console.log('Submit button clicked for external-tool problem', currentProblemIndex);
                           await handleSubmitProblem(currentProblemIndex);
                         }}
                         className="w-full"
