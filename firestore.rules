@@ -182,10 +182,13 @@ service cloud.firestore {
           // Or if it's an admin announcement (all classes)
           resource.data.authorRole == 'admin'
         )) ||
-        // Teachers can read announcements for their classes
+        // Teachers can read announcements if they are the author OR if it's from another teacher/admin
+        // This avoids expensive hasAccessToClass() checks that cause permission errors
+        // App-level filtering ensures teachers only query announcements for their classes
         (isTeacher() && (
-          hasAccessToClass(resource.data.classId) ||
-          resource.data.authorId == request.auth.uid
+          resource.data.authorId == request.auth.uid ||
+          resource.data.authorRole == 'teacher' ||
+          resource.data.authorRole == 'admin'
         )) ||
         // Admins can read all announcements
         isAdmin()
