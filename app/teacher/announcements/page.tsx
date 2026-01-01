@@ -83,7 +83,7 @@ export default function TeacherAnnouncements() {
       // Load teacher's classes
       const allClasses = await storage.getClasses()
       const teacherClasses = allClasses.filter(
-        (cls: any) => cls.teacher_id === userId || cls.teacher === userName
+        (cls: any) => cls.teacher_id === userId 
       )
       setClasses(teacherClasses)
 
