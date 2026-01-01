@@ -77,12 +77,13 @@ export default function TeacherAnnouncements() {
     try {
       setIsLoading(true)
       const user = sessionManager.getCurrentUser()
-      const userId = user?.user?.uid || user?.user?.id
+      const userId = user?.user?.uid
+      const userName = user?.user?.displayName || ""
 
       // Load teacher's classes
       const allClasses = await storage.getClasses()
       const teacherClasses = allClasses.filter(
-        (cls: any) => cls.teacher_id === userId || cls.teacher === user?.user?.name
+        (cls: any) => cls.teacher_id === userId || cls.teacher === userName
       )
       setClasses(teacherClasses)
 
