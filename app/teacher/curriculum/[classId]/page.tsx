@@ -68,6 +68,7 @@ import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
+import { TikZRenderer } from '@/components/TikZRenderer';
 import { HtmlWithLatex } from '@/components/HtmlWithLatex';
 import TeacherInstructions from '@/components/TeacherInstructions/TeacherInstructions';
 
@@ -1111,9 +1112,15 @@ export default function TeacherCurriculum() {
              problemType === 'short-answer' ? 'Short Answer' : 
              problemType === 'open-ended' ? 'Open Ended' :
              problemType === 'math-expression' ? 'Math Expression' :
-             problemType === 'geometric' ? 'Geometric/Graphing' : 'Essay'}
+             problemType === 'geometric' ? 'Geometric/Graphing' :
+             problemType === 'model-diagram' ? 'Model/Diagram' : 'Essay'}
           </Badge>
         </div>
+        {problemType === 'model-diagram' && problem.tikZCode && (
+          <div className="mb-4">
+            <TikZRenderer tikzCode={problem.tikZCode} />
+          </div>
+        )}
         <div className="mb-2">{renderLatex(problem.question)}</div>
         
         {problemType === 'multiple-choice' && problem.options && (
@@ -1134,7 +1141,7 @@ export default function TeacherCurriculum() {
           </div>
         )}
         
-        {(problemType === 'short-answer' || problemType === 'essay' || problemType === 'open-ended' || problemType === 'math-expression') && (
+        {(problemType === 'short-answer' || problemType === 'essay' || problemType === 'open-ended' || problemType === 'math-expression' || problemType === 'model-diagram') && (
           <div className="mb-2">
             <div className="font-medium text-sm text-gray-500 mb-1">Correct Answer:</div>
             <div className="p-2 bg-gray-50 rounded">
@@ -1145,7 +1152,7 @@ export default function TeacherCurriculum() {
                   ))}
                 </div>
               ) : problem.correctAnswer ? (
-                problemType === 'math-expression' ? (
+                problemType === 'math-expression' || problemType === 'model-diagram' ? (
                   <span className="font-mono">{renderLatex(problem.correctAnswer)}</span>
                 ) : (
                   renderLatex(problem.correctAnswer)

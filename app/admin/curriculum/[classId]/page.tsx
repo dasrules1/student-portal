@@ -49,6 +49,7 @@ import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
 import { sessionManager } from "@/lib/session"
 import { GraphEditor } from "@/components/graph-editor"
+import { TikZPreview } from "@/components/TikZPreview"
 
 // Dynamically import ReactQuill for client-side only rendering
 const ReactQuill = dynamic(() => import("react-quill-new"), { 
@@ -72,6 +73,7 @@ const problemTypes = [
   { id: "open-ended", name: "Open Ended" },
   { id: "math-expression", name: "Math Expression" },
   { id: "geometric", name: "Geometric/Graphing" },
+  { id: "model-diagram", name: "Model/Diagram" },
 ]
 
 export default function CurriculumEditor() {
@@ -110,6 +112,7 @@ export default function CurriculumEditor() {
   const [newProblemTolerance, setNewProblemTolerance] = useState(0.01)
   const [newProblemMaxAttempts, setNewProblemMaxAttempts] = useState<number | null>(null)
   const [newProblemGraphData, setNewProblemGraphData] = useState<{ points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }>({ points: [], lines: [] })
+  const [newProblemTikZCode, setNewProblemTikZCode] = useState("")
   const [deleteLessonDialogOpen, setDeleteLessonDialogOpen] = useState(false)
   const [deleteContentDialogOpen, setDeleteContentDialogOpen] = useState(false)
   const [deleteProblemDialogOpen, setDeleteProblemDialogOpen] = useState(false)
@@ -606,6 +609,23 @@ export default function CurriculumEditor() {
         })
         return
       }
+    } else if (newProblemType === "model-diagram") {
+      if (!newProblemTikZCode.trim()) {
+        toast({
+          title: "Missing TikZ code",
+          description: "Please enter TikZ code for the diagram/model",
+          variant: "destructive",
+        })
+        return
+      }
+      if (newProblemCorrectAnswers.length === 0) {
+        toast({
+          title: "Missing correct answer",
+          description: "Please add at least one correct mathematical answer",
+          variant: "destructive",
+        })
+        return
+      }
     }
 
     const newProblemId = generateId("problem_")
@@ -630,6 +650,10 @@ export default function CurriculumEditor() {
     } else if (newProblemType === "geometric") {
       newProblem.graphData = newProblemGraphData
       // Graph data structure: { points: [{x, y}], lines: [{start: {x, y}, end: {x, y}}] }
+    } else if (newProblemType === "model-diagram") {
+      newProblem.tikZCode = newProblemTikZCode
+      newProblem.correctAnswers = newProblemCorrectAnswers
+      newProblem.tolerance = newProblemTolerance
     }
 
     // Add max attempts - use default if not specified
@@ -695,6 +719,7 @@ export default function CurriculumEditor() {
     setNewProblemAllowPartialCredit(false)
     setNewProblemTolerance(0.01)
     setNewProblemGraphData({ points: [], lines: [] })
+    setNewProblemTikZCode("")
     // Set default attempts based on content type
     const currentContent = curriculum.lessons
       .find((l: any) => l.id === activeLesson)
@@ -1625,6 +1650,87 @@ export default function CurriculumEditor() {
                                 </div>
                               )}
 
+                              {/* Model/Diagram options */}
+                              {newProblemType === "model-diagram" && (
+                                <div className="space-y-4">
+                                  <div className="space-y-2">
+                                    <Label>TikZ Code for Diagram/Model</Label>
+                                    <Textarea
+                                      value={newProblemTikZCode}
+                                      onChange={(e) => setNewProblemTikZCode(e.target.value)}
+                                      placeholder="Enter TikZ code (e.g., \\begin{tikzpicture}...\\end{tikzpicture})"
+                                      rows={8}
+                                      className="font-mono text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Enter LaTeX TikZ code to create diagrams and models. The diagram will appear in the question.
+                                    </p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Preview</Label>
+                                    <TikZPreview tikzCode={newProblemTikZCode} />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Correct Mathematical Answer(s)</Label>
+                                    <div className="flex space-x-2">
+                                      <Input
+                                        value={newKeyword}
+                                        onChange={(e) => setNewKeyword(e.target.value)}
+                                        placeholder="Enter a correct answer (e.g., 42 or x^2)"
+                                        className="flex-1"
+                                        onKeyPress={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault()
+                                            if (newKeyword.trim()) {
+                                              setNewProblemCorrectAnswers([...newProblemCorrectAnswers, newKeyword.trim()])
+                                              setNewKeyword("")
+                                            }
+                                          }
+                                        }}
+                                      />
+                                      <Button type="button" onClick={() => {
+                                        if (newKeyword.trim()) {
+                                          setNewProblemCorrectAnswers([...newProblemCorrectAnswers, newKeyword.trim()])
+                                          setNewKeyword("")
+                                        }
+                                      }}>
+                                        Add
+                                      </Button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                      {newProblemCorrectAnswers.map((answer, index) => (
+                                        <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                          {answer}
+                                          <X
+                                            className="w-3 h-3 cursor-pointer"
+                                            onClick={() => {
+                                              setNewProblemCorrectAnswers(newProblemCorrectAnswers.filter((_, i) => i !== index))
+                                            }}
+                                          />
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      Add mathematical answers that students should provide
+                                    </p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label htmlFor="tolerance">Numerical Tolerance</Label>
+                                    <Input
+                                      id="tolerance"
+                                      type="number"
+                                      step="0.001"
+                                      min="0"
+                                      value={newProblemTolerance}
+                                      onChange={(e) => setNewProblemTolerance(Number(e.target.value))}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Acceptable margin of error for numerical answers
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="space-y-2">
                                 <Label htmlFor="problem-points">Points (Default: 3)</Label>
                                 <Input
@@ -1905,6 +2011,111 @@ export default function CurriculumEditor() {
                                 }
                               />
                               <Label htmlFor="edit-partial-credit">Allow partial credit</Label>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Model/Diagram options */}
+                        {currentProblem.type === "model-diagram" && (
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label>TikZ Code for Diagram/Model</Label>
+                              <Textarea
+                                value={currentProblem.tikZCode || ""}
+                                onChange={(e) =>
+                                  updateProblem(
+                                    activeLesson,
+                                    activeContent,
+                                    activeProblem,
+                                    "tikZCode",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder="Enter TikZ code (e.g., \\begin{tikzpicture}...\\end{tikzpicture})"
+                                rows={8}
+                                className="font-mono text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Enter LaTeX TikZ code to create diagrams and models. The diagram will appear in the question.
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Preview</Label>
+                              <TikZPreview tikzCode={currentProblem.tikZCode || ""} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Correct Mathematical Answer(s)</Label>
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {currentProblem.correctAnswers && Array.isArray(currentProblem.correctAnswers) 
+                                  ? currentProblem.correctAnswers.map((answer, index) => (
+                                      <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                                        {answer}
+                                        <X
+                                          className="w-3 h-3 cursor-pointer"
+                                          onClick={() => {
+                                            if (currentProblem.correctAnswers) {
+                                              const newAnswers = [...currentProblem.correctAnswers];
+                                              newAnswers.splice(index, 1);
+                                              updateProblem(
+                                                activeLesson,
+                                                activeContent,
+                                                activeProblem,
+                                                "correctAnswers",
+                                                newAnswers,
+                                              );
+                                            }
+                                          }}
+                                        />
+                                      </Badge>
+                                    ))
+                                  : null}
+                              </div>
+                              <div className="flex space-x-2 mt-2">
+                                <Input
+                                  value={newKeyword}
+                                  onChange={(e) => setNewKeyword(e.target.value)}
+                                  placeholder="Add another correct answer"
+                                  className="flex-1"
+                                />
+                                <Button
+                                  type="button"
+                                  onClick={() => {
+                                    if (newKeyword) {
+                                      const newAnswers = [...(currentProblem.correctAnswers || [])]
+                                      newAnswers.push(newKeyword)
+                                      updateProblem(
+                                        activeLesson,
+                                        activeContent,
+                                        activeProblem,
+                                        "correctAnswers",
+                                        newAnswers,
+                                      )
+                                      setNewKeyword("")
+                                    }
+                                  }}
+                                >
+                                  Add
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="edit-tolerance">Numerical Tolerance</Label>
+                              <Input
+                                id="edit-tolerance"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={currentProblem.tolerance || 0.01}
+                                onChange={(e) =>
+                                  updateProblem(
+                                    activeLesson,
+                                    activeContent,
+                                    activeProblem,
+                                    "tolerance",
+                                    Number(e.target.value),
+                                  )
+                                }
+                              />
                             </div>
                           </div>
                         )}
