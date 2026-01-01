@@ -68,7 +68,6 @@ import { RealTimeMonitor } from "@/components/teacher/real-time-monitor"
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex'
 import { GraphEditor } from '@/components/graph-editor';
-import { TikZRenderer } from '@/components/TikZRenderer';
 import { HtmlWithLatex } from '@/components/HtmlWithLatex';
 import TeacherInstructions from '@/components/TeacherInstructions/TeacherInstructions';
 
@@ -1116,9 +1115,15 @@ export default function TeacherCurriculum() {
              problemType === 'model-diagram' ? 'Model/Diagram' : 'Essay'}
           </Badge>
         </div>
-        {problemType === 'model-diagram' && problem.tikZCode && (
+        {problemType === 'model-diagram' && problem.diagramImageUrl && (
           <div className="mb-4">
-            <TikZRenderer tikzCode={problem.tikZCode} />
+            <div className="border rounded-lg p-4 bg-white">
+              <img 
+                src={problem.diagramImageUrl} 
+                alt="Diagram" 
+                className="max-w-full h-auto mx-auto"
+              />
+            </div>
           </div>
         )}
         <div className="mb-2">{renderLatex(problem.question)}</div>

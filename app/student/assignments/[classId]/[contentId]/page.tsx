@@ -18,7 +18,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { CheckSquare, LayoutDashboard, Book, File, Cog, ArrowLeft, Send, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { GraphEditor } from '@/components/graph-editor';
-import { TikZRenderer } from '@/components/TikZRenderer';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
@@ -1016,9 +1015,15 @@ const AssignmentDetailPage: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle>Problem {currentProblemIndex + 1}</CardTitle>
-              {currentProblem.type === "model-diagram" && currentProblem.tikZCode && (
+              {currentProblem.type === "model-diagram" && currentProblem.diagramImageUrl && (
                 <div className="my-4">
-                  <TikZRenderer tikzCode={currentProblem.tikZCode} />
+                  <div className="border rounded-lg p-4 bg-white">
+                    <img 
+                      src={currentProblem.diagramImageUrl} 
+                      alt="Diagram" 
+                      className="max-w-full h-auto mx-auto"
+                    />
+                  </div>
                 </div>
               )}
               <CardDescription>

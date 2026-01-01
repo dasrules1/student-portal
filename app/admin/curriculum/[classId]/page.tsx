@@ -49,7 +49,7 @@ import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
 import { sessionManager } from "@/lib/session"
 import { GraphEditor } from "@/components/graph-editor"
-import { TikZPreview } from "@/components/TikZPreview"
+import { Upload, X } from "lucide-react"
 
 // Dynamically import ReactQuill for client-side only rendering
 const ReactQuill = dynamic(() => import("react-quill-new"), { 
@@ -112,7 +112,8 @@ export default function CurriculumEditor() {
   const [newProblemTolerance, setNewProblemTolerance] = useState(0.01)
   const [newProblemMaxAttempts, setNewProblemMaxAttempts] = useState<number | null>(null)
   const [newProblemGraphData, setNewProblemGraphData] = useState<{ points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }>({ points: [], lines: [] })
-  const [newProblemTikZCode, setNewProblemTikZCode] = useState("")
+  const [newProblemDiagramImage, setNewProblemDiagramImage] = useState<string | null>(null)
+  const [newProblemDiagramUploading, setNewProblemDiagramUploading] = useState(false)
   const [deleteLessonDialogOpen, setDeleteLessonDialogOpen] = useState(false)
   const [deleteContentDialogOpen, setDeleteContentDialogOpen] = useState(false)
   const [deleteProblemDialogOpen, setDeleteProblemDialogOpen] = useState(false)
@@ -613,10 +614,10 @@ export default function CurriculumEditor() {
         return
       }
     } else if (newProblemType === "model-diagram") {
-      if (!newProblemTikZCode.trim()) {
+      if (!newProblemDiagramImage) {
         toast({
-          title: "Missing TikZ code",
-          description: "Please enter TikZ code for the diagram/model",
+          title: "Missing diagram image",
+          description: "Please upload an image for the diagram/model",
           variant: "destructive",
         })
         return
@@ -654,7 +655,7 @@ export default function CurriculumEditor() {
       newProblem.graphData = newProblemGraphData
       // Graph data structure: { points: [{x, y}], lines: [{start: {x, y}, end: {x, y}}] }
     } else if (newProblemType === "model-diagram") {
-      newProblem.tikZCode = newProblemTikZCode
+      newProblem.diagramImageUrl = newProblemDiagramImage
       newProblem.correctAnswers = newProblemCorrectAnswers
       newProblem.tolerance = newProblemTolerance
     }
@@ -722,7 +723,7 @@ export default function CurriculumEditor() {
     setNewProblemAllowPartialCredit(false)
     setNewProblemTolerance(0.01)
     setNewProblemGraphData({ points: [], lines: [] })
-    setNewProblemTikZCode("")
+    setNewProblemDiagramImage(null)
     // Set default attempts based on content type
     const currentContent = curriculum.lessons
       .find((l: any) => l.id === activeLesson)
@@ -1657,21 +1658,120 @@ export default function CurriculumEditor() {
                               {newProblemType === "model-diagram" && (
                                 <div className="space-y-4">
                                   <div className="space-y-2">
-                                    <Label>TikZ Code for Diagram/Model</Label>
-                                    <Textarea
-                                      value={newProblemTikZCode}
-                                      onChange={(e) => setNewProblemTikZCode(e.target.value)}
-                                      placeholder="Enter TikZ code (e.g., \\begin{tikzpicture}...\\end{tikzpicture})"
-                                      rows={8}
-                                      className="font-mono text-sm"
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                      Enter LaTeX TikZ code to create diagrams and models. The diagram will appear in the question.
-                                    </p>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Preview</Label>
-                                    <TikZPreview tikzCode={newProblemTikZCode} />
+                                    <Label>Diagram/Model Image</Label>
+                                    {newProblemDiagramImage ? (
+                                      <div className="space-y-2">
+                                        <div className="relative border rounded-lg p-2">
+                                          <img 
+                                            src={newProblemDiagramImage} 
+                                            alt="Diagram preview" 
+                                            className="max-w-full h-auto max-h-64 mx-auto"
+                                          />
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="absolute top-2 right-2"
+                                            onClick={() => setNewProblemDiagramImage(null)}
+                                          >
+                                            <X className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          onClick={() => {
+                                            const input = document.createElement('input')
+                                            input.type = 'file'
+                                            input.accept = 'image/*'
+                                            input.onchange = async (e: any) => {
+                                              const file = e.target.files?.[0]
+                                              if (!file) return
+                                              
+                                              setNewProblemDiagramUploading(true)
+                                              try {
+                                                const path = `diagrams/${classId}/${Date.now()}_${file.name}`
+                                                const result = await storage.uploadFile(file, path)
+                                                setNewProblemDiagramImage(result.url)
+                                                toast({
+                                                  title: "Success",
+                                                  description: "Image uploaded successfully",
+                                                })
+                                              } catch (error: any) {
+                                                toast({
+                                                  title: "Upload failed",
+                                                  description: error.message || "Failed to upload image",
+                                                  variant: "destructive",
+                                                })
+                                              } finally {
+                                                setNewProblemDiagramUploading(false)
+                                              }
+                                            }
+                                            input.click()
+                                          }}
+                                          disabled={newProblemDiagramUploading}
+                                        >
+                                          {newProblemDiagramUploading ? (
+                                            <>Uploading...</>
+                                          ) : (
+                                            <>
+                                              <Upload className="w-4 h-4 mr-2" />
+                                              Replace Image
+                                            </>
+                                          )}
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          onClick={() => {
+                                            const input = document.createElement('input')
+                                            input.type = 'file'
+                                            input.accept = 'image/*'
+                                            input.onchange = async (e: any) => {
+                                              const file = e.target.files?.[0]
+                                              if (!file) return
+                                              
+                                              setNewProblemDiagramUploading(true)
+                                              try {
+                                                const path = `diagrams/${classId}/${Date.now()}_${file.name}`
+                                                const result = await storage.uploadFile(file, path)
+                                                setNewProblemDiagramImage(result.url)
+                                                toast({
+                                                  title: "Success",
+                                                  description: "Image uploaded successfully",
+                                                })
+                                              } catch (error: any) {
+                                                toast({
+                                                  title: "Upload failed",
+                                                  description: error.message || "Failed to upload image",
+                                                  variant: "destructive",
+                                                })
+                                              } finally {
+                                                setNewProblemDiagramUploading(false)
+                                              }
+                                            }
+                                            input.click()
+                                          }}
+                                          disabled={newProblemDiagramUploading}
+                                          className="w-full"
+                                        >
+                                          {newProblemDiagramUploading ? (
+                                            <>Uploading...</>
+                                          ) : (
+                                            <>
+                                              <Upload className="w-4 h-4 mr-2" />
+                                              Upload Diagram Image
+                                            </>
+                                          )}
+                                        </Button>
+                                        <p className="text-xs text-muted-foreground">
+                                          Upload an image file (PNG, JPG, etc.) for the diagram/model. The image will appear in the question.
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="space-y-2">
                                     <Label>Correct Mathematical Answer(s)</Label>
@@ -2022,29 +2122,120 @@ export default function CurriculumEditor() {
                         {currentProblem.type === "model-diagram" && (
                           <div className="space-y-4">
                             <div className="space-y-2">
-                              <Label>TikZ Code for Diagram/Model</Label>
-                              <Textarea
-                                value={currentProblem.tikZCode || ""}
-                                onChange={(e) =>
-                                  updateProblem(
-                                    activeLesson,
-                                    activeContent,
-                                    activeProblem,
-                                    "tikZCode",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="Enter TikZ code (e.g., \\begin{tikzpicture}...\\end{tikzpicture})"
-                                rows={8}
-                                className="font-mono text-sm"
-                              />
-                              <p className="text-xs text-muted-foreground">
-                                Enter LaTeX TikZ code to create diagrams and models. The diagram will appear in the question.
-                              </p>
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Preview</Label>
-                              <TikZPreview tikzCode={currentProblem.tikZCode || ""} />
+                              <Label>Diagram/Model Image</Label>
+                              {currentProblem.diagramImageUrl ? (
+                                <div className="space-y-2">
+                                  <div className="relative border rounded-lg p-2">
+                                    <img 
+                                      src={currentProblem.diagramImageUrl} 
+                                      alt="Diagram preview" 
+                                      className="max-w-full h-auto max-h-64 mx-auto"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="absolute top-2 right-2"
+                                      onClick={() => updateProblem(activeLesson, activeContent, activeProblem, "diagramImageUrl", null)}
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      const input = document.createElement('input')
+                                      input.type = 'file'
+                                      input.accept = 'image/*'
+                                      input.onchange = async (e: any) => {
+                                        const file = e.target.files?.[0]
+                                        if (!file) return
+                                        
+                                        setNewProblemDiagramUploading(true)
+                                        try {
+                                          const path = `diagrams/${classId}/${Date.now()}_${file.name}`
+                                          const result = await storage.uploadFile(file, path)
+                                          updateProblem(activeLesson, activeContent, activeProblem, "diagramImageUrl", result.url)
+                                          toast({
+                                            title: "Success",
+                                            description: "Image uploaded successfully",
+                                          })
+                                        } catch (error: any) {
+                                          toast({
+                                            title: "Upload failed",
+                                            description: error.message || "Failed to upload image",
+                                            variant: "destructive",
+                                          })
+                                        } finally {
+                                          setNewProblemDiagramUploading(false)
+                                        }
+                                      }
+                                      input.click()
+                                    }}
+                                    disabled={newProblemDiagramUploading}
+                                  >
+                                    {newProblemDiagramUploading ? (
+                                      <>Uploading...</>
+                                    ) : (
+                                      <>
+                                        <Upload className="w-4 h-4 mr-2" />
+                                        Replace Image
+                                      </>
+                                    )}
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                      const input = document.createElement('input')
+                                      input.type = 'file'
+                                      input.accept = 'image/*'
+                                      input.onchange = async (e: any) => {
+                                        const file = e.target.files?.[0]
+                                        if (!file) return
+                                        
+                                        setNewProblemDiagramUploading(true)
+                                        try {
+                                          const path = `diagrams/${classId}/${Date.now()}_${file.name}`
+                                          const result = await storage.uploadFile(file, path)
+                                          updateProblem(activeLesson, activeContent, activeProblem, "diagramImageUrl", result.url)
+                                          toast({
+                                            title: "Success",
+                                            description: "Image uploaded successfully",
+                                          })
+                                        } catch (error: any) {
+                                          toast({
+                                            title: "Upload failed",
+                                            description: error.message || "Failed to upload image",
+                                            variant: "destructive",
+                                          })
+                                        } finally {
+                                          setNewProblemDiagramUploading(false)
+                                        }
+                                      }
+                                      input.click()
+                                    }}
+                                    disabled={newProblemDiagramUploading}
+                                    className="w-full"
+                                  >
+                                    {newProblemDiagramUploading ? (
+                                      <>Uploading...</>
+                                    ) : (
+                                      <>
+                                        <Upload className="w-4 h-4 mr-2" />
+                                        Upload Diagram Image
+                                      </>
+                                    )}
+                                  </Button>
+                                  <p className="text-xs text-muted-foreground">
+                                    Upload an image file (PNG, JPG, etc.) for the diagram/model. The image will appear in the question.
+                                  </p>
+                                </div>
+                              )}
                             </div>
                             <div className="space-y-2">
                               <Label>Correct Mathematical Answer(s)</Label>
