@@ -17,6 +17,7 @@ import {
   FileQuestion,
   X,
   Copy,
+  Upload,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -49,7 +50,6 @@ import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
 import { sessionManager } from "@/lib/session"
 import { GraphEditor } from "@/components/graph-editor"
-import { Upload, X } from "lucide-react"
 
 // Dynamically import ReactQuill for client-side only rendering
 const ReactQuill = dynamic(() => import("react-quill-new"), { 
