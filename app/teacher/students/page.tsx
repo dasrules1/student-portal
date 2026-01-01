@@ -39,8 +39,10 @@ export default function TeacherStudentsPage() {
     setCurrentUser(user)
 
     // Get all classes taught by this teacher
+    const userId = user?.user?.uid
+    const userName = user?.user?.displayName || ""
     const allClasses = storage.getAllClasses()
-    const teacherClasses = allClasses.filter((cls) => cls.teacher === user.name || cls.teacherId === user.id)
+    const teacherClasses = allClasses.filter((cls) => cls.teacher_id === userId || cls.teacher === userName)
     setClasses(teacherClasses)
 
     // Get all students
