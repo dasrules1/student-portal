@@ -1015,13 +1015,12 @@ const AssignmentDetailPage: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle>Problem {currentProblemIndex + 1}</CardTitle>
-              {currentProblem.type === "model-diagram" && currentProblem.diagramImageUrl && (
+              {currentProblem.type === "model-diagram" && (currentProblem as any).diagramSvg && (
                 <div className="my-4">
                   <div className="border rounded-lg p-4 bg-white">
-                    <img 
-                      src={currentProblem.diagramImageUrl} 
-                      alt="Diagram" 
-                      className="max-w-full h-auto mx-auto"
+                    <div 
+                      dangerouslySetInnerHTML={{ __html: (currentProblem as any).diagramSvg }}
+                      className="max-w-full mx-auto"
                     />
                   </div>
                 </div>

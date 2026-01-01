@@ -1115,13 +1115,12 @@ export default function TeacherCurriculum() {
              problemType === 'model-diagram' ? 'Model/Diagram' : 'Essay'}
           </Badge>
         </div>
-        {problemType === 'model-diagram' && problem.diagramImageUrl && (
+        {problemType === 'model-diagram' && (problem as any).diagramSvg && (
           <div className="mb-4">
             <div className="border rounded-lg p-4 bg-white">
-              <img 
-                src={problem.diagramImageUrl} 
-                alt="Diagram" 
-                className="max-w-full h-auto mx-auto"
+              <div 
+                dangerouslySetInnerHTML={{ __html: (problem as any).diagramSvg }}
+                className="max-w-full mx-auto"
               />
             </div>
           </div>

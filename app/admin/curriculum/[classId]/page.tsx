@@ -17,7 +17,6 @@ import {
   FileQuestion,
   X,
   Copy,
-  Upload,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -112,8 +111,7 @@ export default function CurriculumEditor() {
   const [newProblemTolerance, setNewProblemTolerance] = useState(0.01)
   const [newProblemMaxAttempts, setNewProblemMaxAttempts] = useState<number | null>(null)
   const [newProblemGraphData, setNewProblemGraphData] = useState<{ points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }>({ points: [], lines: [] })
-  const [newProblemDiagramImage, setNewProblemDiagramImage] = useState<string | null>(null)
-  const [newProblemDiagramUploading, setNewProblemDiagramUploading] = useState(false)
+  const [newProblemDiagramSvg, setNewProblemDiagramSvg] = useState<string>("")
   const [deleteLessonDialogOpen, setDeleteLessonDialogOpen] = useState(false)
   const [deleteContentDialogOpen, setDeleteContentDialogOpen] = useState(false)
   const [deleteProblemDialogOpen, setDeleteProblemDialogOpen] = useState(false)
@@ -614,10 +612,10 @@ export default function CurriculumEditor() {
         return
       }
     } else if (newProblemType === "model-diagram") {
-      if (!newProblemDiagramImage) {
+      if (!newProblemDiagramSvg.trim()) {
         toast({
-          title: "Missing diagram image",
-          description: "Please upload an image for the diagram/model",
+          title: "Missing diagram SVG",
+          description: "Please enter SVG code for the diagram/model",
           variant: "destructive",
         })
         return
@@ -655,7 +653,7 @@ export default function CurriculumEditor() {
       newProblem.graphData = newProblemGraphData
       // Graph data structure: { points: [{x, y}], lines: [{start: {x, y}, end: {x, y}}] }
     } else if (newProblemType === "model-diagram") {
-      newProblem.diagramImageUrl = newProblemDiagramImage
+      newProblem.diagramSvg = newProblemDiagramSvg
       newProblem.correctAnswers = newProblemCorrectAnswers
       newProblem.tolerance = newProblemTolerance
     }
@@ -723,7 +721,7 @@ export default function CurriculumEditor() {
     setNewProblemAllowPartialCredit(false)
     setNewProblemTolerance(0.01)
     setNewProblemGraphData({ points: [], lines: [] })
-    setNewProblemDiagramImage(null)
+    setNewProblemDiagramSvg("")
     // Set default attempts based on content type
     const currentContent = curriculum.lessons
       .find((l: any) => l.id === activeLesson)
@@ -1658,121 +1656,29 @@ export default function CurriculumEditor() {
                               {newProblemType === "model-diagram" && (
                                 <div className="space-y-4">
                                   <div className="space-y-2">
-                                    <Label>Diagram/Model Image</Label>
-                                    {newProblemDiagramImage ? (
-                                      <div className="space-y-2">
-                                        <div className="relative border rounded-lg p-2">
-                                          <img 
-                                            src={newProblemDiagramImage} 
-                                            alt="Diagram preview" 
-                                            className="max-w-full h-auto max-h-64 mx-auto"
-                                          />
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="absolute top-2 right-2"
-                                            onClick={() => setNewProblemDiagramImage(null)}
-                                          >
-                                            <X className="w-4 h-4" />
-                                          </Button>
-                                        </div>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          onClick={() => {
-                                            const input = document.createElement('input')
-                                            input.type = 'file'
-                                            input.accept = 'image/*'
-                                            input.onchange = async (e: any) => {
-                                              const file = e.target.files?.[0]
-                                              if (!file) return
-                                              
-                                              setNewProblemDiagramUploading(true)
-                                              try {
-                                                const path = `diagrams/${classId}/${Date.now()}_${file.name}`
-                                                const result = await storage.uploadFile(file, path)
-                                                setNewProblemDiagramImage(result.url)
-                                                toast({
-                                                  title: "Success",
-                                                  description: "Image uploaded successfully",
-                                                })
-                                              } catch (error: any) {
-                                                toast({
-                                                  title: "Upload failed",
-                                                  description: error.message || "Failed to upload image",
-                                                  variant: "destructive",
-                                                })
-                                              } finally {
-                                                setNewProblemDiagramUploading(false)
-                                              }
-                                            }
-                                            input.click()
-                                          }}
-                                          disabled={newProblemDiagramUploading}
-                                        >
-                                          {newProblemDiagramUploading ? (
-                                            <>Uploading...</>
-                                          ) : (
-                                            <>
-                                              <Upload className="w-4 h-4 mr-2" />
-                                              Replace Image
-                                            </>
-                                          )}
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <div className="space-y-2">
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          onClick={() => {
-                                            const input = document.createElement('input')
-                                            input.type = 'file'
-                                            input.accept = 'image/*'
-                                            input.onchange = async (e: any) => {
-                                              const file = e.target.files?.[0]
-                                              if (!file) return
-                                              
-                                              setNewProblemDiagramUploading(true)
-                                              try {
-                                                const path = `diagrams/${classId}/${Date.now()}_${file.name}`
-                                                const result = await storage.uploadFile(file, path)
-                                                setNewProblemDiagramImage(result.url)
-                                                toast({
-                                                  title: "Success",
-                                                  description: "Image uploaded successfully",
-                                                })
-                                              } catch (error: any) {
-                                                toast({
-                                                  title: "Upload failed",
-                                                  description: error.message || "Failed to upload image",
-                                                  variant: "destructive",
-                                                })
-                                              } finally {
-                                                setNewProblemDiagramUploading(false)
-                                              }
-                                            }
-                                            input.click()
-                                          }}
-                                          disabled={newProblemDiagramUploading}
-                                          className="w-full"
-                                        >
-                                          {newProblemDiagramUploading ? (
-                                            <>Uploading...</>
-                                          ) : (
-                                            <>
-                                              <Upload className="w-4 h-4 mr-2" />
-                                              Upload Diagram Image
-                                            </>
-                                          )}
-                                        </Button>
-                                        <p className="text-xs text-muted-foreground">
-                                          Upload an image file (PNG, JPG, etc.) for the diagram/model. The image will appear in the question.
-                                        </p>
-                                      </div>
-                                    )}
+                                    <Label>SVG Code for Diagram/Model</Label>
+                                    <Textarea
+                                      value={newProblemDiagramSvg}
+                                      onChange={(e) => setNewProblemDiagramSvg(e.target.value)}
+                                      placeholder='Enter SVG code (e.g., <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="blue"/></svg>)'
+                                      rows={8}
+                                      className="font-mono text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Enter SVG (Scalable Vector Graphics) code to create diagrams and models. The diagram will appear in the question.
+                                    </p>
                                   </div>
+                                  {newProblemDiagramSvg.trim() && (
+                                    <div className="space-y-2">
+                                      <Label>Preview</Label>
+                                      <div className="border rounded-lg p-4 bg-white min-h-[200px] flex items-center justify-center">
+                                        <div 
+                                          dangerouslySetInnerHTML={{ __html: newProblemDiagramSvg }}
+                                          className="max-w-full"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
                                   <div className="space-y-2">
                                     <Label>Correct Mathematical Answer(s)</Label>
                                     <div className="flex space-x-2">
@@ -2122,121 +2028,37 @@ export default function CurriculumEditor() {
                         {currentProblem.type === "model-diagram" && (
                           <div className="space-y-4">
                             <div className="space-y-2">
-                              <Label>Diagram/Model Image</Label>
-                              {currentProblem.diagramImageUrl ? (
-                                <div className="space-y-2">
-                                  <div className="relative border rounded-lg p-2">
-                                    <img 
-                                      src={currentProblem.diagramImageUrl} 
-                                      alt="Diagram preview" 
-                                      className="max-w-full h-auto max-h-64 mx-auto"
-                                    />
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      className="absolute top-2 right-2"
-                                      onClick={() => updateProblem(activeLesson, activeContent, activeProblem, "diagramImageUrl", null)}
-                                    >
-                                      <X className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                      const input = document.createElement('input')
-                                      input.type = 'file'
-                                      input.accept = 'image/*'
-                                      input.onchange = async (e: any) => {
-                                        const file = e.target.files?.[0]
-                                        if (!file) return
-                                        
-                                        setNewProblemDiagramUploading(true)
-                                        try {
-                                          const path = `diagrams/${classId}/${Date.now()}_${file.name}`
-                                          const result = await storage.uploadFile(file, path)
-                                          updateProblem(activeLesson, activeContent, activeProblem, "diagramImageUrl", result.url)
-                                          toast({
-                                            title: "Success",
-                                            description: "Image uploaded successfully",
-                                          })
-                                        } catch (error: any) {
-                                          toast({
-                                            title: "Upload failed",
-                                            description: error.message || "Failed to upload image",
-                                            variant: "destructive",
-                                          })
-                                        } finally {
-                                          setNewProblemDiagramUploading(false)
-                                        }
-                                      }
-                                      input.click()
-                                    }}
-                                    disabled={newProblemDiagramUploading}
-                                  >
-                                    {newProblemDiagramUploading ? (
-                                      <>Uploading...</>
-                                    ) : (
-                                      <>
-                                        <Upload className="w-4 h-4 mr-2" />
-                                        Replace Image
-                                      </>
-                                    )}
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="space-y-2">
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => {
-                                      const input = document.createElement('input')
-                                      input.type = 'file'
-                                      input.accept = 'image/*'
-                                      input.onchange = async (e: any) => {
-                                        const file = e.target.files?.[0]
-                                        if (!file) return
-                                        
-                                        setNewProblemDiagramUploading(true)
-                                        try {
-                                          const path = `diagrams/${classId}/${Date.now()}_${file.name}`
-                                          const result = await storage.uploadFile(file, path)
-                                          updateProblem(activeLesson, activeContent, activeProblem, "diagramImageUrl", result.url)
-                                          toast({
-                                            title: "Success",
-                                            description: "Image uploaded successfully",
-                                          })
-                                        } catch (error: any) {
-                                          toast({
-                                            title: "Upload failed",
-                                            description: error.message || "Failed to upload image",
-                                            variant: "destructive",
-                                          })
-                                        } finally {
-                                          setNewProblemDiagramUploading(false)
-                                        }
-                                      }
-                                      input.click()
-                                    }}
-                                    disabled={newProblemDiagramUploading}
-                                    className="w-full"
-                                  >
-                                    {newProblemDiagramUploading ? (
-                                      <>Uploading...</>
-                                    ) : (
-                                      <>
-                                        <Upload className="w-4 h-4 mr-2" />
-                                        Upload Diagram Image
-                                      </>
-                                    )}
-                                  </Button>
-                                  <p className="text-xs text-muted-foreground">
-                                    Upload an image file (PNG, JPG, etc.) for the diagram/model. The image will appear in the question.
-                                  </p>
-                                </div>
-                              )}
+                              <Label>SVG Code for Diagram/Model</Label>
+                              <Textarea
+                                value={currentProblem.diagramSvg || ""}
+                                onChange={(e) =>
+                                  updateProblem(
+                                    activeLesson,
+                                    activeContent,
+                                    activeProblem,
+                                    "diagramSvg",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder='Enter SVG code (e.g., <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="blue"/></svg>)'
+                                rows={8}
+                                className="font-mono text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Enter SVG (Scalable Vector Graphics) code to create diagrams and models. The diagram will appear in the question.
+                              </p>
                             </div>
+                            {currentProblem.diagramSvg && currentProblem.diagramSvg.trim() && (
+                              <div className="space-y-2">
+                                <Label>Preview</Label>
+                                <div className="border rounded-lg p-4 bg-white min-h-[200px] flex items-center justify-center">
+                                  <div 
+                                    dangerouslySetInnerHTML={{ __html: currentProblem.diagramSvg }}
+                                    className="max-w-full"
+                                  />
+                                </div>
+                              </div>
+                            )}
                             <div className="space-y-2">
                               <Label>Correct Mathematical Answer(s)</Label>
                               <div className="flex flex-wrap gap-2 mt-2">
