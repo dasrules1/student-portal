@@ -10,6 +10,7 @@ import {
   File,
   LayoutDashboard,
   Users,
+  Bell,
 } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -24,6 +25,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { db } from "@/lib/firebase"
 import { collection, getDocs, query, where, orderBy } from "firebase/firestore"
 import { format } from "date-fns"
+import { Bell } from "lucide-react"
 
 export default function StudentDashboard() {
   const router = useRouter()
