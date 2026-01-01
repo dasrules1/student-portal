@@ -13,9 +13,7 @@ interface TikZPreviewProps {
  * Uses CodeCogs LaTeX renderer which supports TikZ
  */
 export function TikZPreview({ tikzCode, className = "" }: TikZPreviewProps) {
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   if (!tikzCode || !tikzCode.trim()) {
     return (
@@ -26,59 +24,8 @@ export function TikZPreview({ tikzCode, className = "" }: TikZPreviewProps) {
   }
 
   useEffect(() => {
-    if (!tikzCode || !tikzCode.trim()) {
-      setIsLoading(false)
-      return
-    }
-
-    setIsLoading(true)
-    setError(null)
-    setImageUrl(null)
-
-    // Create a complete LaTeX document with TikZ
-    const latexDocument = `\\documentclass[border=10pt]{standalone}
-\\usepackage{tikz}
-\\usetikzlibrary{shapes,arrows,positioning,calc}
-\\begin{document}
-${tikzCode}
-\\end{document}`
-
-    const encodedLatex = encodeURIComponent(latexDocument)
-    const codeCogsUrl = `https://latex.codecogs.com/svg.latex?${encodedLatex}`
-
-    // Test if image loads
-    const img = new Image()
-    img.onload = () => {
-      setImageUrl(codeCogsUrl)
-      setIsLoading(false)
-      setError(null)
-    }
-    img.onerror = () => {
-      // Fallback to QuickLaTeX
-      const quickLatexUrl = `https://quicklatex.com/latex3.f?formula=${encodedLatex}&fsize=17px&fcolor=000000&mode=0&out=1`
-      const fallbackImg = new Image()
-      fallbackImg.onload = () => {
-        setImageUrl(quickLatexUrl)
-        setIsLoading(false)
-        setError(null)
-      }
-      fallbackImg.onerror = () => {
-        setIsLoading(false)
-        setError("Failed to load preview. The TikZ code may contain errors.")
-      }
-      fallbackImg.src = quickLatexUrl
-    }
-    img.src = codeCogsUrl
-
-    const timeout = setTimeout(() => {
-      if (isLoading) {
-        setIsLoading(false)
-        setError("Preview timeout. Please check your TikZ code.")
-      }
-    }, 10000)
-
-    return () => clearTimeout(timeout)
-  }, [tikzCode, isLoading])
+    setIsLoading(false)
+  }, [tikzCode])
 
   return (
     <div className={`p-4 border rounded-lg bg-white ${className}`}>
@@ -86,30 +33,22 @@ ${tikzCode}
         <p className="text-xs text-muted-foreground mb-2">
           Preview:
         </p>
-        <div className="border rounded p-2 bg-gray-50 min-h-[200px] flex items-center justify-center relative">
-          {isLoading && (
-            <div className="absolute flex items-center z-10">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              <span className="text-sm text-muted-foreground">Rendering...</span>
-            </div>
-          )}
-          {imageUrl && (
-            <img 
-              src={imageUrl}
-              alt="TikZ Diagram Preview"
-              className="max-w-full h-auto"
-              style={{ display: isLoading ? 'none' : 'block' }}
-            />
-          )}
-        </div>
-        {error && (
-          <div className="mt-2">
-            <p className="text-xs text-red-500 mb-2">{error}</p>
-            <p className="text-xs text-muted-foreground">
-              Tip: Make sure your TikZ code is valid and doesn't use unsupported libraries.
-            </p>
+        <div className="border rounded p-3 bg-gray-50 min-h-[200px]">
+          <div className="mb-2">
+            <p className="text-xs font-medium mb-2">TikZ Code:</p>
+            <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-40 font-mono whitespace-pre-wrap">
+              {tikzCode}
+            </pre>
           </div>
-        )}
+          <div className="text-xs text-muted-foreground">
+            <p className="mb-1"><strong>Preview Note:</strong></p>
+            <p>TikZ diagrams require a LaTeX compiler. To preview, copy the code above and paste it into an online TikZ editor like:</p>
+            <ul className="list-disc list-inside ml-2 mt-1 space-y-0.5">
+              <li><a href="https://tikzcd.yichuanshen.de/" target="_blank" rel="noopener noreferrer" className="text-primary underline">TikZcd Editor</a></li>
+              <li><a href="https://www.tikzcd-editor.xyz/" target="_blank" rel="noopener noreferrer" className="text-primary underline">TikZcd Editor XYZ</a></li>
+            </ul>
+          </div>
+        </div>
         <details className="mt-2">
           <summary className="text-xs text-muted-foreground cursor-pointer">View TikZ Code</summary>
           <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-40 mt-2 font-mono whitespace-pre-wrap">

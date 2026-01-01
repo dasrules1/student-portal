@@ -199,5 +199,15 @@ service cloud.firestore {
         isAdmin()
       );
     }
+
+    // Activity Logs collection
+    match /activityLogs/{logId} {
+      // Allow authenticated users to read activity logs
+      allow read: if isAuthenticated();
+      // Allow authenticated users to create activity logs (for logging system events)
+      allow create: if isAuthenticated();
+      // Only admins can update or delete activity logs
+      allow update, delete: if isAdmin();
+    }
   }
 } 

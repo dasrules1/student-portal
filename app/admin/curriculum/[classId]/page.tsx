@@ -406,12 +406,15 @@ export default function CurriculumEditor() {
           description: "The curriculum has been saved successfully",
         });
 
-        // Add activity log
-        await storage.addActivityLog({
+        // Add activity log (non-blocking - errors are handled internally)
+        storage.addActivityLog({
           action: "Curriculum Updated",
           details: `Curriculum for ${classData.name} has been updated`,
           timestamp: new Date().toLocaleString(),
           category: "Curriculum Management",
+        }).catch((err) => {
+          // Silently handle errors - activity logging shouldn't block the main operation
+          console.log("Activity log error (non-critical):", err);
         });
         
         // Update the local class data with the curriculum
