@@ -73,6 +73,7 @@ const problemTypes = [
   { id: "math-expression", name: "Math Expression" },
   { id: "geometric", name: "Geometric/Graphing" },
   { id: "model-diagram", name: "Model/Diagram" },
+  { id: "external-tool", name: "External Tool" },
 ]
 
 export default function CurriculumEditor() {
@@ -112,6 +113,7 @@ export default function CurriculumEditor() {
   const [newProblemMaxAttempts, setNewProblemMaxAttempts] = useState<number | null>(null)
   const [newProblemGraphData, setNewProblemGraphData] = useState<{ points: Array<{ x: number; y: number }>; lines: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }> }>({ points: [], lines: [] })
   const [newProblemDiagramSvg, setNewProblemDiagramSvg] = useState<string>("")
+  const [newProblemEmbedCode, setNewProblemEmbedCode] = useState<string>("")
   const [deleteLessonDialogOpen, setDeleteLessonDialogOpen] = useState(false)
   const [deleteContentDialogOpen, setDeleteContentDialogOpen] = useState(false)
   const [deleteProblemDialogOpen, setDeleteProblemDialogOpen] = useState(false)
@@ -628,6 +630,15 @@ export default function CurriculumEditor() {
         })
         return
       }
+    } else if (newProblemType === "external-tool") {
+      if (!newProblemEmbedCode.trim()) {
+        toast({
+          title: "Missing embed code",
+          description: "Please enter embed code (iframe or script) for the external tool",
+          variant: "destructive",
+        })
+        return
+      }
     }
 
     const newProblemId = generateId("problem_")
@@ -656,6 +667,8 @@ export default function CurriculumEditor() {
       newProblem.diagramSvg = newProblemDiagramSvg
       newProblem.correctAnswers = newProblemCorrectAnswers
       newProblem.tolerance = newProblemTolerance
+    } else if (newProblemType === "external-tool") {
+      newProblem.embedCode = newProblemEmbedCode
     }
 
     // Add max attempts - use default if not specified
@@ -1740,6 +1753,36 @@ export default function CurriculumEditor() {
                                 </div>
                               )}
 
+                              {/* External Tool options */}
+                              {newProblemType === "external-tool" && (
+                                <div className="space-y-4">
+                                  <div className="space-y-2">
+                                    <Label>Embed Code</Label>
+                                    <Textarea
+                                      value={newProblemEmbedCode}
+                                      onChange={(e) => setNewProblemEmbedCode(e.target.value)}
+                                      placeholder='Enter embed code (e.g., <iframe src="https://www.geogebra.org/calculator/..." width="800" height="600"></iframe>)'
+                                      rows={6}
+                                      className="font-mono text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      Paste the embed code (iframe or script tag) from external tools like GeoGebra, Desmos, etc. The tool will appear in the question.
+                                    </p>
+                                  </div>
+                                  {newProblemEmbedCode.trim() && (
+                                    <div className="space-y-2">
+                                      <Label>Preview</Label>
+                                      <div className="border rounded-lg p-4 bg-white min-h-[400px]">
+                                        <div 
+                                          dangerouslySetInnerHTML={{ __html: newProblemEmbedCode }}
+                                          className="w-full"
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               <div className="space-y-2">
                                 <Label htmlFor="problem-points">Points (Default: 3)</Label>
                                 <Input
@@ -2133,6 +2176,44 @@ export default function CurriculumEditor() {
                                 }
                               />
                             </div>
+                          </div>
+                        )}
+
+                        {/* External Tool options */}
+                        {currentProblem.type === "external-tool" && (
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <Label>Embed Code</Label>
+                              <Textarea
+                                value={(currentProblem as any).embedCode || ""}
+                                onChange={(e) =>
+                                  updateProblem(
+                                    activeLesson,
+                                    activeContent,
+                                    activeProblem,
+                                    "embedCode",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder='Enter embed code (e.g., <iframe src="https://www.geogebra.org/calculator/..." width="800" height="600"></iframe>)'
+                                rows={6}
+                                className="font-mono text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground">
+                                Paste the embed code (iframe or script tag) from external tools like GeoGebra, Desmos, etc. The tool will appear in the question.
+                              </p>
+                            </div>
+                            {(currentProblem as any).embedCode && (currentProblem as any).embedCode.trim() && (
+                              <div className="space-y-2">
+                                <Label>Preview</Label>
+                                <div className="border rounded-lg p-4 bg-white min-h-[400px]">
+                                  <div 
+                                    dangerouslySetInnerHTML={{ __html: (currentProblem as any).embedCode }}
+                                    className="w-full"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 

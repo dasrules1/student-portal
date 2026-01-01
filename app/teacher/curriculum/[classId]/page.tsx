@@ -1112,7 +1112,8 @@ export default function TeacherCurriculum() {
              problemType === 'open-ended' ? 'Open Ended' :
              problemType === 'math-expression' ? 'Math Expression' :
              problemType === 'geometric' ? 'Geometric/Graphing' :
-             problemType === 'model-diagram' ? 'Model/Diagram' : 'Essay'}
+             problemType === 'model-diagram' ? 'Model/Diagram' : 
+             problemType === 'external-tool' ? 'External Tool' : 'Essay'}
           </Badge>
         </div>
         {problemType === 'model-diagram' && (problem as any).diagramSvg && (
@@ -1121,6 +1122,16 @@ export default function TeacherCurriculum() {
               <div 
                 dangerouslySetInnerHTML={{ __html: (problem as any).diagramSvg }}
                 className="max-w-full mx-auto"
+              />
+            </div>
+          </div>
+        )}
+        {problemType === 'external-tool' && (problem as any).embedCode && (
+          <div className="mb-4">
+            <div className="border rounded-lg p-4 bg-white">
+              <div 
+                dangerouslySetInnerHTML={{ __html: (problem as any).embedCode }}
+                className="w-full"
               />
             </div>
           </div>

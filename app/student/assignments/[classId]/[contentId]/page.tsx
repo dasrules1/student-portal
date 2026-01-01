@@ -1025,6 +1025,16 @@ const AssignmentDetailPage: React.FC = () => {
                   </div>
                 </div>
               )}
+              {currentProblem.type === "external-tool" && (currentProblem as any).embedCode && (
+                <div className="my-4">
+                  <div className="border rounded-lg p-4 bg-white">
+                    <div 
+                      dangerouslySetInnerHTML={{ __html: (currentProblem as any).embedCode }}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              )}
               <CardDescription>
                 {renderLatex(currentProblem.question)}
               </CardDescription>
