@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2, Edit, Bell } from "lucide-react"
+import { Plus, Trash2, Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -73,6 +73,9 @@ export default function TeacherAnnouncements() {
     loadData()
   }, [router])
 
+  // ---------------------------
+  // Safe loadData function
+  // ---------------------------
   const loadData = async () => {
     try {
       setIsLoading(true)
@@ -87,22 +90,49 @@ export default function TeacherAnnouncements() {
       )
       setClasses(teacherClasses)
 
-      // Load announcements for teacher's classes (including admin announcements for those classes)
-      if (teacherClasses.length > 0) {
-        const classIds = teacherClasses.map((cls: any) => cls.id)
-        const announcementsRef = collection(db, "announcements")
-        const q = query(
-          announcementsRef,
-          where("classId", "in", classIds),
-          orderBy("createdAt", "desc")
-        )
-        const snapshot = await getDocs(q)
-        const announcementsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Announcement[]
-        setAnnouncements(announcementsData)
+      const classIds = teacherClasses.map(c => c.id)
+
+      // 1️⃣ Teacher's own announcements
+      const ownQuery = query(
+        collection(db, "announcements"),
+        where("authorId", "==", userId),
+        orderBy("createdAt", "desc")
+      )
+      const ownSnap = await getDocs(ownQuery)
+      const ownAnnouncements = ownSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+
+      // 2️⃣ Admin announcements for teacher's classes
+      let adminAnnouncements: Announcement[] = []
+      if (classIds.length > 0) {
+        try {
+          const adminQuery = query(
+            collection(db, "announcements"),
+            where("authorRole", "==", "admin"),
+            where("classId", "in", classIds),
+            orderBy("createdAt", "desc")
+          )
+          const adminSnap = await getDocs(adminQuery)
+          adminAnnouncements = adminSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+        } catch {
+          console.warn("Some admin announcements skipped due to permissions")
+        }
       }
+
+      // 3️⃣ Merge and remove duplicates
+      const merged = [...ownAnnouncements, ...adminAnnouncements]
+      const unique = Array.from(new Map(merged.map(a => [a.id, a])).values())
+
+      // 4️⃣ Sort by createdAt and set state
+      setAnnouncements(
+        unique.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      )
+
     } catch (error: any) {
       console.error("Error loading announcements:", error)
       toast({
@@ -115,6 +145,9 @@ export default function TeacherAnnouncements() {
     }
   }
 
+  // ---------------------------
+  // Create announcement
+  // ---------------------------
   const handleCreateAnnouncement = async () => {
     if (!newAnnouncement.title || !newAnnouncement.message || !newAnnouncement.classId) {
       toast({
@@ -160,6 +193,9 @@ export default function TeacherAnnouncements() {
     }
   }
 
+  // ---------------------------
+  // Delete announcement
+  // ---------------------------
   const handleDeleteAnnouncement = async () => {
     if (!announcementToDelete) return
 
@@ -186,6 +222,9 @@ export default function TeacherAnnouncements() {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>
   }
 
+  // ---------------------------
+  // JSX UI
+  // ---------------------------
   return (
     <div className="container mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
@@ -324,4 +363,3 @@ export default function TeacherAnnouncements() {
     </div>
   )
 }
-
