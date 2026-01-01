@@ -1114,7 +1114,7 @@ export default function TeacherCurriculum() {
              problemType === 'geometric' ? 'Geometric/Graphing' : 'Essay'}
           </Badge>
         </div>
-        <p className="mb-2">{problem.question}</p>
+        <div className="mb-2">{renderLatex(problem.question)}</div>
         
         {problemType === 'multiple-choice' && problem.options && (
           <div className="mb-2">
@@ -1126,7 +1126,7 @@ export default function TeacherCurriculum() {
                     <Check className="w-4 h-4 text-green-500 mr-1" />
                   )}
                   <span className={optIndex === parseInt(problem.correctAnswer) ? "font-medium text-green-600" : ""}>
-                    {option}
+                    {renderLatex(option)}
                   </span>
                 </li>
               ))}
@@ -1141,14 +1141,14 @@ export default function TeacherCurriculum() {
               {problem.correctAnswers && problem.correctAnswers.length > 0 ? (
                 <div className="flex flex-col gap-1">
                   {problem.correctAnswers.map((answer, i) => (
-                    <div key={i}>{answer}</div>
+                    <div key={i}>{renderLatex(answer)}</div>
                   ))}
                 </div>
               ) : problem.correctAnswer ? (
                 problemType === 'math-expression' ? (
-                  <span className="font-mono">{problem.correctAnswer}</span>
+                  <span className="font-mono">{renderLatex(problem.correctAnswer)}</span>
                 ) : (
-                  problem.correctAnswer
+                  renderLatex(problem.correctAnswer)
                 )
               ) : (
                 'No answer provided'

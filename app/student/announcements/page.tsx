@@ -1,42 +1,42 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { Bell } from "lucide-react"
+import { Sidebar } from "@/components/sidebar"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { storage } from "@/lib/storage"
+import { Class } from "@/lib/types"
+import { sessionManager } from "@/lib/session"
+import { useAuth } from "@/contexts/auth-context"
+import { db } from "@/lib/firebase"
+import { collection, getDocs, query, where, orderBy } from "firebase/firestore"
+import { format } from "date-fns"
 import {
   Book,
-  Calendar,
   CheckSquare,
   Cog,
   File,
   LayoutDashboard,
-  Users,
-  Bell,
 } from "lucide-react"
-import { Sidebar } from "@/components/sidebar"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { storage } from "@/lib/storage"
-import { User, Class } from "@/lib/storage"
-import { sessionManager } from "@/lib/session"
-import { useAuth } from "@/contexts/auth-context"
 
-export default function StudentCalendar() {
+export default function StudentAnnouncements() {
   const router = useRouter()
-  const { user: authUser, role: authRole } = useAuth()
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const { authUser, authRole } = useAuth()
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [announcements, setAnnouncements] = useState<any[]>([])
+  const [studentClasses, setStudentClasses] = useState<Class[]>([])
 
   useEffect(() => {
     async function loadData() {
       try {
         setLoading(true)
         
-        // Try to get user from multiple sources
         const sessionUser = sessionManager.getCurrentUser()
         
-        // Try local storage as a fallback
         let authData = null
         try {
           const storedAuth = localStorage.getItem('authUser')
@@ -47,26 +47,21 @@ export default function StudentCalendar() {
           console.error('Error reading auth from localStorage:', e)
         }
         
-        // Get user ID from available sources
-        const userId = authUser?.uid || sessionUser?.user?.uid || authData?.uid
+        const userId = authUser?.uid || sessionUser?.user?.uid || authData?.uid || storage.getCurrentUserId()
         
         if (!userId) {
-          console.error("No user ID found")
           setAuthError("You need to log in to access this page")
           return
         }
         
-        // Get user data
         let userData = null
         
-        // Try storage first
         try {
           userData = storage.getUserById(userId)
         } catch (storageErr) {
           console.error("Error getting user from storage:", storageErr)
         }
         
-        // If no user data, try using auth data directly
         if (!userData && authUser) {
           userData = {
             id: authUser.uid,
@@ -76,7 +71,6 @@ export default function StudentCalendar() {
           }
         }
         
-        // Last attempt using local storage data
         if (!userData && authData) {
           userData = {
             id: authData.uid,
@@ -87,7 +81,6 @@ export default function StudentCalendar() {
         }
         
         if (!userData) {
-          console.error("No user data found")
           setAuthError("Unable to retrieve your user information")
           setLoading(false)
           return
@@ -95,16 +88,51 @@ export default function StudentCalendar() {
         
         setCurrentUser(userData)
         
-        // Check if the current user is a student
         if (userData.role !== "student") {
-          console.error("User is not a student")
           setAuthError("This page is only available to student accounts")
           setLoading(false)
           return
         }
+        
+        // Load all classes
+        const allClasses = await storage.getClasses()
+        
+        if (!allClasses || !Array.isArray(allClasses)) {
+          setStudentClasses([])
+          setLoading(false)
+          return
+        }
+        
+        // Filter classes to only include those the student is enrolled in
+        const enrolledClasses = allClasses.filter((cls: Class) => 
+          cls && cls.enrolledStudents && Array.isArray(cls.enrolledStudents) && cls.enrolledStudents.includes(userData.id)
+        )
+        
+        setStudentClasses(enrolledClasses)
+        
+        // Load announcements for enrolled classes
+        try {
+          const classIds = enrolledClasses.map((cls: Class) => cls.id)
+          if (classIds.length > 0) {
+            const announcementsRef = collection(db, "announcements")
+            const announcementsQuery = query(
+              announcementsRef,
+              where("classId", "in", classIds),
+              orderBy("createdAt", "desc")
+            )
+            const announcementsSnapshot = await getDocs(announcementsQuery)
+            const announcementsData = announcementsSnapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            }))
+            setAnnouncements(announcementsData)
+          }
+        } catch (announcementsError) {
+          console.error("Error loading announcements:", announcementsError)
+        }
       } catch (error) {
         console.error("Error loading student data:", error)
-        setAuthError("There was a problem loading your calendar")
+        setAuthError("There was a problem loading announcements")
       } finally {
         setLoading(false)
       }
@@ -136,7 +164,7 @@ export default function StudentCalendar() {
       title: "Announcements",
       href: "/student/announcements",
       icon: Bell,
-      current: false,
+      current: true,
     },
     {
       title: "Grades",
@@ -157,7 +185,7 @@ export default function StudentCalendar() {
       <div className="flex min-h-screen">
         <Sidebar navigation={navigation} user={currentUser || undefined} />
         <div className="flex items-center justify-center flex-1">
-          <p>Loading calendar...</p>
+          <p>Loading announcements...</p>
         </div>
       </div>
     )
@@ -175,11 +203,6 @@ export default function StudentCalendar() {
                 {authError}
               </CardDescription>
             </CardHeader>
-            <CardFooter>
-              <Button onClick={() => router.push("/login?role=student")}>
-                Go to Login
-              </Button>
-            </CardFooter>
           </Card>
         </div>
       </div>
@@ -198,11 +221,6 @@ export default function StudentCalendar() {
                 This page is only available to student accounts.
               </CardDescription>
             </CardHeader>
-            <CardFooter>
-              <Button onClick={() => router.push("/")}>
-                Return to Home
-              </Button>
-            </CardFooter>
           </Card>
         </div>
       </div>
@@ -211,7 +229,7 @@ export default function StudentCalendar() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar navigation={navigation} user={currentUser} />
+      <Sidebar navigation={navigation} user={currentUser || undefined} />
       <div className="flex-1 p-8 pt-6 overflow-y-auto max-h-screen">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -219,26 +237,54 @@ export default function StudentCalendar() {
               <img src="/logo.png" alt="Education More" className="h-8" />
               <h2 className="text-lg font-semibold">Education More</h2>
             </div>
-            <h1 className="text-3xl font-bold">Calendar</h1>
+            <h1 className="text-3xl font-bold">Announcements</h1>
             <p className="text-muted-foreground">
-              View your class schedule and assignment due dates
+              View announcements from your teachers and administrators
             </p>
           </div>
         </div>
 
-        <Card className="w-full">
-          <CardHeader>
-            <CardTitle>Academic Calendar</CardTitle>
-            <CardDescription>Your class schedule and key dates</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center min-h-[400px]">
-              <Calendar className="w-16 h-16 mb-4 text-muted-foreground" />
-              <p className="text-muted-foreground">Calendar functionality coming soon</p>
-            </div>
-          </CardContent>
-        </Card>
+        {announcements.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Bell className="w-12 h-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No announcements at this time</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {announcements.map((announcement) => (
+              <Card key={announcement.id}>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle>{announcement.title}</CardTitle>
+                      <CardDescription className="mt-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline">{announcement.className || "Unknown Class"}</Badge>
+                          {announcement.authorRole && (
+                            <Badge variant="secondary">{announcement.authorRole}</Badge>
+                          )}
+                          <span className="text-sm">
+                            By {announcement.authorName} •{" "}
+                            {announcement.createdAt
+                              ? format(announcement.createdAt.toDate(), "MMM d, yyyy 'at' h:mm a")
+                              : "Recently"}
+                          </span>
+                        </div>
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="whitespace-pre-wrap">{announcement.message}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
-} 
+}
+

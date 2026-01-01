@@ -9,6 +9,7 @@ import {
   Cog,
   File,
   LayoutDashboard,
+  Bell,
 } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -1102,6 +1103,12 @@ export default function StudentAssignments() {
       href: "/student/assignments",
       icon: CheckSquare,
       current: true,
+    },
+    {
+      title: "Announcements",
+      href: "/student/announcements",
+      icon: Bell,
+      current: false,
     },
     {
       title: "Grades",

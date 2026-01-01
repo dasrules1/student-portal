@@ -43,6 +43,7 @@ interface Announcement {
   className?: string
   authorId: string
   authorName: string
+  authorRole?: string
   createdAt: any
   updatedAt?: any
 }
@@ -85,7 +86,7 @@ export default function TeacherAnnouncements() {
       )
       setClasses(teacherClasses)
 
-      // Load announcements for teacher's classes
+      // Load announcements for teacher's classes (including admin announcements for those classes)
       if (teacherClasses.length > 0) {
         const classIds = teacherClasses.map((cls: any) => cls.id)
         const announcementsRef = collection(db, "announcements")
@@ -218,6 +219,9 @@ export default function TeacherAnnouncements() {
                     <CardDescription className="mt-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline">{announcement.className || "Unknown Class"}</Badge>
+                        {announcement.authorRole && (
+                          <Badge variant="secondary">{announcement.authorRole}</Badge>
+                        )}
                         <span className="text-sm">
                           By {announcement.authorName} •{" "}
                           {announcement.createdAt

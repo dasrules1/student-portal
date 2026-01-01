@@ -5,13 +5,13 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Book,
-  Calendar,
   CheckSquare,
   Cog,
   File,
   LayoutDashboard,
   Users,
   Search,
+  Bell,
 } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -207,9 +207,9 @@ export default function StudentStudents() {
       current: false,
     },
     {
-      title: "Calendar",
-      href: "/student/calendar",
-      icon: Calendar,
+      title: "Announcements",
+      href: "/student/announcements",
+      icon: Bell,
       current: false,
     },
     {

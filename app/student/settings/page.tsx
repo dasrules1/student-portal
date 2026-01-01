@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, Moon, Sun, ArrowLeft, LayoutDashboard, Book, CheckSquare, Calendar, File, Cog } from "lucide-react"
+import { Bell, Moon, Sun, ArrowLeft, LayoutDashboard, Book, CheckSquare, File, Cog } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -85,9 +85,9 @@ export default function StudentSettings() {
       current: false,
     },
     {
-      title: "Calendar",
-      href: "/student/calendar",
-      icon: Calendar,
+      title: "Announcements",
+      href: "/student/announcements",
+      icon: Bell,
       current: false,
     },
     {

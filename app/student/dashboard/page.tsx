@@ -243,6 +243,12 @@ export default function StudentDashboard() {
       current: false,
     },
     {
+      title: "Announcements",
+      href: "/student/announcements",
+      icon: Bell,
+      current: false,
+    },
+    {
       title: "Grades",
       href: "/student/grades",
       icon: File,

@@ -5,12 +5,12 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Book,
-  Calendar,
   CheckSquare,
   Cog,
   File,
   LayoutDashboard,
   Users,
+  Bell,
 } from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
@@ -150,6 +150,12 @@ export default function StudentClasses() {
       title: "Assignments",
       href: "/student/assignments",
       icon: CheckSquare,
+      current: false,
+    },
+    {
+      title: "Announcements",
+      href: "/student/announcements",
+      icon: Bell,
       current: false,
     },
     {
