@@ -310,13 +310,9 @@ export default function StudentClasses() {
                       </dl>
                     </div>
                     <div>
-                      <h3 className="text-lg font-medium mb-2">Description</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {cls.description || "No description available for this class."}
-                      </p>
                       {cls.requirements && (
                         <>
-                          <h3 className="text-lg font-medium mt-4 mb-2">Requirements</h3>
+                          <h3 className="text-lg font-medium mb-2">Requirements</h3>
                           <p className="text-sm text-muted-foreground">{cls.requirements}</p>
                         </>
                       )}
