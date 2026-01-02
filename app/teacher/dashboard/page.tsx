@@ -317,15 +317,19 @@ export default function TeacherDashboard() {
                     <CardHeader>
                       <CardTitle>{cls.name}</CardTitle>
                       <CardDescription>
-                        {cls.subject || "No subject specified"}
+                        Teacher: {cls.teacher}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2">
                         {/* Show all class details */}
                         <div className="grid grid-cols-2 text-sm gap-y-1">
-                          <span className="text-muted-foreground">Meeting Day:</span>
-                          <span>{cls.meeting_day || "Not specified"}</span>
+                          {cls.meetingDates && (
+                            <>
+                              <span className="text-muted-foreground">Meeting Days:</span>
+                              <span>{cls.meetingDates}</span>
+                            </>
+                          )}
                           
                           <span className="text-muted-foreground">Time:</span>
                           <span>
@@ -343,27 +347,11 @@ export default function TeacherDashboard() {
                           <span className="text-muted-foreground">Location:</span>
                           <span>{cls.location || "Not specified"}</span>
                           
-                          {cls.virtualLink && (
-                            <>
-                              <span className="text-muted-foreground">Virtual Link:</span>
-                              <a href={cls.virtualLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
-                                Join Meeting
-                              </a>
-                            </>
-                          )}
                           {cls.teacherJoinLink && (
                             <>
                               <span className="text-muted-foreground">Teacher Join Link:</span>
-                              <a href={cls.teacherJoinLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all">
-                                {cls.teacherJoinLink}
-                              </a>
-                            </>
-                          )}
-                          {cls.studentJoinLink && (
-                            <>
-                              <span className="text-muted-foreground">Student Join Link:</span>
-                              <a href={cls.studentJoinLink} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all">
-                                {cls.studentJoinLink}
+                              <a href={cls.teacherJoinLink.startsWith('http') ? cls.teacherJoinLink : `https://${cls.teacherJoinLink}`} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all">
+                                Join Class
                               </a>
                             </>
                           )}
@@ -446,7 +434,7 @@ export default function TeacherDashboard() {
                   <Card key={cls.id}>
                     <CardHeader>
                       <CardTitle>{cls.name}</CardTitle>
-                      <CardDescription>{cls.subject || "No subject specified"}</CardDescription>
+                      <CardDescription>Teacher: {cls.teacher}</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <Button onClick={() => handleViewCurriculum(cls.id)} className="w-full">

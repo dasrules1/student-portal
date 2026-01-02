@@ -259,14 +259,28 @@ export default function StudentClasses() {
                     <div>
                       <h3 className="text-lg font-medium mb-2">Class Details</h3>
                       <dl className="space-y-2">
-                        <div className="flex justify-between">
-                          <dt className="text-muted-foreground">Meeting Days:</dt>
-                          <dd>{cls.meeting_day || cls.meetingDates || "Not specified"}</dd>
-                        </div>
+                        {cls.meetingDates && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Meeting Days:</dt>
+                            <dd>{cls.meetingDates}</dd>
+                          </div>
+                        )}
                         {cls.startTime && cls.endTime && (
                           <div className="flex justify-between">
                             <dt className="text-muted-foreground">Meeting Time:</dt>
                             <dd>{cls.startTime} - {cls.endTime}</dd>
+                          </div>
+                        )}
+                        {cls.startDate && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Start Date:</dt>
+                            <dd>{cls.startDate}</dd>
+                          </div>
+                        )}
+                        {cls.endDate && (
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">End Date:</dt>
+                            <dd>{cls.endDate}</dd>
                           </div>
                         )}
                         {cls.location && (
@@ -315,9 +329,9 @@ export default function StudentClasses() {
                       View Assignments
                     </Link>
                   </Button>
-                  {cls.virtualLink && (
+                  {cls.studentJoinLink && (
                     <Button variant="default" asChild>
-                      <a href={cls.virtualLink} target="_blank" rel="noopener noreferrer">
+                      <a href={cls.studentJoinLink.startsWith('http') ? cls.studentJoinLink : `https://${cls.studentJoinLink}`} target="_blank" rel="noopener noreferrer">
                         Join Virtual Class
                       </a>
                     </Button>
