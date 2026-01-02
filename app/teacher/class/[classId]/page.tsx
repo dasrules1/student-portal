@@ -205,12 +205,8 @@ export default function ClassPage() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-10">
                 <div>
-                  <h3 className="text-sm font-medium text-muted-foreground mb-1">Subject</h3>
-                  <p className="text-lg">{classData?.subject || "Not specified"}</p>
-                </div>
-                <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Meeting Day</h3>
-                  <p className="text-lg">{classData?.meeting_day || "Not specified"}</p>
+                  <p className="text-lg">{classData?.meeting_day || "—"}</p>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">Time</h3>
@@ -238,7 +234,7 @@ export default function ClassPage() {
                     <a 
                       href={classData.virtualLink} 
                       target="_blank" 
-                      rel="noreferrer" 
+                      rel="noopener noreferrer" 
                       className="text-blue-500 hover:underline flex items-center"
                     >
                       <Map className="w-4 h-4 mr-2" />
@@ -252,7 +248,7 @@ export default function ClassPage() {
                     <a 
                       href={classData.teacherJoinLink} 
                       target="_blank" 
-                      rel="noreferrer" 
+                      rel="noopener noreferrer" 
                       className="text-blue-500 hover:underline flex items-center break-all"
                     >
                       <Map className="w-4 h-4 mr-2" />
@@ -266,7 +262,7 @@ export default function ClassPage() {
                     <a 
                       href={classData.studentJoinLink} 
                       target="_blank" 
-                      rel="noreferrer" 
+                      rel="noopener noreferrer" 
                       className="text-blue-500 hover:underline flex items-center break-all"
                     >
                       <Map className="w-4 h-4 mr-2" />

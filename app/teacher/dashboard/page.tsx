@@ -350,8 +350,17 @@ export default function TeacherDashboard() {
                           {cls.teacherJoinLink && (
                             <>
                               <span className="text-muted-foreground">Teacher Join Link:</span>
-                              <a href={cls.teacherJoinLink?.startsWith('http') ? cls.teacherJoinLink : `https://${cls.teacherJoinLink}`} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline break-all">
+                              <a href={cls.teacherJoinLink?.startsWith('http') ? cls.teacherJoinLink : `https://${cls.teacherJoinLink}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">
                                 Join Class
+                              </a>
+                            </>
+                          )}
+                          
+                          {cls.studentJoinLink && (
+                            <>
+                              <span className="text-muted-foreground">Student Join Link:</span>
+                              <a href={cls.studentJoinLink?.startsWith('http') ? cls.studentJoinLink : `https://${cls.studentJoinLink}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline break-all">
+                                Student Link
                               </a>
                             </>
                           )}
