@@ -372,15 +372,16 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleEditClass = () => {
+  const handleEditClass = async () => {
     if (!classToEdit) return
 
     try {
+      setIsLoading(true)
       // Update class
-      storage.updateClass(classToEdit.id, classToEdit)
+      await storage.updateClass(classToEdit.id, classToEdit)
 
       // Reload data
-      loadData()
+      await loadData()
 
       toast({
         title: "Class updated",
@@ -404,6 +405,8 @@ export default function AdminDashboard() {
         description: error.message,
         variant: "destructive",
       })
+    } finally {
+      setIsLoading(false)
     }
   }
 
