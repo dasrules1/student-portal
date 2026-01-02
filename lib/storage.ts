@@ -573,12 +573,14 @@ class StorageService {
               const doc = snapshot.docs[i];
               if (doc && typeof doc.data === 'function') {
                 const data = doc.data();
+                const meetingDay = data.meeting_day || data.meetingDates || '';
+                const meetingDates = meetingDay;
                 classesWithData.push({
                   id: doc.id,
                   name: data.name || '',
                   teacher: data.teacher || 'Unknown Teacher',
                   location: data.location || '',
-                  meetingDates: data.meetingDates || '',
+                  meetingDates,
                   startDate: data.startDate || '',
                   endDate: data.endDate || '',
                   startTime: data.startTime || '',
@@ -588,7 +590,9 @@ class StorageService {
                   students: data.students || 0,
                   enrolledStudents: data.enrolledStudents || [],
                   subject: data.subject || '',
-                  meeting_day: data.meeting_day || ''
+                  meeting_day: meetingDay,
+                  teacherJoinLink: data.teacherJoinLink || '',
+                  studentJoinLink: data.studentJoinLink || ''
                 });
               }
             } catch (docError) {
@@ -611,8 +615,19 @@ class StorageService {
         const localClasses = PersistentStorage.getInstance().getAllClasses();
         if (localClasses && Array.isArray(localClasses) && localClasses.length > 0) {
           console.log('Using local storage classes:', localClasses);
-          this.classes = [...localClasses];
-          return [...localClasses]; // Return a new copy
+          const normalizedLocal = localClasses.map(cls => {
+            const meetingDay = cls.meeting_day || cls.meetingDates || '';
+            const meetingDates = meetingDay;
+            return {
+              ...cls,
+              meeting_day: meetingDay,
+              meetingDates,
+              teacherJoinLink: cls.teacherJoinLink || '',
+              studentJoinLink: cls.studentJoinLink || ''
+            };
+          });
+          this.classes = [...normalizedLocal];
+          return [...normalizedLocal]; // Return a new copy
         }
       } catch (localError) {
         console.error("Error getting classes from local storage:", localError);
@@ -691,7 +706,17 @@ class StorageService {
         const docSnap = await getDoc(classRef);
         
         if (docSnap.exists()) {
-          const classData = { id: docSnap.id, ...(docSnap.data() as Omit<Class, 'id'>) } as Class;
+          const rawData = docSnap.data() as Omit<Class, 'id'>;
+          const meetingDay = rawData.meeting_day || rawData.meetingDates || '';
+          const meetingDates = meetingDay;
+          const classData = { 
+            id: docSnap.id, 
+            ...rawData,
+            meeting_day: meetingDay,
+            meetingDates,
+            teacherJoinLink: rawData.teacherJoinLink || '',
+            studentJoinLink: rawData.studentJoinLink || ''
+          } as Class;
           console.log(`Found class in Firestore: ${id}`);
           
           // Update local cache with this class
@@ -710,10 +735,34 @@ class StorageService {
       
       console.log(`Class not found in Firestore, trying persistent storage: ${id}`);
       // Try to fall back to persistent storage
-      return PersistentStorage.getInstance().getClassById(id);
+      const storedClass = PersistentStorage.getInstance().getClassById(id);
+      if (storedClass) {
+        const meetingDay = storedClass.meeting_day || storedClass.meetingDates || '';
+        const meetingDates = meetingDay;
+        return {
+          ...storedClass,
+          meeting_day: meetingDay,
+          meetingDates,
+          teacherJoinLink: storedClass.teacherJoinLink || '',
+          studentJoinLink: storedClass.studentJoinLink || ''
+        };
+      }
+      return storedClass;
     } catch (error) {
       console.error(`Error in getClassById for ${id}:`, error);
-      return PersistentStorage.getInstance().getClassById(id);
+      const storedClass = PersistentStorage.getInstance().getClassById(id);
+      if (storedClass) {
+        const meetingDay = storedClass.meeting_day || storedClass.meetingDates || '';
+        const meetingDates = meetingDay;
+        return {
+          ...storedClass,
+          meeting_day: meetingDay,
+          meetingDates,
+          teacherJoinLink: storedClass.teacherJoinLink || '',
+          studentJoinLink: storedClass.studentJoinLink || ''
+        };
+      }
+      return storedClass;
     }
   }
 
@@ -722,8 +771,11 @@ class StorageService {
       console.log("Adding class to Firestore:", classData);
       
       // Prepare data for Firestore
+      const meetingDayValue = classData.meeting_day || classData.meetingDates || '';
       const enhancedClassData = {
         ...classData,
+        meeting_day: meetingDayValue,
+        meetingDates: meetingDayValue,
         status: classData.status || 'active',
         students: classData.students || 0,
         enrolledStudents: classData.enrolledStudents || [],
@@ -761,6 +813,11 @@ class StorageService {
     try {
       console.log("Starting class update process for:", id);
       
+      const meetingDayValue = classData.meeting_day || classData.meetingDates;
+      const normalizedClassData = meetingDayValue 
+        ? { ...classData, meeting_day: meetingDayValue, meetingDates: meetingDayValue }
+        : classData;
+      
       // First, ensure we have the class in our cache
       let classToUpdate = this.classes.find(cls => cls.id === id);
       
@@ -784,7 +841,7 @@ class StorageService {
         
         // Add updatedAt timestamp
         const updatedData = {
-          ...classData,
+          ...normalizedClassData,
           updatedAt: new Date().toISOString()
         };
         
@@ -797,18 +854,18 @@ class StorageService {
       // Update local cache
       const index = this.classes.findIndex(cls => cls.id === id);
       if (index !== -1) {
-        this.classes[index] = { ...this.classes[index], ...classData };
+        this.classes[index] = { ...this.classes[index], ...normalizedClassData };
         console.log("Class updated in local cache");
       } else {
         // This should not happen now that we prefetch the class if needed
         console.warn("Class not found in local cache after prefetch, adding it now:", id);
         if (classToUpdate) {
-          this.classes.push({...classToUpdate, ...classData});
+          this.classes.push({...classToUpdate, ...normalizedClassData});
         }
       }
       
       // Also update in persistent storage
-      const updatedClass = await PersistentStorage.getInstance().updateClass(id, classData);
+      const updatedClass = await PersistentStorage.getInstance().updateClass(id, normalizedClassData);
       
       // Return the updated class - either from persistent storage or our cache
       if (updatedClass) {
