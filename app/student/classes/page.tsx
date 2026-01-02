@@ -331,7 +331,7 @@ export default function StudentClasses() {
                   </Button>
                   {cls.studentJoinLink && (
                     <Button variant="default" asChild>
-                      <a href={cls.studentJoinLink.startsWith('http') ? cls.studentJoinLink : `https://${cls.studentJoinLink}`} target="_blank" rel="noopener noreferrer">
+                      <a href={cls.studentJoinLink?.startsWith('http') ? cls.studentJoinLink : `https://${cls.studentJoinLink}`} target="_blank" rel="noopener noreferrer">
                         Join Virtual Class
                       </a>
                     </Button>
