@@ -1,6 +1,6 @@
 "use client"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { LayoutDashboard, Users, BookOpen, Settings, LogOut, School, Database, GraduationCap, Bell } from "lucide-react"
+import { LayoutDashboard, Users, BookOpen, Settings, LogOut, School, Database, GraduationCap, Bell, LifeBuoy } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -77,6 +77,12 @@ export function AdminSidebar() {
       icon: BookOpen,
       href: "/admin/dashboard",
       tab: "reports",
+    },
+    {
+      title: "Support",
+      icon: LifeBuoy,
+      href: "/admin/support",
+      tab: null,
     },
     {
       title: "Settings",
