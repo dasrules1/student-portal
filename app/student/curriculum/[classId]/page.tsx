@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import {
@@ -35,6 +35,7 @@ import { realtimeDb } from "@/lib/firebase"
 import { ref, set, push, get } from "firebase/database"
 import { 
   doc, 
+  addDoc,
   setDoc, 
   getDoc, 
   collection, 
@@ -306,6 +307,10 @@ interface ExistingAnswers {
   };
 }
 
+type ProctoringEventType = "copy_attempt" | "paste_attempt" | "cut_attempt" | "fullscreen_exit" | "tab_window_switch";
+const PROCTORING_EVENT_COOLDOWN_MS = 1000;
+const WINDOW_FOCUS_RETURN_THRESHOLD_MS = 500;
+
 // Add type guard for classId
 const isClassIdValid = (id: string | undefined): id is string => {
   return typeof id === 'string' && id.length > 0;
@@ -357,6 +362,11 @@ export default function StudentCurriculum() {
   const [submittedProblems, setSubmittedProblems] = useState<SubmittedProblems>({})
   const [problemState, setProblemState] = useState<ProblemState>({})
   const [existingAnswers, setExistingAnswers] = useState<ExistingAnswers>({})
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const wasFullscreenRef = useRef(false)
+  const eventCooldownRef = useRef<Record<string, number>>({})
+  const isAssessmentContent = activeContent?.type === "quiz" || activeContent?.type === "test"
+  const fullScreenRequirementId = "assessment-fullscreen-requirement"
 
   // Load class and curriculum data
   useEffect(() => {
@@ -651,6 +661,138 @@ export default function StudentCurriculum() {
           variant: 'destructive',
         });
       }
+    }
+  };
+
+  const logProctoringEvent = useCallback(async (
+    eventType: ProctoringEventType,
+    details?: string
+  ) => {
+    if (!isAssessmentContent || !activeContent?.id || !currentUser?.uid || !isClassIdValid(classId)) return;
+
+    const cooldownKey = `${eventType}:${details || ""}`;
+    const now = Date.now();
+    const lastLoggedAt = eventCooldownRef.current[cooldownKey] || 0;
+    if (now - lastLoggedAt < PROCTORING_EVENT_COOLDOWN_MS) return;
+    eventCooldownRef.current[cooldownKey] = now;
+
+    try {
+      await addDoc(collection(db, "student-proctoring-events", classId, "events"), {
+        classId,
+        contentId: activeContent.id,
+        contentTitle: activeContent.title || "Untitled Content",
+        contentType: activeContent.type,
+        studentId: currentUser.uid,
+        studentAltId: currentUser.id || null,
+        studentName: currentUser.displayName || currentUser.name || currentUser.user?.displayName || "Unknown Student",
+        eventType,
+        details: details || "",
+        clientTimestamp: new Date().toISOString(),
+        timestamp: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Error logging proctoring event:", error);
+    }
+  }, [
+    isAssessmentContent,
+    activeContent?.id,
+    activeContent?.title,
+    activeContent?.type,
+    currentUser?.uid,
+    currentUser?.id,
+    currentUser?.displayName,
+    currentUser?.name,
+    currentUser?.user?.displayName,
+    classId,
+  ]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    wasFullscreenRef.current = isAssessmentContent ? Boolean(document.fullscreenElement) : false;
+    setIsFullscreen(Boolean(document.fullscreenElement));
+
+    const updateFullscreenState = () => {
+      const currentlyFullscreen = Boolean(document.fullscreenElement);
+      if (isAssessmentContent && wasFullscreenRef.current && !currentlyFullscreen) {
+        void logProctoringEvent("fullscreen_exit");
+      }
+      wasFullscreenRef.current = currentlyFullscreen;
+      setIsFullscreen(currentlyFullscreen);
+    };
+
+    updateFullscreenState();
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", updateFullscreenState);
+    };
+  }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid, logProctoringEvent]);
+
+  useEffect(() => {
+    if (!isAssessmentContent || typeof document === "undefined" || typeof window === "undefined") return;
+    let blurTimestamp: number | null = null;
+
+    const handleClipboardEvent = (event: ClipboardEvent, type: ProctoringEventType) => {
+      event.preventDefault();
+      void logProctoringEvent(type);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        void logProctoringEvent("tab_window_switch", "visibility_hidden");
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (document.hidden) {
+        void logProctoringEvent("tab_window_switch", "window_blur_hidden");
+      } else {
+        blurTimestamp = Date.now();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (blurTimestamp && Date.now() - blurTimestamp > WINDOW_FOCUS_RETURN_THRESHOLD_MS) {
+        void logProctoringEvent("tab_window_switch", "window_focus_return");
+      }
+      blurTimestamp = null;
+    };
+
+    const handleCopy = (event: ClipboardEvent) => handleClipboardEvent(event, "copy_attempt");
+    const handlePaste = (event: ClipboardEvent) => handleClipboardEvent(event, "paste_attempt");
+    const handleCut = (event: ClipboardEvent) => handleClipboardEvent(event, "cut_attempt");
+
+    document.addEventListener("copy", handleCopy);
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("cut", handleCut);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("cut", handleCut);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid, logProctoringEvent]);
+
+  const requestAssessmentFullscreen = async () => {
+    if (!isAssessmentContent || typeof document === "undefined") return;
+    if (document.fullscreenElement) return;
+
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (error) {
+      console.error("Unable to enter fullscreen:", error);
+      toast({
+        title: "Full-screen required",
+        description: "Please allow full-screen mode to continue this assessment.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1565,6 +1707,21 @@ export default function StudentCurriculum() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {isAssessmentContent && (
+                      <span id={fullScreenRequirementId} className="sr-only">
+                        Full-Screen mode is required during quizzes and tests.
+                      </span>
+                    )}
+                    {isAssessmentContent && !isFullscreen && (
+                      <div className="mb-4 rounded-md border border-yellow-300 bg-yellow-50 p-3">
+                        <p className="text-sm font-medium text-yellow-800">
+                          Full-Screen mode is required during quizzes and tests.
+                        </p>
+                        <Button className="mt-3" onClick={requestAssessmentFullscreen}>
+                          Enter Full Screen
+                        </Button>
+                      </div>
+                    )}
                     {activeContent.problems && activeContent.problems.length > 0 ? (
                       <div className="space-y-6">
                       {activeContent.problems.map((problem, problemIndex) => {
@@ -1648,7 +1805,8 @@ export default function StudentCurriculum() {
                                       <Button
                                         onClick={() => handleSubmitProblem(problemIndex)}
                                         className="w-full"
-                                        disabled={userAnswers[activeContent.id]?.[problemIndex] === undefined}
+                                        disabled={userAnswers[activeContent.id]?.[problemIndex] === undefined || (isAssessmentContent && !isFullscreen)}
+                                        aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                         variant={isAtMaxAttempts ? "secondary" : "default"}
                                       >
                                         <Send className="w-4 h-4 mr-2" />
@@ -1692,7 +1850,8 @@ export default function StudentCurriculum() {
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
-                                          disabled={!mathExpressionInputs[activeContent.id]?.[problemIndex]}
+                                          disabled={!mathExpressionInputs[activeContent.id]?.[problemIndex] || (isAssessmentContent && !isFullscreen)}
+                                          aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
@@ -1754,7 +1913,8 @@ export default function StudentCurriculum() {
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
-                                          disabled={!openEndedAnswers[activeContent.id]?.[problemIndex]}
+                                          disabled={!openEndedAnswers[activeContent.id]?.[problemIndex] || (isAssessmentContent && !isFullscreen)}
+                                          aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
@@ -1816,7 +1976,8 @@ export default function StudentCurriculum() {
                                         <Button
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
-                                          disabled={!graphAnswers[`${activeContent.id}-${problemIndex}`] || (!graphAnswers[`${activeContent.id}-${problemIndex}`]?.points?.length && !graphAnswers[`${activeContent.id}-${problemIndex}`]?.lines?.length)}
+                                          disabled={!graphAnswers[`${activeContent.id}-${problemIndex}`] || (!graphAnswers[`${activeContent.id}-${problemIndex}`]?.points?.length && !graphAnswers[`${activeContent.id}-${problemIndex}`]?.lines?.length) || (isAssessmentContent && !isFullscreen)}
+                                          aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
