@@ -745,7 +745,9 @@ export default function StudentCurriculum() {
     };
 
     const handleWindowBlur = () => {
-      if (!document.hidden) {
+      if (document.hidden) {
+        void logProctoringEvent("tab_window_switch", "window_blur_hidden");
+      } else {
         blurTimestamp = Date.now();
       }
     };
@@ -1705,10 +1707,15 @@ export default function StudentCurriculum() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {isAssessmentContent && (
+                      <span id={fullScreenRequirementId} className="sr-only">
+                        Full-Screen mode is required during quizzes and tests.
+                      </span>
+                    )}
                     {isAssessmentContent && !isFullscreen && (
                       <div className="mb-4 rounded-md border border-yellow-300 bg-yellow-50 p-3">
-                        <p id={fullScreenRequirementId} className="text-sm font-medium text-yellow-800">
-                          Full-screen mode is required during quizzes and tests.
+                        <p className="text-sm font-medium text-yellow-800">
+                          Full-Screen mode is required during quizzes and tests.
                         </p>
                         <Button className="mt-3" onClick={requestAssessmentFullscreen}>
                           Enter Full Screen
@@ -1799,7 +1806,7 @@ export default function StudentCurriculum() {
                                         onClick={() => handleSubmitProblem(problemIndex)}
                                         className="w-full"
                                         disabled={userAnswers[activeContent.id]?.[problemIndex] === undefined || (isAssessmentContent && !isFullscreen)}
-                                        aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
+                                        aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                         variant={isAtMaxAttempts ? "secondary" : "default"}
                                       >
                                         <Send className="w-4 h-4 mr-2" />
@@ -1844,7 +1851,7 @@ export default function StudentCurriculum() {
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!mathExpressionInputs[activeContent.id]?.[problemIndex] || (isAssessmentContent && !isFullscreen)}
-                                          aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
+                                          aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
@@ -1907,7 +1914,7 @@ export default function StudentCurriculum() {
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!openEndedAnswers[activeContent.id]?.[problemIndex] || (isAssessmentContent && !isFullscreen)}
-                                          aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
+                                          aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
@@ -1970,7 +1977,7 @@ export default function StudentCurriculum() {
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!graphAnswers[`${activeContent.id}-${problemIndex}`] || (!graphAnswers[`${activeContent.id}-${problemIndex}`]?.points?.length && !graphAnswers[`${activeContent.id}-${problemIndex}`]?.lines?.length) || (isAssessmentContent && !isFullscreen)}
-                                          aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
+                                          aria-describedby={isAssessmentContent ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
