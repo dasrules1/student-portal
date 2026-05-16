@@ -308,6 +308,8 @@ interface ExistingAnswers {
 }
 
 type ProctoringEventType = "copy_attempt" | "paste_attempt" | "cut_attempt" | "fullscreen_exit" | "tab_window_switch";
+const PROCTORING_EVENT_COOLDOWN_MS = 1000;
+const WINDOW_FOCUS_RETURN_THRESHOLD_MS = 500;
 
 // Add type guard for classId
 const isClassIdValid = (id: string | undefined): id is string => {
@@ -671,7 +673,7 @@ export default function StudentCurriculum() {
     const cooldownKey = `${eventType}:${details || ""}`;
     const now = Date.now();
     const lastLoggedAt = eventCooldownRef.current[cooldownKey] || 0;
-    if (now - lastLoggedAt < 1000) return;
+    if (now - lastLoggedAt < PROCTORING_EVENT_COOLDOWN_MS) return;
     eventCooldownRef.current[cooldownKey] = now;
 
     try {
@@ -749,7 +751,7 @@ export default function StudentCurriculum() {
     };
 
     const handleWindowFocus = () => {
-      if (blurTimestamp && Date.now() - blurTimestamp > 500) {
+      if (blurTimestamp && Date.now() - blurTimestamp > WINDOW_FOCUS_RETURN_THRESHOLD_MS) {
         void logProctoringEvent("tab_window_switch", "window_focus_return");
       }
       blurTimestamp = null;

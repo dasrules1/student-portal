@@ -204,6 +204,7 @@ const formatProctoringEventType = (eventType: ProctoringEvent["eventType"]) => {
       return eventType;
   }
 };
+const MAX_DISPLAYED_PROCTORING_EVENTS = 5;
 
 // Content types for curriculum
 const contentTypes = [
@@ -1396,7 +1397,7 @@ export default function TeacherCurriculum() {
                       <td className="p-2 align-top">
                         {studentProctoringEvents.length > 0 ? (
                           <div className="space-y-1">
-                            {studentProctoringEvents.slice(0, 5).map((event) => (
+                            {studentProctoringEvents.slice(0, MAX_DISPLAYED_PROCTORING_EVENTS).map((event) => (
                               <div key={event.id} className="rounded border p-2 text-xs">
                                 <div className="font-medium">{formatProctoringEventType(event.eventType)}</div>
                                 <div className="text-muted-foreground">
@@ -1405,9 +1406,9 @@ export default function TeacherCurriculum() {
                                 {event.details && <div className="text-muted-foreground">{event.details}</div>}
                               </div>
                             ))}
-                            {studentProctoringEvents.length > 5 && (
+                            {studentProctoringEvents.length > MAX_DISPLAYED_PROCTORING_EVENTS && (
                               <div className="text-xs text-muted-foreground">
-                                +{studentProctoringEvents.length - 5} more events
+                                +{studentProctoringEvents.length - MAX_DISPLAYED_PROCTORING_EVENTS} more events
                               </div>
                             )}
                           </div>
