@@ -621,11 +621,16 @@ export default function TeacherCurriculum() {
     const unsubscribe = firestoreOnSnapshot(proctoringEventsQuery, (snapshot: any) => {
       const groupedEvents = snapshot.docs.reduce((acc: Record<string, ProctoringEvent[]>, docSnap: any) => {
         const data = docSnap.data();
+        const eventType = data.eventType as ProctoringEvent["eventType"] | undefined;
+        if (!eventType) {
+          console.warn("Proctoring event missing eventType:", docSnap.id);
+          return acc;
+        }
         const event: ProctoringEvent = {
           id: docSnap.id,
           studentId: data.studentId || "",
           studentAltId: data.studentAltId || null,
-          eventType: (data.eventType || "tab_window_switch") as ProctoringEvent["eventType"],
+          eventType,
           details: data.details || "",
           clientTimestamp: data.clientTimestamp || "",
         };
@@ -645,8 +650,8 @@ export default function TeacherCurriculum() {
 
       Object.keys(groupedEvents).forEach((studentKey) => {
         groupedEvents[studentKey].sort((a, b) => {
-          const timeA = a.clientTimestamp ? new Date(a.clientTimestamp).getTime() : 0;
-          const timeB = b.clientTimestamp ? new Date(b.clientTimestamp).getTime() : 0;
+          const timeA = a.clientTimestamp ? new Date(a.clientTimestamp).getTime() : Date.now();
+          const timeB = b.clientTimestamp ? new Date(b.clientTimestamp).getTime() : Date.now();
           return timeB - timeA;
         });
       });

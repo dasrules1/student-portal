@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import Link from "next/link"
 import {
@@ -661,7 +661,7 @@ export default function StudentCurriculum() {
     }
   };
 
-  const logProctoringEvent = async (
+  const logProctoringEvent = useCallback(async (
     eventType: ProctoringEventType,
     details?: string
   ) => {
@@ -670,7 +670,7 @@ export default function StudentCurriculum() {
     const cooldownKey = `${eventType}:${details || ""}`;
     const now = Date.now();
     const lastLoggedAt = eventCooldownRef.current[cooldownKey] || 0;
-    if (now - lastLoggedAt < 100) return;
+    if (now - lastLoggedAt < 1000) return;
     eventCooldownRef.current[cooldownKey] = now;
 
     try {
@@ -690,7 +690,18 @@ export default function StudentCurriculum() {
     } catch (error) {
       console.error("Error logging proctoring event:", error);
     }
-  };
+  }, [
+    isAssessmentContent,
+    activeContent?.id,
+    activeContent?.title,
+    activeContent?.type,
+    currentUser?.uid,
+    currentUser?.id,
+    currentUser?.displayName,
+    currentUser?.name,
+    currentUser?.user?.displayName,
+    classId,
+  ]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -710,7 +721,7 @@ export default function StudentCurriculum() {
     return () => {
       document.removeEventListener("fullscreenchange", updateFullscreenState);
     };
-  }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid]);
+  }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid, logProctoringEvent]);
 
   useEffect(() => {
     if (!isAssessmentContent || typeof document === "undefined" || typeof window === "undefined") return;
@@ -727,11 +738,9 @@ export default function StudentCurriculum() {
     };
 
     const handleWindowBlur = () => {
-      window.setTimeout(() => {
-        if (document.hidden) {
-          void logProctoringEvent("tab_window_switch", "window_blur");
-        }
-      }, 0);
+      if (!document.hidden) {
+        void logProctoringEvent("tab_window_switch", "window_blur");
+      }
     };
 
     const handleCopy = (event: ClipboardEvent) => handleClipboardEvent(event, "copy_attempt");
@@ -751,7 +760,7 @@ export default function StudentCurriculum() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleWindowBlur);
     };
-  }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid]);
+  }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid, logProctoringEvent]);
 
   const requestAssessmentFullscreen = async () => {
     if (!isAssessmentContent || typeof document === "undefined") return;
