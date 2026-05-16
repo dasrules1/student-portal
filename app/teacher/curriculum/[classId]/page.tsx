@@ -188,6 +188,23 @@ interface ProctoringEvent {
   clientTimestamp?: string;
 }
 
+const formatProctoringEventType = (eventType: ProctoringEvent["eventType"]) => {
+  switch (eventType) {
+    case "copy_attempt":
+      return "Copy Attempt";
+    case "paste_attempt":
+      return "Paste Attempt";
+    case "cut_attempt":
+      return "Cut Attempt";
+    case "fullscreen_exit":
+      return "Full-Screen Exit";
+    case "tab_window_switch":
+      return "Tab/Window Switch";
+    default:
+      return eventType;
+  }
+};
+
 // Content types for curriculum
 const contentTypes = [
   { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
@@ -1376,7 +1393,7 @@ export default function TeacherCurriculum() {
                           <div className="space-y-1">
                             {studentProctoringEvents.slice(0, 5).map((event) => (
                               <div key={event.id} className="rounded border p-2 text-xs">
-                                <div className="font-medium">{event.eventType.replace(/_/g, " ")}</div>
+                                <div className="font-medium">{formatProctoringEventType(event.eventType)}</div>
                                 <div className="text-muted-foreground">
                                   {event.clientTimestamp ? new Date(event.clientTimestamp).toLocaleString() : "Unknown time"}
                                 </div>

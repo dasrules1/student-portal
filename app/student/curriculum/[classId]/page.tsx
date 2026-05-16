@@ -670,7 +670,7 @@ export default function StudentCurriculum() {
     const cooldownKey = `${eventType}:${details || ""}`;
     const now = Date.now();
     const lastLoggedAt = eventCooldownRef.current[cooldownKey] || 0;
-    if (now - lastLoggedAt < 1000) return;
+    if (now - lastLoggedAt < 100) return;
     eventCooldownRef.current[cooldownKey] = now;
 
     try {
@@ -727,7 +727,11 @@ export default function StudentCurriculum() {
     };
 
     const handleWindowBlur = () => {
-      void logProctoringEvent("tab_window_switch", "window_blur");
+      window.setTimeout(() => {
+        if (document.hidden) {
+          void logProctoringEvent("tab_window_switch", "window_blur");
+        }
+      }, 0);
     };
 
     const handleCopy = (event: ClipboardEvent) => handleClipboardEvent(event, "copy_attempt");
@@ -755,8 +759,6 @@ export default function StudentCurriculum() {
 
     try {
       await document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-      wasFullscreenRef.current = true;
     } catch (error) {
       console.error("Unable to enter fullscreen:", error);
       toast({
