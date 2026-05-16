@@ -179,6 +179,15 @@ interface RealTimeUpdates {
   [studentId: string]: StudentAnswers;
 }
 
+interface ProctoringEvent {
+  id: string;
+  studentId: string;
+  studentAltId?: string | null;
+  eventType: "copy_attempt" | "paste_attempt" | "cut_attempt" | "fullscreen_exit" | "tab_window_switch";
+  details?: string;
+  clientTimestamp?: string;
+}
+
 // Content types for curriculum
 const contentTypes = [
   { id: "new-material", name: "New Material", icon: <BookOpen className="w-4 h-4 mr-2" /> },
@@ -210,6 +219,8 @@ export default function TeacherCurriculum() {
   const [students, setStudents] = useState<User[]>([])
   const [studentProgress, setStudentProgress] = useState<Record<string, any>>({})
   const [realTimeUpdates, setRealTimeUpdates] = useState<Record<string, any>>({})
+  const [proctoringEventsByStudent, setProctoringEventsByStudent] = useState<Record<string, ProctoringEvent[]>>({})
+  const isAssessmentContent = activeContent?.type === "quiz" || activeContent?.type === "test"
 
   // Load class and curriculum data
   useEffect(() => {
@@ -578,6 +589,56 @@ export default function TeacherCurriculum() {
       unsubscribe();
     };
   }, [activeContent?.id, classId]);
+
+  useEffect(() => {
+    if (!classId || !activeContent?.id || !isAssessmentContent) {
+      setProctoringEventsByStudent({});
+      return;
+    }
+
+    const proctoringEventsQuery = query(
+      collection(db, `student-proctoring-events/${classId}/events`),
+      where("contentId", "==", activeContent.id)
+    );
+
+    const unsubscribe = firestoreOnSnapshot(proctoringEventsQuery, (snapshot: any) => {
+      const groupedEvents = snapshot.docs.reduce((acc: Record<string, ProctoringEvent[]>, docSnap: any) => {
+        const data = docSnap.data();
+        const event: ProctoringEvent = {
+          id: docSnap.id,
+          studentId: data.studentId || "",
+          studentAltId: data.studentAltId || null,
+          eventType: (data.eventType || "tab_window_switch") as ProctoringEvent["eventType"],
+          details: data.details || "",
+          clientTimestamp: data.clientTimestamp || "",
+        };
+
+        if (event.studentId) {
+          if (!acc[event.studentId]) acc[event.studentId] = [];
+          acc[event.studentId].push(event);
+        }
+
+        if (event.studentAltId) {
+          if (!acc[event.studentAltId]) acc[event.studentAltId] = [];
+          acc[event.studentAltId].push(event);
+        }
+
+        return acc;
+      }, {});
+
+      Object.keys(groupedEvents).forEach((studentKey) => {
+        groupedEvents[studentKey].sort((a, b) => {
+          const timeA = a.clientTimestamp ? new Date(a.clientTimestamp).getTime() : 0;
+          const timeB = b.clientTimestamp ? new Date(b.clientTimestamp).getTime() : 0;
+          return timeB - timeA;
+        });
+      });
+
+      setProctoringEventsByStudent(groupedEvents);
+    });
+
+    return () => unsubscribe();
+  }, [classId, activeContent?.id, isAssessmentContent]);
 
   // Helper function to format text (bold, italic, bullets)
   const formatText = (text: string) => {
@@ -1218,12 +1279,14 @@ export default function TeacherCurriculum() {
                   </th>
                 ))}
                 <th className="p-2 text-left">Total Score</th>
+                {isAssessmentContent && <th className="p-2 text-left">Proctoring Events</th>}
                 <th className="p-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
               {students.map((student) => {
                 const studentAnswers = realTimeUpdates[student.id] || {};
+                const studentProctoringEvents = proctoringEventsByStudent[student.id] || [];
                 const totalScore = activeContent.problems.reduce((sum, problem, index) => {
                   const answer = studentAnswers[`problem-${index}`];
                   return sum + (answer?.score || 0);
@@ -1307,6 +1370,30 @@ export default function TeacherCurriculum() {
                         {Math.round((totalScore / maxScore) * 100)}%
                       </div>
                     </td>
+                    {isAssessmentContent && (
+                      <td className="p-2 align-top">
+                        {studentProctoringEvents.length > 0 ? (
+                          <div className="space-y-1">
+                            {studentProctoringEvents.slice(0, 5).map((event) => (
+                              <div key={event.id} className="rounded border p-2 text-xs">
+                                <div className="font-medium">{event.eventType.replace(/_/g, " ")}</div>
+                                <div className="text-muted-foreground">
+                                  {event.clientTimestamp ? new Date(event.clientTimestamp).toLocaleString() : "Unknown time"}
+                                </div>
+                                {event.details && <div className="text-muted-foreground">{event.details}</div>}
+                              </div>
+                            ))}
+                            {studentProctoringEvents.length > 5 && (
+                              <div className="text-xs text-muted-foreground">
+                                +{studentProctoringEvents.length - 5} more events
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No events</span>
+                        )}
+                      </td>
+                    )}
                     <td className="p-2">
                       <Button
                         variant="outline"
