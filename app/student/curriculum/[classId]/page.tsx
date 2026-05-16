@@ -364,6 +364,7 @@ export default function StudentCurriculum() {
   const wasFullscreenRef = useRef(false)
   const eventCooldownRef = useRef<Record<string, number>>({})
   const isAssessmentContent = activeContent?.type === "quiz" || activeContent?.type === "test"
+  const fullScreenRequirementId = "assessment-fullscreen-requirement"
 
   // Load class and curriculum data
   useEffect(() => {
@@ -706,6 +707,9 @@ export default function StudentCurriculum() {
   useEffect(() => {
     if (typeof document === "undefined") return;
 
+    wasFullscreenRef.current = isAssessmentContent ? Boolean(document.fullscreenElement) : false;
+    setIsFullscreen(Boolean(document.fullscreenElement));
+
     const updateFullscreenState = () => {
       const currentlyFullscreen = Boolean(document.fullscreenElement);
       if (isAssessmentContent && wasFullscreenRef.current && !currentlyFullscreen) {
@@ -725,6 +729,7 @@ export default function StudentCurriculum() {
 
   useEffect(() => {
     if (!isAssessmentContent || typeof document === "undefined" || typeof window === "undefined") return;
+    let blurTimestamp: number | null = null;
 
     const handleClipboardEvent = (event: ClipboardEvent, type: ProctoringEventType) => {
       event.preventDefault();
@@ -739,8 +744,15 @@ export default function StudentCurriculum() {
 
     const handleWindowBlur = () => {
       if (!document.hidden) {
-        void logProctoringEvent("tab_window_switch", "window_blur");
+        blurTimestamp = Date.now();
       }
+    };
+
+    const handleWindowFocus = () => {
+      if (blurTimestamp && Date.now() - blurTimestamp > 500) {
+        void logProctoringEvent("tab_window_switch", "window_focus_return");
+      }
+      blurTimestamp = null;
     };
 
     const handleCopy = (event: ClipboardEvent) => handleClipboardEvent(event, "copy_attempt");
@@ -752,6 +764,7 @@ export default function StudentCurriculum() {
     document.addEventListener("cut", handleCut);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
 
     return () => {
       document.removeEventListener("copy", handleCopy);
@@ -759,6 +772,7 @@ export default function StudentCurriculum() {
       document.removeEventListener("cut", handleCut);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
     };
   }, [isAssessmentContent, activeContent?.id, classId, currentUser?.uid, logProctoringEvent]);
 
@@ -1691,7 +1705,7 @@ export default function StudentCurriculum() {
                   <CardContent>
                     {isAssessmentContent && !isFullscreen && (
                       <div className="mb-4 rounded-md border border-yellow-300 bg-yellow-50 p-3">
-                        <p className="text-sm font-medium text-yellow-800">
+                        <p id={fullScreenRequirementId} className="text-sm font-medium text-yellow-800">
                           Full-screen mode is required during quizzes and tests.
                         </p>
                         <Button className="mt-3" onClick={requestAssessmentFullscreen}>
@@ -1783,6 +1797,7 @@ export default function StudentCurriculum() {
                                         onClick={() => handleSubmitProblem(problemIndex)}
                                         className="w-full"
                                         disabled={userAnswers[activeContent.id]?.[problemIndex] === undefined || (isAssessmentContent && !isFullscreen)}
+                                        aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
                                         variant={isAtMaxAttempts ? "secondary" : "default"}
                                       >
                                         <Send className="w-4 h-4 mr-2" />
@@ -1827,6 +1842,7 @@ export default function StudentCurriculum() {
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!mathExpressionInputs[activeContent.id]?.[problemIndex] || (isAssessmentContent && !isFullscreen)}
+                                          aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
@@ -1889,6 +1905,7 @@ export default function StudentCurriculum() {
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!openEndedAnswers[activeContent.id]?.[problemIndex] || (isAssessmentContent && !isFullscreen)}
+                                          aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />
@@ -1951,6 +1968,7 @@ export default function StudentCurriculum() {
                                           onClick={() => handleSubmitProblem(problemIndex)}
                                           className="w-full"
                                           disabled={!graphAnswers[`${activeContent.id}-${problemIndex}`] || (!graphAnswers[`${activeContent.id}-${problemIndex}`]?.points?.length && !graphAnswers[`${activeContent.id}-${problemIndex}`]?.lines?.length) || (isAssessmentContent && !isFullscreen)}
+                                          aria-describedby={isAssessmentContent && !isFullscreen ? fullScreenRequirementId : undefined}
                                           variant={isAtMaxAttempts ? "secondary" : "default"}
                                         >
                                           <Send className="w-4 h-4 mr-2" />

@@ -650,8 +650,8 @@ export default function TeacherCurriculum() {
 
       Object.keys(groupedEvents).forEach((studentKey) => {
         groupedEvents[studentKey].sort((a, b) => {
-          const timeA = a.clientTimestamp ? new Date(a.clientTimestamp).getTime() : Date.now();
-          const timeB = b.clientTimestamp ? new Date(b.clientTimestamp).getTime() : Date.now();
+          const timeA = a.clientTimestamp ? new Date(a.clientTimestamp).getTime() : 0;
+          const timeB = b.clientTimestamp ? new Date(b.clientTimestamp).getTime() : 0;
           return timeB - timeA;
         });
       });
